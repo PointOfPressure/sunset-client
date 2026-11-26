@@ -634,6 +634,21 @@ pub mod game {
         }
         impl __Fnr_Game_chat_click for Game<'_> {
             fn chat_click(&mut self) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_chat_suggest_click(
+                        game: &mut crate::game::Game<'_>,
+                    ) -> std::ops::ControlFlow<()> {
+                        if ::sunset_core::lifecycle::RUNTIME.running()
+                            && crate::game::sunset_chat_suggest::click(game)
+                        {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_chat_suggest_click(&mut *self)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let cursor = self.cursor;
                 let height = self
                     .renderer
@@ -793,6 +808,22 @@ pub mod game {
         impl __Fnr_Game_chat_key_code for Game<'_> {
             /// A key (and the text it typed) while the chat screen is open.
             fn chat_key_code(&mut self, key: KeyCode, typed_text: Option<&str>) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_chat_suggest_key(
+                        game: &mut crate::game::Game<'_>,
+                        key: winit::keyboard::KeyCode,
+                    ) -> std::ops::ControlFlow<()> {
+                        if ::sunset_core::lifecycle::RUNTIME.running()
+                            && crate::game::sunset_chat_suggest::key(game, key)
+                        {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_chat_suggest_key(&mut *self, key)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let ctrl = self.has_control_down_with_quirk();
                 let shift = self.has_shift_down();
                 if self.pvp_chat().search
@@ -874,6 +905,22 @@ pub mod game {
         }
         impl __Fnr_Game_chat_scroll for Game<'_> {
             fn chat_scroll(&mut self, amount: f32) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_chat_suggest_scroll(
+                        game: &crate::game::Game<'_>,
+                        amount: f32,
+                    ) -> std::ops::ControlFlow<()> {
+                        if ::sunset_core::lifecycle::RUNTIME.running()
+                            && crate::game::sunset_chat_suggest::scroll(game, amount)
+                        {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_chat_suggest_scroll(&*self, amount)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let cursor = self.cursor;
                 let mouse = (cursor.0.floor() as i32, cursor.1.floor() as i32);
                 if let Some(screen) = self.ui.chat_screen.as_mut()
@@ -905,6 +952,20 @@ pub mod game {
             /// a chat line. The Chat option's restrictions stop the message here too,
             /// so a control-socket `chat` cannot send what the player's setting hides.
             fn handle_chat_input(&mut self, message: &str) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_chat(
+                        game: &mut crate::game::Game<'_>,
+                        message: &str,
+                    ) -> std::ops::ControlFlow<()> {
+                        if crate::game::sunset::chat(game, message) {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_chat(&mut *self, message)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let message = normalize_chat_message(message);
                 if message.is_empty() || !self.chat_abilities().allows(&message) {
                     return;
@@ -966,6 +1027,20 @@ pub mod game {
         impl __Fnr_Game_toggle_hide_gui for Game<'_> {
             /// F1 hides the HUD (see `hud`); the screenshot key still works.
             fn toggle_hide_gui(&mut self) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_hide_hud() -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset::gui_open() {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_hide_hud()
+                } {
+                    return __horizon_mixins_return;
+                }
                 self.ui.toggle_hide_gui();
             }
         }
@@ -1009,6 +1084,18 @@ pub mod game {
         }
         impl __Fnr_Game_draw_dialog for Game<'_> {
             fn draw_dialog(&mut self, batch: &mut HudBatch) {
+                {
+                    fn sunset_gui_top(
+                        game: &crate::game::Game<'_>,
+                        batch: &mut horizon_client::hud::HudBatch,
+                    ) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset::gui_top(game, batch);
+                    }
+                    sunset_gui_top(&*self, &mut *batch)
+                };
                 if !self.dialog_open() {
                     return;
                 }
@@ -1483,7 +1570,22 @@ pub mod game {
             /// `BossHealthOverlay.extractRenderState`: whatever `publish_boss_bars`
             /// (or a server's packets) put on this client's overlay.
             fn draw_boss_bars(&self, batch: &mut HudBatch) {
-                let draws = self.boss_bar_draws(batch.width as i32, batch.height as i32);
+                let draws = ({
+                    fn sunset_streamer_centred(
+                        value: Vec<hud_layout::GuiDraw>,
+                        game: &Game<'_>,
+                    ) -> Vec<hud_layout::GuiDraw> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return value;
+                        }
+                        crate::game::sunset_streamer::protect_draws(
+                            value,
+                            &game.gui.atlas.font,
+                            true,
+                        )
+                    }
+                    sunset_streamer_centred
+                })(self.boss_bar_draws(batch.width as i32, batch.height as i32), self);
                 hud_layout::paint(batch, &self.gui.atlas, &draws);
             }
         }
@@ -1547,6 +1649,20 @@ pub mod game {
             impl __Fnr_Game_extras_connecting for Game<'_> {
                 /// Auto-reconnect: a connection to `address` as `name` starts.
                 fn extras_connecting(&mut self, address: &str, name: &str, lan: bool) {
+                    {
+                        fn sunset_vanish_connect(game: &Game<'_>, address: &str) {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return;
+                            }
+                            crate::game::sunset::ensure_loaded(game);
+                            crate::game::sunset_vanish::connecting(address);
+                            crate::game::sunset_meshcache_warm::reset();
+                            crate::game::sunset_server_scan::connecting(address);
+                            crate::game::sunset_sky::forget();
+                            crate::game::sunset_client_spoofer::connecting(address);
+                        }
+                        sunset_vanish_connect(&*self, address)
+                    };
                     self.extras.reconnect.connecting(address, name, lan);
                 }
             }
@@ -1577,6 +1693,34 @@ pub mod game {
                 /// The sort buttons: a bordered square with three bars, lighter under
                 /// the cursor.
                 fn draw_sort_buttons(&self, batch: &mut HudBatch, ox: f32, oy: f32) {
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_sort_draw(
+                            game: &crate::game::Game<'_>,
+                            batch: &mut horizon_client::hud::HudBatch,
+                            ox: f32,
+                            oy: f32,
+                        ) -> std::ops::ControlFlow<()> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            crate::game::sunset_extras::note_hover(
+                                game.slot_at(batch, game.cursor.0, game.cursor.1),
+                            );
+                            if crate::game::sunset_extras::on() {
+                                crate::game::extras::sorting::sunset_sort_buttons::draw(
+                                    game,
+                                    batch,
+                                    ox,
+                                    oy,
+                                );
+                                return std::ops::ControlFlow::Break(());
+                            }
+                            std::ops::ControlFlow::Continue(())
+                        }
+                        sunset_sort_draw(&*self, &mut *batch, ox, oy)
+                    } {
+                        return __horizon_mixins_return;
+                    }
                     let atlas = &self.gui.atlas;
                     for ((x, y), _) in self.sort_buttons() {
                         let (x, y) = (ox + x, oy + y);
@@ -1630,6 +1774,36 @@ pub mod game {
             }
             impl __Fnr_Game_sort_mouse_press for Game<'_> {
                 fn sort_mouse_press(&mut self, button: MouseButton) -> bool {
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_press(
+                            game: &mut crate::game::Game<'_>,
+                            button: winit::event::MouseButton,
+                        ) -> std::ops::ControlFlow<bool> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            if crate::game::sunset::gui_open() {
+                                crate::game::sunset::gui_press(game, button);
+                                return std::ops::ControlFlow::Break(true);
+                            }
+                            if crate::game::sunset_loadouts::press(
+                                game,
+                                button == winit::event::MouseButton::Right,
+                            ) {
+                                return std::ops::ControlFlow::Break(true);
+                            }
+                            if crate::game::sunset_render::peek_press(
+                                game,
+                                button == winit::event::MouseButton::Middle,
+                            ) {
+                                return std::ops::ControlFlow::Break(true);
+                            }
+                            std::ops::ControlFlow::Continue(())
+                        }
+                        sunset_press(&mut *self, button)
+                    } {
+                        return __horizon_mixins_return;
+                    }
                     self.sort_input(&keybinds::mouse_name(button))
                 }
             }
@@ -1650,6 +1824,26 @@ pub mod game {
             impl __Fnr_Game_sort_press for Game<'_> {
                 /// A left press on a sort button sorts its slots (true).
                 fn sort_press(&mut self) -> bool {
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_sort_press(
+                            game: &mut crate::game::Game<'_>,
+                        ) -> std::ops::ControlFlow<bool> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            if crate::game::sunset_extras::on() {
+                                return std::ops::ControlFlow::Break(
+                                    crate::game::extras::sorting::sunset_sort_buttons::press(
+                                        game,
+                                    ),
+                                );
+                            }
+                            std::ops::ControlFlow::Continue(())
+                        }
+                        sunset_sort_press(&mut *self)
+                    } {
+                        return __horizon_mixins_return;
+                    }
                     let Some(r) = self.renderer.as_ref() else {
                         return false;
                     };
@@ -1689,6 +1883,23 @@ pub mod game {
             impl __Fnr_Game_sort_slots for Game<'_> {
                 /// Sorts `slots` with ordinary left clicks (needs an empty hand).
                 fn sort_slots(&mut self, slots: &[usize]) {
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_sort(
+                            game: &mut crate::game::Game<'_>,
+                            slots: &[usize],
+                        ) -> std::ops::ControlFlow<()> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            if crate::game::sunset_extras::sort(game, slots) {
+                                return std::ops::ControlFlow::Break(());
+                            }
+                            std::ops::ControlFlow::Continue(())
+                        }
+                        sunset_sort(&mut *self, slots)
+                    } {
+                        return __horizon_mixins_return;
+                    }
                     if self.carried.is_some() {
                         return;
                     }
@@ -1863,7 +2074,22 @@ pub mod game {
                     extras_hud::draw_minimap(batch, atlas, &mut corners, &look);
                 }
                 self.draw_pvp_hud(batch, &mut corners);
-                self.native_render_gui_post(batch, &mut corners);
+                {
+                    ({
+                        fn sunset_hud(
+                            game: &mut crate::game::Game<'_>,
+                            batch: &mut horizon_client::hud::HudBatch,
+                            corners: &mut horizon_client::extras_hud::Corners,
+                        ) {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return;
+                            }
+                            crate::game::sunset::hud(game, batch, corners);
+                        }
+                        sunset_hud
+                    })(&mut *self, &mut *batch, &mut corners);
+                    self.native_render_gui_post(batch, &mut corners);
+                };
             }
         }
         #[doc(hidden)]
@@ -1881,6 +2107,33 @@ pub mod game {
         impl __Fnr_Game_extras_mouse for Game<'_> {
             /// Mouse buttons while playing, for mods' clicks.
             fn extras_mouse(&mut self, button: MouseButton, pressed: bool) {
+                {
+                    fn sunset_mouse_key(
+                        game: &mut crate::game::Game<'_>,
+                        button: winit::event::MouseButton,
+                        pressed: bool,
+                    ) {
+                        let name = horizon_client::keybinds::mouse_name(button);
+                        crate::game::sunset::key(game, &name, pressed);
+                    }
+                    sunset_mouse_key(&mut *self, button, pressed)
+                };
+                {
+                    fn sunset_multitask_click(
+                        game: &crate::game::Game<'_>,
+                        button: winit::event::MouseButton,
+                        pressed: bool,
+                    ) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_parity::clicked(
+                            game,
+                            button == winit::event::MouseButton::Left && pressed,
+                        );
+                    }
+                    sunset_multitask_click(&*self, button, pressed)
+                };
                 let i = match button {
                     MouseButton::Left => 0,
                     MouseButton::Right => 1,
@@ -1908,6 +2161,22 @@ pub mod game {
         impl __Fnr_Game_zoom_turn_scale for Game<'_> {
             /// Mouse turning while zoomed.
             fn zoom_turn_scale(&self) -> f64 {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_zoom_turn(
+                        game: &crate::game::Game<'_>,
+                    ) -> std::ops::ControlFlow<f64> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        match crate::game::sunset_render::zoom_turn(game) {
+                            Some(scale) => std::ops::ControlFlow::Break(scale),
+                            None => std::ops::ControlFlow::Continue(()),
+                        }
+                    }
+                    sunset_zoom_turn(&*self)
+                } {
+                    return __horizon_mixins_return;
+                }
                 self.zoom_now().2
             }
         }
@@ -1928,6 +2197,23 @@ pub mod game {
         impl __Fnr_Game_zoomed_fov_degrees for Game<'_> {
             /// The field of view in degrees, divided by an instant zoom.
             fn zoomed_fov_degrees(&self, fov: f32) -> f32 {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_zoom_fov(
+                        game: &crate::game::Game<'_>,
+                        fov: f32,
+                    ) -> std::ops::ControlFlow<f32> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        match crate::game::sunset_render::zoom_now(game) {
+                            Some(factor) => std::ops::ControlFlow::Break(fov / factor),
+                            None => std::ops::ControlFlow::Continue(()),
+                        }
+                    }
+                    sunset_zoom_fov(&*self, fov)
+                } {
+                    return __horizon_mixins_return;
+                }
                 match self.zoom_now() {
                     (factor, false, _) => fov / factor,
                     _ => fov,
@@ -2048,7 +2334,23 @@ pub mod game {
                 };
                 let tilt = self.settings.file.double("damageTiltStrength");
                 glam::Mat4::from_cols_array(
-                    &bob_matrix(&state, tilt, self.settings.view_bobbing).m,
+                    &bob_matrix(
+                            &state,
+                            ({
+                                fn sunset_hurt_cam(value: f64) -> f64 {
+                                    if ::sunset_core::lifecycle::RUNTIME.running()
+                                        && ::sunset_core::overlay::NO_HURT
+                                            .load(std::sync::atomic::Ordering::Relaxed)
+                                    {
+                                        return 0.0;
+                                    }
+                                    value
+                                }
+                                sunset_hurt_cam
+                            })(tilt),
+                            self.settings.view_bobbing,
+                        )
+                        .m,
                 ) * self.native_shake_matrix(partial)
             }
         }
@@ -2092,6 +2394,36 @@ pub mod game {
                 partial: f32,
                 out: &mut Vec<Vertex>,
             ) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_arm_pose(
+                        this: &Game<'_>,
+                        left: bool,
+                        m: glam::Mat4,
+                        light: u32,
+                        partial: f32,
+                        out: &mut Vec<Vertex>,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        use crate::game::sunset_hand_view as view;
+                        if view::posing() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        let posed = view::posed(left, m);
+                        let lit = view::hand_light(light);
+                        if posed == m && lit == light {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        view::set_posing(true);
+                        this.first_person_arm(left, posed, lit, partial, out);
+                        view::set_posing(false);
+                        std::ops::ControlFlow::Break(())
+                    }
+                    sunset_arm_pose(&*self, left, m, light, partial, &mut *out)
+                } {
+                    return __horizon_mixins_return;
+                }
                 if mod_api::__private::listened(mod_api::HookId::RenderArm) {
                     let eye = self.eye_position().unwrap_or_default();
                     let mut draw = BlockEntityDraw::posed(
@@ -2191,6 +2523,26 @@ pub mod game {
         impl __Fnr_Game_before_block for Game<'_> {
             /// Nearer than the targeted block?
             fn before_block(&self, distance: f64) -> bool {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_wall_hit(
+                        game: &crate::game::Game<'_>,
+                        distance: f64,
+                    ) -> std::ops::ControlFlow<bool> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset_player::hit_through_walls(
+                            game,
+                            distance,
+                        ) {
+                            return std::ops::ControlFlow::Break(true);
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_wall_hit(&*self, distance)
+                } {
+                    return __horizon_mixins_return;
+                }
                 self.block_distance().is_none_or(|block| block > distance)
             }
         }
@@ -2236,6 +2588,35 @@ pub mod game {
             /// `LivingEntity.swing` with `getModifiedSwingDuration`: the item's
             /// `on_entity_swing` Part first, which may keep the swing from starting.
             fn swing_hand(&mut self, hand: Hand, animation: SwingAnimation) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_swing_hand(
+                        this: &mut Game<'_>,
+                        hand: Hand,
+                        animation: SwingAnimation,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        use crate::game::sunset_hand_view as view;
+                        if !view::SLOW_SWING.load(std::sync::atomic::Ordering::Relaxed) {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if this
+                            .swing
+                            .start_if_able(
+                                hand,
+                                animation,
+                                animation.duration.max(view::SLOW_SWING_TICKS),
+                            )
+                        {
+                            this.swings_started += 1;
+                        }
+                        std::ops::ControlFlow::Break(())
+                    }
+                    sunset_swing_hand(&mut *self, hand, animation)
+                } {
+                    return __horizon_mixins_return;
+                }
                 self.try_swing_hand(hand, animation);
             }
         }
@@ -2290,14 +2671,48 @@ pub mod game {
                     changed[h] = !same;
                 }
                 let speed = self.main_hand_attack_speed();
-                let replace = self
-                    .heights
-                    .tick_with(
-                        self.hands_busy(),
-                        self.hand_strength.swap_scale(1.0, speed),
-                        changed,
-                        self.pvp_legacy_look(),
-                    );
+                let replace = ({
+                    fn sunset_equip_hold(
+                        value: [bool; 2],
+                        game: &mut Game<'_>,
+                        changed: [bool; 2],
+                    ) -> [bool; 2] {
+                        if ::sunset_core::lifecycle::RUNTIME.running()
+                            && ::sunset_core::hand_view::NO_EQUIP_DROP
+                                .load(std::sync::atomic::Ordering::Relaxed)
+                        {
+                            let h = &mut game.heights;
+                            (h.main, h.old_main, h.off, h.old_off) = (
+                                1.0,
+                                1.0,
+                                1.0,
+                                1.0,
+                            );
+                            return changed;
+                        }
+                        value
+                    }
+                    sunset_equip_hold
+                })(
+                    self
+                        .heights
+                        .tick_with(
+                            self.hands_busy(),
+                            self.hand_strength.swap_scale(1.0, speed),
+                            changed,
+                            ({
+                                fn sunset_equip_legacy(value: bool) -> bool {
+                                    value
+                                        || (::sunset_core::lifecycle::RUNTIME.running()
+                                            && ::sunset_core::hand_view::LEGACY
+                                                .load(std::sync::atomic::Ordering::Relaxed))
+                                }
+                                sunset_equip_legacy
+                            })(self.pvp_legacy_look()),
+                        ),
+                    &mut *self,
+                    changed,
+                );
                 for h in 0..2 {
                     if replace[h] {
                         self.visible_hands[h] = next[h].clone();
@@ -2330,7 +2745,18 @@ pub mod game {
             /// and a sneak the key no longer held: #4166's in-game report), so a
             /// cached key set is not vanilla's answer.
             fn has_shift_down(&self) -> bool {
-                self.modifiers.shift_key()
+                ({
+                    fn sunset_gui_move_shift(
+                        game: &crate::game::Game<'_>,
+                        value: bool,
+                    ) -> bool {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return value;
+                        }
+                        value && !crate::game::sunset_gui_move::suppress_shift(game)
+                    }
+                    sunset_gui_move_shift
+                })(&*self, self.modifiers.shift_key())
             }
         }
         #[doc(hidden)]
@@ -2392,6 +2818,29 @@ pub mod game {
                 x: f32,
                 y: f32,
             ) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_item_durability(
+                        game: &crate::game::Game<'_>,
+                        batch: &mut HudBatch,
+                        stack: &ItemStack,
+                        x: f32,
+                        y: f32,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        crate::game::sunset_hud_bars::item_model(
+                            game,
+                            batch,
+                            stack,
+                            x,
+                            y,
+                        )
+                    }
+                    sunset_item_durability(&*self, &mut *batch, stack, x, y)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let owner = self.player_owner(Some(stack));
                 let state = self
                     .resolve_item(stack, DisplayContext::Gui, Some(&owner), 0);
@@ -2439,6 +2888,156 @@ pub mod game {
                 light: u32,
                 out: &mut Vec<Vertex>,
             ) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_hand_item(
+                        this: &Game<'_>,
+                        state: &ItemRenderState,
+                        pose: glam::Mat4,
+                        light: u32,
+                        out: &mut Vec<Vertex>,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        use crate::game::sunset_hand_view as view;
+                        let left = match state.display {
+                            DisplayContext::FirstPersonLeftHand => true,
+                            DisplayContext::FirstPersonRightHand => false,
+                            _ => return std::ops::ControlFlow::Continue(()),
+                        };
+                        let hand = if left == this.settings.main_hand_left {
+                            horizon_client::first_person::Hand::Main
+                        } else {
+                            horizon_client::first_person::Hand::Off
+                        };
+                        let stack = if hand == horizon_client::first_person::Hand::Main {
+                            this.held()
+                        } else {
+                            this.offhand.as_ref()
+                        };
+                        let swung = !this
+                            .player
+                            .as_ref()
+                            .is_some_and(|p| p.auto_spin_attack_ticks > 0)
+                            && !this.swing.current.is_some_and(|c| c.animation.kind == 2)
+                            && stack
+                                .is_none_or(|s| {
+                                    &*s.item != "minecraft:crossbow"
+                                        && horizon_client::spear::Kinetic::of(&s.item).is_none()
+                                });
+                        let attack = if this.swing.attack_hand() == hand {
+                            this.swing.animation(this.clock.camera_fraction() as f32)
+                        } else {
+                            0.0
+                        };
+                        let sword = stack
+                            .is_some_and(|s| {
+                                this
+                                    .res
+                                    .items()
+                                    .item_tags
+                                    .get("minecraft:swords")
+                                    .is_some_and(|t| t.contains(&*s.item))
+                            });
+                        let game_pose = pose;
+                        let main = hand == horizon_client::first_person::Hand::Main;
+                        let used_block = main && sword
+                            && view::OWN_BLOCK.load(std::sync::atomic::Ordering::Relaxed)
+                            && this
+                                .using
+                                .is_some_and(|(slot, _)| {
+                                    slot != crate::game::sunset_util::OFFHAND
+                                });
+                        let plain = swung && (this.using.is_none() || used_block);
+                        let flat = !state.layers.is_empty()
+                            && state
+                                .layers
+                                .iter()
+                                .all(|l| horizon_client::first_person::is_modern_flat_display(
+                                    &l.matrix,
+                                    left,
+                                ));
+                        let native = this.settings.extras.pvp.combat.legacy && flat;
+                        let native_block = native && main && this.right
+                            && this.screen == super::Screen::Playing
+                            && stack.is_some_and(|s| s.item.ends_with("_sword"));
+                        let block = main && sword
+                            && (view::SWORD_BLOCK
+                                .load(std::sync::atomic::Ordering::Relaxed) || native_block
+                                || used_block);
+                        let time = (this.ticks as f64 + this.clock.camera_fraction())
+                            as f32 / 20.0;
+                        let s = if main && this.swing.attack_hand() == hand {
+                            view::swing_clock(
+                                this.swings_started as u64,
+                                this.swing.current.map_or(6, |c| c.duration_ticks),
+                                time,
+                            )
+                        } else {
+                            attack
+                        };
+                        let how = match (native && !left, used_block) {
+                            (true, _) => {
+                                view::Drawn::Legacy {
+                                    block: native_block,
+                                }
+                            }
+                            (false, true) => view::Drawn::Block,
+                            (false, false) => view::Drawn::Modern,
+                        };
+                        let drawn_attack = if used_block && !native_block {
+                            0.0
+                        } else {
+                            attack
+                        };
+                        let shape = |block: bool| -> glam::Mat4 {
+                            let legacy = (plain && main && !left && flat)
+                                .then(|| view::legacy_pose(
+                                    pose,
+                                    drawn_attack,
+                                    s,
+                                    block,
+                                    time,
+                                    how,
+                                    view::view_of(left),
+                                ))
+                                .flatten();
+                            if let Some(legacy) = legacy {
+                                return legacy;
+                            }
+                            let swapped = match view::swing_swap(
+                                    left,
+                                    attack,
+                                    s,
+                                    sword,
+                                    block,
+                                    used_block,
+                                )
+                                .filter(|_| plain && !native)
+                            {
+                                Some(swap) => pose * swap,
+                                None => pose,
+                            };
+                            view::posed(left, swapped)
+                        };
+                        let posed = shape(block);
+                        let lit = view::hand_light(light);
+                        if posed == game_pose && lit == light {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        this.submit_item_lit(
+                            state,
+                            posed,
+                            lit,
+                            diffuse_lights(this.dim == Dim::Nether),
+                            out,
+                        );
+                        std::ops::ControlFlow::Break(())
+                    }
+                    sunset_hand_item(&*self, state, pose, light, &mut *out)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let lights = diffuse_lights(self.nether_lighting());
                 self.submit_item_lit(state, pose, light, lights, out);
             }
@@ -2500,6 +3099,19 @@ pub mod game {
             /// block particles as the packet lists them) and its sound, when the
             /// packet carries it, then the player's push.
             fn remote_explode(&mut self, p: &play::Explode) {
+                {
+                    fn sunset_explode(
+                        game: &mut crate::game::Game<'_>,
+                        p: &play::Explode,
+                    ) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_duel::blast(game, p.knockback);
+                        crate::game::sunset::explosion_push(game, p.knockback);
+                    }
+                    sunset_explode(&mut *self, p)
+                };
                 if let Some(player) = &self.player {
                     let d = [
                         player.position.x - p.center[0],
@@ -2651,12 +3263,48 @@ pub mod game {
                 let hearts = horizon_client::hud_layout::vehicle_max_hearts(
                     m.attrs.max_health,
                 );
-                let draws = horizon_client::hud_layout::vehicle_health(
-                    w,
-                    h,
-                    hearts,
-                    m.health,
-                );
+                let draws = (|
+                    __horizon_mixins_arg0: i32,
+                    __horizon_mixins_arg1: i32,
+                    __horizon_mixins_arg2: i32,
+                    __horizon_mixins_arg3: f32|
+                ({
+                    fn sunset_mount_hearts(
+                        w: i32,
+                        h: i32,
+                        hearts: i32,
+                        health: f32,
+                        operation: impl FnOnce(
+                            i32,
+                            i32,
+                            i32,
+                            f32,
+                        ) -> Vec<horizon_client::hud_layout::GuiDraw>,
+                    ) -> Vec<horizon_client::hud_layout::GuiDraw> {
+                        let draws = operation(w, h, hearts, health);
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return draws;
+                        }
+                        crate::game::sunset_hunger::raise(draws)
+                    }
+                    sunset_mount_hearts
+                })(
+                    __horizon_mixins_arg0,
+                    __horizon_mixins_arg1,
+                    __horizon_mixins_arg2,
+                    __horizon_mixins_arg3,
+                    |
+                        __horizon_mixins_arg0: i32,
+                        __horizon_mixins_arg1: i32,
+                        __horizon_mixins_arg2: i32,
+                        __horizon_mixins_arg3: f32|
+                    horizon_client::hud_layout::vehicle_health(
+                        __horizon_mixins_arg0,
+                        __horizon_mixins_arg1,
+                        __horizon_mixins_arg2,
+                        __horizon_mixins_arg3,
+                    ),
+                ))(w, h, hearts, m.health);
                 self.keep_status_rows(&draws, w, h);
                 self.gui_layer(
                     "minecraft:vehicle_health",
@@ -2721,6 +3369,42 @@ pub mod game {
                 alpha: u32,
                 background: bool,
             ) -> usize {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_streamer_name_tag(
+                        this: &mut NameTagLayouts,
+                        batch: &mut HudBatch,
+                        atlas: &HudAtlas,
+                        text: &Text,
+                        y: f32,
+                        alpha: u32,
+                        background: bool,
+                    ) -> ::core::ops::ControlFlow<usize> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return ::core::ops::ControlFlow::Continue(());
+                        }
+                        match crate::game::sunset_streamer::protect(text) {
+                            Some(shown) => {
+                                ::core::ops::ControlFlow::Break(
+                                    crate::game::sunset_streamer::guarded(|| {
+                                        this.name_tag(batch, atlas, &shown, y, alpha, background)
+                                    }),
+                                )
+                            }
+                            None => ::core::ops::ControlFlow::Continue(()),
+                        }
+                    }
+                    sunset_streamer_name_tag(
+                        &mut *self,
+                        &mut *batch,
+                        atlas,
+                        text,
+                        y,
+                        alpha,
+                        background,
+                    )
+                } {
+                    return __horizon_mixins_return;
+                }
                 const MAX_LINES: usize = 512;
                 const MAX_VERTICES: usize = 512;
                 let slot = self.next;
@@ -2979,6 +3663,14 @@ pub mod game {
                 /// still applies to the grass set here; the swamp's noise colours
                 /// replace it.
                 fn native_biome_colors(&self, biome: &str, colors: &mut BiomeColors) {
+                    {
+                        fn sunset_water_tint(colors: &mut BiomeColors) {
+                            if ::sunset_core::lifecycle::RUNTIME.running() {
+                                colors.water = ::sunset_core::water::lighter(colors.water);
+                            }
+                        }
+                        sunset_water_tint(&mut *colors)
+                    };
                     self.fire_biome_colors(biome, colors);
                 }
             }
@@ -3012,6 +3704,16 @@ pub mod game {
                     partial: f32,
                     canceled: &mut bool,
                 ) {
+                    {
+                        fn sunset_block_overlay_draw(canceled: &mut bool) {
+                            if ::sunset_core::lifecycle::RUNTIME.running()
+                                && ::sunset_core::block_overlay::active()
+                            {
+                                *canceled = true;
+                            }
+                        }
+                        sunset_block_overlay_draw(&mut *canceled)
+                    };
                     self.fire_block_highlight(pos, state, partial, canceled);
                 }
             }
@@ -3052,6 +3754,28 @@ pub mod game {
                     modifiers: u32,
                     canceled: &mut bool,
                 ) {
+                    {
+                        fn sunset_wheel(
+                            game: &crate::game::Game<'_>,
+                            accumulated: [i32; 2],
+                            claimed: &mut bool,
+                        ) {
+                            let steps = accumulated[1] as f32;
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return;
+                            }
+                            if crate::game::sunset::gui_open() {
+                                crate::game::sunset::gui_wheel(game, steps);
+                                *claimed = true;
+                            } else if crate::game::sunset_render::camera_wheel(
+                                game,
+                                steps,
+                            ) {
+                                *claimed = true;
+                            }
+                        }
+                        sunset_wheel(&*self, accumulated, &mut *canceled)
+                    };
                     self.fire_mouse_scrolling(
                         scroll,
                         accumulated,
@@ -3096,6 +3820,32 @@ pub mod game {
                     argb: u32,
                     shadow: bool,
                 ) {
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_text_hook(
+                            game: &Game<'_>,
+                            batch: &mut HudBatch,
+                            text: &str,
+                            at: [f32; 2],
+                            argb: u32,
+                            shadow: bool,
+                        ) -> std::ops::ControlFlow<()> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            crate::game::sunset_font::draw(
+                                game,
+                                batch,
+                                text,
+                                at,
+                                argb,
+                                shadow,
+                            );
+                            std::ops::ControlFlow::Break(())
+                        }
+                        sunset_text_hook(&*self, batch, text, at, argb, shadow)
+                    } {
+                        return __horizon_mixins_return;
+                    }
                     let [a, r, g, b] = argb.to_be_bytes();
                     if a == 0 {
                         return;
@@ -3130,6 +3880,17 @@ pub mod game {
             impl __Fnr_Game_native_client_tick_post for Game<'_> {
                 /// Once a client tick, after the window's tick ran (`ClientTickEvent.Post`).
                 fn native_client_tick_post(&mut self) {
+                    {
+                        fn sunset_tick(game: &mut crate::game::Game<'_>) {
+                            crate::game::sunset::post_tick(game);
+                            crate::game::remote::sunset_tab_marks::apply(
+                                game,
+                                ::sunset_core::lifecycle::RUNTIME.running(),
+                            );
+                            crate::game::sunset_client_spoofer::pack_tick(game);
+                        }
+                        sunset_tick(&mut *self)
+                    };
                     self.fire_client_tick_post();
                 }
             }
@@ -3155,6 +3916,26 @@ pub mod game {
             impl __Fnr_Game_native_text_width for Game<'_> {
                 /// The width of `text` in GUI pixels, as `native_text` draws it on `draw` (`Font.width`).
                 fn native_text_width(&self, _draw: &HudBatch, text: &str) -> f32 {
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_text_width_hook(
+                            game: &Game<'_>,
+                            text: &str,
+                        ) -> std::ops::ControlFlow<f32> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            crate::game::sunset_font::ensure(&game.gui.atlas.font);
+                            if !crate::game::sunset_font::enabled() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            std::ops::ControlFlow::Break(
+                                crate::game::sunset_font::width(&game.gui.atlas.font, text),
+                            )
+                        }
+                        sunset_text_width_hook(&*self, text)
+                    } {
+                        return __horizon_mixins_return;
+                    }
                     HudBatch::text_width(&self.gui.atlas, text)
                 }
             }
@@ -3194,6 +3975,33 @@ pub mod game {
                     world_partial_tick: f32,
                     partial_tick: f32,
                 ) {
+                    {
+                        fn sunset_sky_frame(game: &mut crate::game::Game<'_>) {
+                            crate::game::sunset_packets::register();
+                            crate::game::sunset_streamer::register();
+                            crate::game::sunset_atmosphere_renderer::register();
+                            crate::game::sunset_render::register();
+                            crate::game::sunset::finish_shutdown(game);
+                            crate::game::sunset_baritone::maintain(game);
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return;
+                            }
+                            crate::game::sunset_gui_move::frame(game);
+                            crate::game::sunset_antibot::frame(game);
+                            crate::game::sunset_autoclicker::frame(game);
+                            crate::game::agent::sunset_goto::frame(game);
+                            crate::game::sunset_sky::shown(game);
+                            crate::game::sunset_hands::frame(game);
+                            crate::game::sunset_combat_inventory::frame(game);
+                            crate::game::sunset_api::frame(game);
+                            if !crate::game::sunset::running() {
+                                return;
+                            }
+                            crate::game::sunset_streamer_mode::frame(game);
+                            crate::game::sunset_chat_suggest::frame(game);
+                        }
+                        sunset_sky_frame(&mut *self)
+                    };
                     self.fire_render_frame_pre(
                         elapsed,
                         world_partial_tick,
@@ -3221,48 +4029,73 @@ pub mod game {
         impl __Fnr_Game_native_page_settings for Game<'_> {
             /// The settings mod `mod_id` registered, with their kept values, as its page shows them.
             fn native_page_settings(&self, mod_id: &str) -> Vec<NativeSetting> {
-                mod_api::__private::settings()
-                    .iter()
-                    .filter(|(owner, _)| *owner == mod_id)
-                    .map(|(_, spec)| {
-                        let kept = self.stored_setting(mod_id, &spec.key);
-                        let value = match (&spec.kind, spec.read(kept.as_deref())) {
-                            (_, mod_api::SettingValue::Toggle(on)) => {
-                                NativeSettingValue::Toggle(on)
-                            }
-                            (
-                                mod_api::SettingKind::Choice { options, .. },
-                                mod_api::SettingValue::Choice(index),
-                            ) => {
-                                NativeSettingValue::Choice {
-                                    options: options.clone(),
-                                    index,
-                                }
-                            }
-                            (
-                                mod_api::SettingKind::Range { min, max, step, .. },
-                                mod_api::SettingValue::Range(value),
-                            ) => {
-                                NativeSettingValue::Range {
-                                    min: *min,
-                                    max: *max,
-                                    step: *step,
-                                    value,
-                                }
-                            }
-                            (_, mod_api::SettingValue::Color(rgb)) => {
-                                NativeSettingValue::Color(rgb)
-                            }
-                            _ => NativeSettingValue::Toggle(false),
-                        };
-                        NativeSetting {
-                            key: spec.key.clone(),
-                            label: spec.label.clone(),
-                            tooltip: spec.tooltip.clone(),
-                            value,
+                ({
+                    fn sunset_settings(
+                        value: Vec<NativeSetting>,
+                        game: &Game<'_>,
+                        mod_id: &str,
+                    ) -> Vec<NativeSetting> {
+                        if mod_id != crate::game::sunset::ID {
+                            return value;
                         }
-                    })
-                    .collect()
+                        crate::game::sunset_runtime_menu::page_rows(game)
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, (label, on))| NativeSetting {
+                                key: format!("menu.{i}"),
+                                label,
+                                tooltip: None,
+                                value: NativeSettingValue::Toggle(on),
+                            })
+                            .collect()
+                    }
+                    sunset_settings
+                })(
+                    mod_api::__private::settings()
+                        .iter()
+                        .filter(|(owner, _)| *owner == mod_id)
+                        .map(|(_, spec)| {
+                            let kept = self.stored_setting(mod_id, &spec.key);
+                            let value = match (&spec.kind, spec.read(kept.as_deref())) {
+                                (_, mod_api::SettingValue::Toggle(on)) => {
+                                    NativeSettingValue::Toggle(on)
+                                }
+                                (
+                                    mod_api::SettingKind::Choice { options, .. },
+                                    mod_api::SettingValue::Choice(index),
+                                ) => {
+                                    NativeSettingValue::Choice {
+                                        options: options.clone(),
+                                        index,
+                                    }
+                                }
+                                (
+                                    mod_api::SettingKind::Range { min, max, step, .. },
+                                    mod_api::SettingValue::Range(value),
+                                ) => {
+                                    NativeSettingValue::Range {
+                                        min: *min,
+                                        max: *max,
+                                        step: *step,
+                                        value,
+                                    }
+                                }
+                                (_, mod_api::SettingValue::Color(rgb)) => {
+                                    NativeSettingValue::Color(rgb)
+                                }
+                                _ => NativeSettingValue::Toggle(false),
+                            };
+                            NativeSetting {
+                                key: spec.key.clone(),
+                                label: spec.label.clone(),
+                                tooltip: spec.tooltip.clone(),
+                                value,
+                            }
+                        })
+                        .collect(),
+                    self,
+                    mod_id,
+                )
             }
         }
         #[doc(hidden)]
@@ -3283,6 +4116,22 @@ pub mod game {
             /// Setting `j` of native mod `i`'s page (its index in Options > Mods) changed on the page:
             /// kept as the mod registered it, then the mod is told (`setting_changed`).
             fn native_setting_event(&mut self, i: usize, j: usize) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_click(
+                        game: &mut Game<'_>,
+                        i: usize,
+                        j: usize,
+                    ) -> ::core::ops::ControlFlow<()> {
+                        if crate::game::sunset_runtime_menu::mod_index(game) != Some(i) {
+                            return ::core::ops::ControlFlow::Continue(());
+                        }
+                        crate::game::sunset_runtime_menu::page_pressed(game, j);
+                        ::core::ops::ControlFlow::Break(())
+                    }
+                    sunset_click(&mut *self, i, j)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let Some(row) = self.settings.mods.installed.get(i) else {
                     return;
                 };
@@ -3335,6 +4184,29 @@ pub mod game {
                 &mut self,
                 packet: &horizon_protocol::packets::play::Clientbound,
             ) {
+                {
+                    fn sunset_gui_move_incoming(
+                        game: &mut Game<'_>,
+                        packet: &horizon_protocol::packets::play::Clientbound,
+                    ) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_gui_move::incoming_before(game, packet);
+                    }
+                    sunset_gui_move_incoming(&mut *self, packet)
+                };
+                {
+                    fn sunset_seedcracker_incoming(
+                        _game: &mut Game<'_>,
+                        packet: &horizon_protocol::packets::play::Clientbound,
+                    ) {
+                        if crate::game::sunset_seedcracker::incoming_before(packet) {
+                            crate::game::sunset_ore_sim::stop();
+                        }
+                    }
+                    sunset_seedcracker_incoming(&mut *self, packet)
+                };
                 if !mod_api::__private::listened(mod_api::HookId::ClientPacket) {
                     return;
                 }
@@ -3375,6 +4247,15 @@ pub mod game {
             /// `Window.updateFullscreenState`: a fullscreen change made by the window
             /// system is adopted by the option (`Minecraft.fullscreenStateChanged`).
             fn observe_fullscreen(&mut self) {
+                {
+                    fn sunset_sky_real(game: &mut crate::game::Game<'_>) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_sky::real(game);
+                    }
+                    sunset_sky_real(&mut *self)
+                };
                 if self.ui.options.calibration_window.is_some() {
                     return;
                 }
@@ -3447,6 +4328,17 @@ pub mod game {
         }
         impl __Fnr_Game_drop_pack_file for Game<'_> {
             fn drop_pack_file(&mut self, path: &Path) {
+                {
+                    fn sunset_profile_drop(
+                        game: &mut crate::game::Game<'_>,
+                        path: &std::path::Path,
+                    ) {
+                        if ::sunset_core::lifecycle::RUNTIME.running() {
+                            crate::game::sunset::profile_dropped(game, path);
+                        }
+                    }
+                    sunset_profile_drop(&mut *self, path)
+                };
                 let size = self.gui_size();
                 let handled = self.screen == super::Screen::Options
                     && self
@@ -3550,6 +4442,23 @@ pub mod game {
             /// front of) it, pulled in where visual shapes are in the way. Returns the
             /// position, yaw and pitch to render from.
             fn camera_view(&mut self, partial: f32) -> Option<(glam::DVec3, f32, f32)> {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_camera(
+                        game: &mut crate::game::Game<'_>,
+                        partial: f32,
+                    ) -> std::ops::ControlFlow<Option<(glam::DVec3, f32, f32)>> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        match crate::game::sunset_render::camera(game, partial) {
+                            Some(view) => std::ops::ControlFlow::Break(view),
+                            None => std::ops::ControlFlow::Continue(()),
+                        }
+                    }
+                    sunset_camera(&mut *self, partial)
+                } {
+                    return __horizon_mixins_return;
+                }
                 if self.studio.flying() {
                     return Some((
                         self.studio.freecam.position,
@@ -3658,6 +4567,20 @@ pub mod game {
         impl __Fnr_Game_cycle_camera for Game<'_> {
             /// `key.togglePerspective`: the next camera type, as a mod's `camera_type_cycle` leaves it.
             fn cycle_camera(&mut self) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_perspective() -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset_render::freecam_flying() {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_perspective()
+                } {
+                    return __horizon_mixins_return;
+                }
                 self.apply_requested_camera_type();
                 let previous = self.camera_type;
                 let mut next = previous.cycle();
@@ -3683,6 +4606,24 @@ pub mod game {
             /// The model's old pitch is the player's `xRotO`, which the turn moves
             /// with `xRot` (`turn_rotation`).
             fn turn_player(&mut self, xo: f64, yo: f64) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_turn(
+                        game: &mut crate::game::Game<'_>,
+                        xo: f64,
+                        yo: f64,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset_render::turn(game, xo, yo) {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_turn(&mut *self, xo, yo)
+                } {
+                    return __horizon_mixins_return;
+                }
                 if self.studio.flying() {
                     self.studio.freecam.turn((xo * 0.15) as f32, (yo * 0.15) as f32);
                     return;
@@ -3751,6 +4692,22 @@ pub mod game {
                 pressed: bool,
                 repeat: bool,
             ) -> bool {
+                {
+                    fn sunset_key(
+                        game: &mut crate::game::Game<'_>,
+                        key: winit::keyboard::KeyCode,
+                        pressed: bool,
+                        repeat: bool,
+                    ) {
+                        if repeat {
+                            return;
+                        }
+                        if let Some(name) = horizon_client::keybinds::key_name(key) {
+                            crate::game::sunset::key(game, name, pressed);
+                        }
+                    }
+                    sunset_key(&mut *self, key, pressed, repeat)
+                };
                 if !repeat {
                     self.rejected_keys.remove(&key);
                 }
@@ -3804,6 +4761,20 @@ pub mod game {
                 raw: KeyCode,
                 source: Source,
             ) -> Result<()> {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_keys(pressed: bool) -> std::ops::ControlFlow<Result<()>> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if pressed && crate::game::sunset::gui_open() {
+                            return std::ops::ControlFlow::Break(Ok(()));
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_keys(pressed)
+                } {
+                    return __horizon_mixins_return;
+                }
                 if self.screen == Screen::Playing && self.replay.playing() {
                     if !pressed {
                         self.keys.release(&key, source);
@@ -3871,6 +4842,35 @@ pub mod game {
         impl __Fnr_Game_play_mouse for Game<'_> {
             /// A mouse button while playing (window or control socket).
             fn play_mouse(&mut self, button: MouseButton, pressed: bool) -> Result<()> {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_buttons(
+                        game: &crate::game::Game<'_>,
+                        button: winit::event::MouseButton,
+                        pressed: bool,
+                    ) -> std::ops::ControlFlow<Result<()>> {
+                        crate::game::remote::sunset_combat_remote::native_mouse(
+                            game,
+                            button,
+                            pressed,
+                        );
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        crate::game::sunset_autoclicker::button(button);
+                        crate::game::sunset_combat_macros::user_mouse(
+                            game,
+                            button,
+                            pressed,
+                        );
+                        if pressed && crate::game::sunset::gui_open() {
+                            return std::ops::ControlFlow::Break(Ok(()));
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_buttons(&*self, button, pressed)
+                } {
+                    return __horizon_mixins_return;
+                }
                 if pressed {
                     self.pvp_click(button);
                 }
@@ -3917,7 +4917,15 @@ pub mod game {
                     self.screen_over_playing(),
                 );
                 if playing == self.was_playing {
-                    return;
+                    return ({
+                        fn sunset_input_screen(value: (), game: &crate::game::Game<'_>) {
+                            let _ = value;
+                            crate::game::remote::sunset_combat_remote::input_screen(
+                                game,
+                            );
+                        }
+                        sunset_input_screen
+                    })((), &*self);
                 }
                 self.was_playing = playing;
                 let options = [
@@ -3937,6 +4945,13 @@ pub mod game {
                 self.sync_toggle(1);
                 self.left = self.toggles.is_down(2);
                 self.right = self.toggles.is_down(3);
+                ({
+                    fn sunset_input_screen(value: (), game: &crate::game::Game<'_>) {
+                        let _ = value;
+                        crate::game::remote::sunset_combat_remote::input_screen(game);
+                    }
+                    sunset_input_screen
+                })((), &*self)
             }
         }
         #[doc(hidden)]
@@ -3958,6 +4973,15 @@ pub mod game {
         }
         impl __Fnr_Game_spawn_player for Game<'_> {
             fn spawn_player(&mut self) -> Result<()> {
+                {
+                    fn sunset_sky_shown(game: &mut crate::game::Game<'_>) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_sky::shown(game);
+                    }
+                    sunset_sky_shown(&mut *self)
+                };
                 if self.player.is_some() || self.remote.is_some() {
                     return Ok(());
                 }
@@ -4122,6 +5146,15 @@ pub mod game {
             /// An agent moving the mouse (`mouse-move`) counts as a grabbed pointer in
             /// an active window, as it cannot grab the real one.
             fn apply_mouse_look(&mut self) {
+                {
+                    fn sunset_mouse_before(game: &crate::game::Game<'_>) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_combat::aim_before(game);
+                    }
+                    sunset_mouse_before(&*self)
+                };
                 let mut look = self.look_options();
                 let time = self.started.elapsed().as_secs_f64();
                 let pointer = self.captured || self.agent_pointer;
@@ -4139,12 +5172,24 @@ pub mod game {
                         &mut look.smooth_camera,
                     );
                 }
-                if let Some((xo, yo)) = self
-                    .mouse
-                    .handle_accumulated_movement(time, active, grabbed, look)
-                {
-                    self.look_turn(xo, yo);
-                }
+                ({
+                    fn sunset_mouse_after(value: (), game: &mut crate::game::Game<'_>) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_combat::aim_after(game);
+                        value
+                    }
+                    sunset_mouse_after
+                })(
+                    if let Some((xo, yo)) = self
+                        .mouse
+                        .handle_accumulated_movement(time, active, grabbed, look)
+                    {
+                        self.look_turn(xo, yo);
+                    },
+                    &mut *self,
+                )
             }
         }
         #[doc(hidden)]
@@ -4217,6 +5262,27 @@ pub mod game {
                 entry_index: usize,
                 use_max: bool,
             ) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_place_recipe(
+                        game: &mut crate::game::Game<'_>,
+                        entry_index: usize,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::recipe_book::sunset_recipes::place(
+                            game,
+                            entry_index,
+                        ) {
+                            std::ops::ControlFlow::Break(())
+                        } else {
+                            std::ops::ControlFlow::Continue(())
+                        }
+                    }
+                    sunset_place_recipe(&mut *self, entry_index)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let Some(entry) = self
                     .recipe_ui
                     .book
@@ -4382,8 +5448,7 @@ pub mod game {
                 let needs = entry.requirements();
                 let mut left: Vec<(usize, String, u32)> = (0..36)
                     .filter_map(|i| {
-                        game
-                            .inventory[i]
+                        game.inventory[i]
                             .as_ref()
                             .map(|s| (i, s.item.to_string(), s.count))
                     })
@@ -4615,7 +5680,22 @@ pub mod game {
                             .chat
                             .add_signed(
                                 &self.gui.atlas,
-                                content,
+                                ({
+                                    fn sunset_debug_chat_signed(
+                                        value: horizon_client::text::Text,
+                                    ) -> horizon_client::text::Text {
+                                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                                            return value;
+                                        }
+                                        ::sunset_core::chat_log::added(
+                                            &value.strip_legacy().plain(),
+                                            horizon_client::chat::ChatSource::Player as u8,
+                                        );
+                                        crate::game::sunset_streamer::protect(&value)
+                                            .unwrap_or(value)
+                                    }
+                                    sunset_debug_chat_signed
+                                })(content),
                                 signature,
                                 trust.tag(),
                                 self.visual_ticks(),
@@ -4663,6 +5743,27 @@ pub mod game {
             }
             impl __Fnr_Game_remote_continue_attack for Game<'_> {
                 fn remote_continue_attack(&mut self, down: bool) {
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_packet_mine_held(
+                            game: &mut crate::game::Game<'_>,
+                            down: bool,
+                        ) -> std::ops::ControlFlow<()> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            if down
+                                && (crate::game::sunset_parity::hit_blocked(game)
+                                    || crate::game::sunset_packet_mine::click(game, false))
+                            {
+                                std::ops::ControlFlow::Break(())
+                            } else {
+                                std::ops::ControlFlow::Continue(())
+                            }
+                        }
+                        sunset_packet_mine_held(&mut *self, down)
+                    } {
+                        return __horizon_mixins_return;
+                    }
                     self.with_interaction_swing_scope(|game| {
                         game.remote_continue_attack_inner(down)
                     });
@@ -4686,6 +5787,70 @@ pub mod game {
             }
             impl __Fnr_Game_remote_start_attack for Game<'_> {
                 fn remote_start_attack(&mut self) -> bool {
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_crit_click(
+                            game: &mut crate::game::Game<'_>,
+                        ) -> std::ops::ControlFlow<bool> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            if crate::game::sunset_combat_macros::active()
+                                || crate::game::sunset_parity::hit_blocked(game)
+                                || crate::game::sunset_click_fix::hit_blocked(game)
+                                || crate::game::sunset_click_fix::hit_select(game)
+                            {
+                                return std::ops::ControlFlow::Break(false);
+                            }
+                            if let Some(instant) = crate::game::sunset_click_fix::aim_click(
+                                game,
+                            ) {
+                                return std::ops::ControlFlow::Break(instant);
+                            }
+                            if crate::game::sunset_click_fix::miss_blocked(game) {
+                                return std::ops::ControlFlow::Break(false);
+                            }
+                            if crate::game::sunset_packet_mine::click(game, true) {
+                                return std::ops::ControlFlow::Break(false);
+                            }
+                            if let Some(instant) = crate::game::sunset_melee::before_click(
+                                game,
+                            ) {
+                                return std::ops::ControlFlow::Break(instant);
+                            }
+                            crate::game::sunset_auto_mace::before_click(game);
+                            if let Some(instant) = crate::game::sunset_aura_knockback::displace_click(
+                                game,
+                            ) {
+                                return std::ops::ControlFlow::Break(instant);
+                            }
+                            match crate::game::sunset::crit_click(game) {
+                                Some(instant) => std::ops::ControlFlow::Break(instant),
+                                None => {
+                                    crate::game::sunset_vein_miner::clicked(game);
+                                    std::ops::ControlFlow::Continue(())
+                                }
+                            }
+                        }
+                        sunset_crit_click(&mut *self)
+                    } {
+                        return __horizon_mixins_return;
+                    }
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_crystal(
+                            game: &mut crate::game::Game<'_>,
+                        ) -> std::ops::ControlFlow<bool> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            match crate::game::sunset_combat::crystal_attack(game) {
+                                Some(instant) => std::ops::ControlFlow::Break(instant),
+                                None => std::ops::ControlFlow::Continue(()),
+                            }
+                        }
+                        sunset_crystal(&mut *self)
+                    } {
+                        return __horizon_mixins_return;
+                    }
                     self.with_interaction_swing_scope(Game::remote_start_attack_inner)
                 }
             }
@@ -4705,6 +5870,65 @@ pub mod game {
             }
             impl __Fnr_Game_remote_use for Game<'_> {
                 fn remote_use(&mut self, attempt: mod_api::InteractionAttempt) {
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_combat_use(
+                            game: &mut crate::game::Game<'_>,
+                        ) -> std::ops::ControlFlow<()> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            use crate::game::sunset_combat_inventory as inventory;
+                            if inventory::bursting()
+                                || crate::game::sunset_player::using_more()
+                            {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            if crate::game::sunset_parity::use_blocked(game)
+                                || crate::game::sunset_click_fix::use_blocked(game)
+                                || crate::game::sunset_player::click_through(game)
+                                || crate::game::sunset_combat_macros::intercept_use(game)
+                                || inventory::intercept_use(game)
+                            {
+                                return std::ops::ControlFlow::Break(());
+                            }
+                            if let Some(hand) = crate::game::sunset_click_fix::ghost_place(
+                                game,
+                            ) {
+                                game.use_delay = 4;
+                                game.remote_use_block(hand);
+                                return std::ops::ControlFlow::Break(());
+                            }
+                            while inventory::burst_more(game) {
+                                game.remote_use(mod_api::InteractionAttempt::Press);
+                            }
+                            while crate::game::sunset_player::use_more(game) {
+                                game.remote_use(mod_api::InteractionAttempt::Press);
+                            }
+                            std::ops::ControlFlow::Continue(())
+                        }
+                        sunset_combat_use(&mut *self)
+                    } {
+                        return __horizon_mixins_return;
+                    }
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_telly_use(
+                            game: &crate::game::Game<'_>,
+                        ) -> std::ops::ControlFlow<()> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            if crate::game::sunset_scaffold_telly::manual_use_blocked(
+                                game,
+                            ) {
+                                std::ops::ControlFlow::Break(())
+                            } else {
+                                std::ops::ControlFlow::Continue(())
+                            }
+                        }
+                        sunset_telly_use(&*self)
+                    } {
+                        return __horizon_mixins_return;
+                    }
                     self.with_interaction_swing_scope(|game| {
                         game.remote_use_inner(attempt)
                     });
@@ -4790,7 +6014,20 @@ pub mod game {
                         if controls_camera
                             && let Some(packet) = r
                                 .position_sender
-                                .update(pos, (yaw, pitch), on_ground, collision)
+                                .update(
+                                    pos,
+                                    ({
+                                        fn sunset_sent_look(value: (f32, f32)) -> (f32, f32) {
+                                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                                return value;
+                                            }
+                                            crate::game::sunset_rotation::sent(value)
+                                        }
+                                        sunset_sent_look
+                                    })((yaw, pitch)),
+                                    on_ground,
+                                    collision,
+                                )
                         {
                             out.push(packet);
                             moved_or_rotated = true;
@@ -4948,11 +6185,77 @@ pub mod game {
                         | u8::from(keys.left) << 2 | u8::from(keys.right) << 3
                         | u8::from(keys.jump) << 4 | u8::from(keys.shift) << 5
                         | u8::from(keys.sprint) << 6;
-                    let keys = if self.controls_camera() {
-                        keys
-                    } else {
-                        Keys::default()
-                    };
+                    let keys = ({
+                        fn sunset_screen_keys(value: Keys) -> Keys {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return value;
+                            }
+                            let keys = value;
+                            let block_scale = ::sunset_core::motion::take_block_use_scale();
+                            let core = ::sunset_core::motion::Keys {
+                                forward: keys.forward,
+                                backward: keys.backward,
+                                left: keys.left,
+                                right: keys.right,
+                                jump: keys.jump,
+                                shift: keys.shift,
+                                sprint: keys.sprint,
+                                analog: keys.analog,
+                            };
+                            let screen = ::sunset_core::motion::screen_keys(core)
+                                .map(|k| Keys {
+                                    forward: k.forward,
+                                    backward: k.backward,
+                                    left: k.left,
+                                    right: k.right,
+                                    jump: k.jump,
+                                    shift: k.shift,
+                                    sprint: k.sprint,
+                                    analog: k.analog,
+                                    ..keys
+                                });
+                            let turn = ::sunset_core::motion::take_move_yaw();
+                            let no_sprint = ::sunset_core::motion::take_no_sprint()
+                                || block_scale.is_some_and(|s| s < 1.0);
+                            let freeze = ::sunset_core::motion::take_freeze();
+                            let scale = match (
+                                ::sunset_core::motion::take_input_scale(),
+                                block_scale,
+                            ) {
+                                (Some(a), Some(b)) => Some(a * b),
+                                (a, b) => a.or(b),
+                            };
+                            ::sunset_core::motion::set_pending_move(
+                                Some(::sunset_core::motion::PendingMove {
+                                    block_scale,
+                                    turn,
+                                    no_sprint,
+                                    freeze,
+                                }),
+                            );
+                            if screen.is_none() && !no_sprint && !freeze
+                                && scale.is_none()
+                            {
+                                return keys;
+                            }
+                            let mut keys = screen.unwrap_or(keys);
+                            if let Some(scale) = scale {
+                                keys.analog = Some(keys.direction().map(|v| v * scale));
+                            }
+                            if freeze {
+                                keys = Default::default();
+                                ::sunset_core::motion::set_across(None);
+                                ::sunset_core::motion::set_up(None);
+                                ::sunset_core::motion::set_strafe_dir(None);
+                                ::sunset_core::motion::set_flying_speed(None);
+                            }
+                            if no_sprint || freeze {
+                                keys.sprint = false;
+                            }
+                            keys
+                        }
+                        sunset_screen_keys
+                    })(if self.controls_camera() { keys } else { Keys::default() });
                     self.rope_rot_old = (self.yaw, self.pitch);
                     let riding = self.screen != Screen::Dead
                         && self.remote_ride(keys, sprint_window)?;
@@ -4977,7 +6280,57 @@ pub mod game {
                         [player.position.x, player.position.y, player.position.z],
                     );
                     let was_flying = player.flying;
-                    self.sync_player_body();
+                    ({
+                        fn __horizon_mixins_after(
+                            __horizon_mixins_after_value: (),
+                            __horizon_mixins_context_0: &mut Game<'_>,
+                        ) -> () {
+                            fn sunset_screen_move(game: &mut Game<'_>) {
+                                if !::sunset_core::lifecycle::RUNTIME.running() {
+                                    return;
+                                }
+                                let Some(pending) = ::sunset_core::motion::take_pending_move()
+                                else {
+                                    return;
+                                };
+                                let hits = ::sunset_core::motion::take_attack_slow().min(5);
+                                if game.screen == Screen::Dead || game.sleeping.is_some()
+                                    || game.riding.is_some()
+                                {
+                                    return;
+                                }
+                                let Some(player) = game.player.as_mut() else {
+                                    return;
+                                };
+                                if (player.item_use_speed.is_some()
+                                    || pending.block_scale.is_some())
+                                    && ::sunset_core::motion::no_slow_grim()
+                                {
+                                    ::sunset_core::motion::set_across(None);
+                                    ::sunset_core::motion::set_up(None);
+                                }
+                                if ::sunset_core::motion::no_slow_skip() {
+                                    player.item_use_speed = None;
+                                }
+                                if hits > 0 {
+                                    let cut = 0.6f64.powi(hits as i32);
+                                    player.velocity.x *= cut;
+                                    player.velocity.z *= cut;
+                                    let _ = player.set_sprinting(false);
+                                }
+                                if pending.no_sprint || pending.freeze {
+                                    let _ = player.set_sprinting(false);
+                                }
+                                if let Some(yaw) = pending.turn {
+                                    ::sunset_core::motion::set_restore_yaw(Some(player.yaw));
+                                    player.yaw = yaw;
+                                }
+                            }
+                            sunset_screen_move(__horizon_mixins_context_0);
+                            __horizon_mixins_after_value
+                        }
+                        __horizon_mixins_after
+                    })(self.sync_player_body(), &mut *self);
                     if self.screen == Screen::Dead {
                         self.ui.death_time = self.ui.death_time.saturating_add(1);
                     }
@@ -5150,7 +6503,19 @@ pub mod game {
                             _ => {}
                         }
                     }
-                    self.seat_own_stands();
+                    {
+                        {
+                            fn sunset_screen_keys_after(game: &mut Game<'_>) {
+                                if let Some(yaw) = ::sunset_core::motion::take_restore_yaw()
+                                    && let Some(p) = game.player.as_mut()
+                                {
+                                    p.yaw = yaw;
+                                }
+                            }
+                            sunset_screen_keys_after(&mut *self)
+                        };
+                        self.seat_own_stands();
+                    };
                     if self
                         .remote
                         .as_ref()
@@ -5222,6 +6587,41 @@ pub mod game {
                 /// MultiPlayerGameMode.useItem for `hand`, if it holds something: whether
                 /// the click ends there, as far as this client can tell (`use_ends_click`).
                 fn remote_use_item(&mut self, hand: Hand) -> bool {
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_combat_use_hand(
+                            game: &crate::game::Game<'_>,
+                            hand: horizon_client::first_person::Hand,
+                        ) -> std::ops::ControlFlow<bool> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            if game.using.is_none()
+                                && ::sunset_core::motion::no_slow_grim()
+                            {
+                                crate::game::sunset_render::no_slow_reset();
+                            }
+                            let slot = if hand == horizon_client::first_person::Hand::Off
+                            {
+                                crate::game::sunset_util::OFFHAND
+                            } else {
+                                game.selected
+                            };
+                            crate::game::sunset_duel::used(game, slot);
+                            if game
+                                .stack_in(slot)
+                                .is_some_and(|s| {
+                                    horizon_client::spear::Kinetic::of(&s.item).is_some()
+                                }) && crate::game::sunset_melee::block_stab(game)
+                            {
+                                std::ops::ControlFlow::Break(true)
+                            } else {
+                                std::ops::ControlFlow::Continue(())
+                            }
+                        }
+                        sunset_combat_use_hand(&*self, hand)
+                    } {
+                        return __horizon_mixins_return;
+                    }
                     if self.spectator() {
                         return false;
                     }
@@ -5380,6 +6780,15 @@ pub mod game {
                 keep_world: bool,
                 reason: horizon_client::level_loading::Reason,
             ) {
+                {
+                    fn sunset_antibot_world() {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_antibot::world_changed();
+                    }
+                    sunset_antibot_world()
+                };
                 self.enter_remote_dimension_body(spawn, keep_world, reason)
             }
         }
@@ -5399,6 +6808,26 @@ pub mod game {
         }
         impl __Fnr_Game_handle_command_suggestions for Game<'_> {
             fn handle_command_suggestions(&mut self, data: &[u8]) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_vanish_completions(
+                        game: &mut crate::game::Game<'_>,
+                        data: &[u8],
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset_server_scan::completions(data) {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        if crate::game::sunset_vanish::completions(game, data) {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_vanish_completions(&mut *self, data)
+                } {
+                    return __horizon_mixins_return;
+                }
                 self.handle_command_suggestions_body(data)
             }
         }
@@ -5420,6 +6849,28 @@ pub mod game {
         }
         impl __Fnr_Game_poll_remote for Game<'_> {
             fn poll_remote(&mut self) -> Result<()> {
+                {
+                    fn sunset_packet_tap(game: &mut Game<'_>) {
+                        let Some(r) = game.remote.as_mut() else {
+                            return;
+                        };
+                        let mut fresh = std::collections::VecDeque::new();
+                        r.receive_credited_backlog(&mut fresh);
+                        let now = fresh
+                            .front()
+                            .map_or_else(std::time::Instant::now, |(_, at)| *at);
+                        let mut items: std::collections::VecDeque<_> = fresh
+                            .into_iter()
+                            .map(|(item, _)| item)
+                            .collect();
+                        crate::game::sunset_packets::poll(&r.session, &mut items, 0);
+                        if r.backlog.is_empty() && !items.is_empty() {
+                            r.backlog_since = Some(now);
+                        }
+                        r.backlog.extend(items.into_iter().map(|item| (item, now)));
+                    }
+                    sunset_packet_tap(&mut *self)
+                };
                 self.poll_remote_body()
             }
         }
@@ -5437,7 +6888,22 @@ pub mod game {
         }
         impl __Fnr_Game_remote_handle_input for Game<'_> {
             fn remote_handle_input(&mut self) {
-                self.remote_handle_input_body()
+                {
+                    fn sunset_autoclicker_input(game: &mut crate::game::Game<'_>) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_autoclicker::tick(game);
+                    }
+                    sunset_autoclicker_input(&mut *self)
+                };
+                ({
+                    fn sunset_input_consumed(value: ()) {
+                        let _ = value;
+                        crate::game::remote::sunset_combat_remote::input_consumed();
+                    }
+                    sunset_input_consumed
+                })(self.remote_handle_input_body())
             }
         }
         #[doc(hidden)]
@@ -5456,6 +6922,23 @@ pub mod game {
         }
         impl __Fnr_Game_remote_menu_ops for Game<'_> {
             fn remote_menu_ops(&mut self, ops: &[(Option<usize>, i32, Input)]) -> bool {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_gui_move_click(
+                        game: &mut Game<'_>,
+                    ) -> std::ops::ControlFlow<bool> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset_gui_move::before_click(game) {
+                            std::ops::ControlFlow::Continue(())
+                        } else {
+                            std::ops::ControlFlow::Break(false)
+                        }
+                    }
+                    sunset_gui_move_click(&mut *self)
+                } {
+                    return __horizon_mixins_return;
+                }
                 self.remote_menu_ops_body(ops)
             }
         }
@@ -5475,6 +6958,15 @@ pub mod game {
         }
         impl __Fnr_Game_remote_menu_state for Game<'_> {
             fn remote_menu_state(&mut self, container: i32, state: i32) {
+                {
+                    fn sunset_gui_move_state(game: &mut Game<'_>, container: i32) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_gui_move::menu_state(game, container);
+                    }
+                    sunset_gui_move_state(&mut *self, container)
+                };
                 self.remote_menu_state_body(container, state)
             }
         }
@@ -5494,6 +6986,23 @@ pub mod game {
         }
         impl __Fnr_Game_remote_quick_move_all for Game<'_> {
             fn remote_quick_move_all(&mut self, slot: usize, moved: &ItemStack) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_gui_move_action(
+                        game: &mut Game<'_>,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset_gui_move::before_click(game) {
+                            std::ops::ControlFlow::Continue(())
+                        } else {
+                            std::ops::ControlFlow::Break(())
+                        }
+                    }
+                    sunset_gui_move_action(&mut *self)
+                } {
+                    return __horizon_mixins_return;
+                }
                 self.remote_quick_move_all_body(slot, moved)
             }
         }
@@ -5513,6 +7022,28 @@ pub mod game {
         }
         impl __Fnr_Game_remote_send_state for Game<'_> {
             fn remote_send_state(&mut self, input: u8) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_screen_input(
+                        game: &mut Game<'_>,
+                        input: u8,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        match ::sunset_core::motion::screen_input(input) {
+                            Some(changed) => {
+                                crate::game::sunset_debug::gui_move_input(input, changed);
+                                std::ops::ControlFlow::Break(
+                                    game.remote_send_state(changed),
+                                )
+                            }
+                            None => std::ops::ControlFlow::Continue(()),
+                        }
+                    }
+                    sunset_screen_input(&mut *self, input)
+                } {
+                    return __horizon_mixins_return;
+                }
                 self.remote_send_state_body(input)
             }
         }
@@ -5532,6 +7063,19 @@ pub mod game {
         }
         impl __Fnr_Game_remote_teleport for Game<'_> {
             fn remote_teleport(&mut self, p: &play::PlayerPosition) -> Result<()> {
+                {
+                    fn sunset_server_correction(
+                        game: &mut crate::game::Game<'_>,
+                        position: &horizon_protocol::packets::play::PlayerPosition,
+                    ) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_debug::correction(game, position);
+                        crate::game::sunset::server_correction(game);
+                    }
+                    sunset_server_correction(&mut *self, p)
+                };
                 self.remote_teleport_body(p)
             }
         }
@@ -5551,6 +7095,23 @@ pub mod game {
         }
         impl __Fnr_Game_remote_throw for Game<'_> {
             fn remote_throw(&mut self, right: bool, input: horizon_client::menu::Input) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_gui_move_action(
+                        game: &mut Game<'_>,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset_gui_move::before_click(game) {
+                            std::ops::ControlFlow::Continue(())
+                        } else {
+                            std::ops::ControlFlow::Break(())
+                        }
+                    }
+                    sunset_gui_move_action(&mut *self)
+                } {
+                    return __horizon_mixins_return;
+                }
                 self.remote_throw_body(right, input)
             }
         }
@@ -5568,6 +7129,83 @@ pub mod game {
         }
         impl __Fnr_Game_send for Game<'_> {
             fn send(&self, packet: S) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_send(
+                        game: &crate::game::Game<'_>,
+                        packet: &horizon_protocol::packets::play::Serverbound,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            if ::sunset_core::lifecycle::RUNTIME.stopping() {
+                                crate::game::sunset_lag::drain(game);
+                            }
+                            crate::game::sunset_combat_wire::observe(game, packet);
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        use crate::game::sunset::Out;
+                        let replay = crate::game::sunset_gui_move::replaying();
+                        if !replay && crate::game::sunset::order_hold(game, packet) {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        if crate::game::sunset_compat::SunsetGame::sunset_window(&*game)
+                            && crate::game::sunset_compat::SunsetGame::native_on(
+                                &*game,
+                                crate::game::sunset::ID,
+                            ) && !crate::game::sunset_melee::allowed_out(game, packet)
+                        {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        let changed = match if replay {
+                            Out::Pass
+                        } else {
+                            crate::game::sunset::outgoing(game, packet)
+                        } {
+                            Out::Pass => None,
+                            Out::Drop => return std::ops::ControlFlow::Break(()),
+                            Out::Replace(changed) => Some(changed),
+                        };
+                        let changed = match if replay {
+                            Out::Pass
+                        } else {
+                            crate::game::sunset_api::packet_out(
+                                game,
+                                changed.as_ref().unwrap_or(packet),
+                            )
+                        } {
+                            Out::Pass => changed,
+                            Out::Drop => return std::ops::ControlFlow::Break(()),
+                            Out::Replace(replaced) => Some(replaced),
+                        };
+                        let last = changed.as_ref().unwrap_or(packet);
+                        if !replay && crate::game::sunset_gui_move::outgoing(game, last)
+                        {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        if let Some(release) = crate::game::sunset_hands::before_outgoing(
+                            game,
+                            last,
+                        ) && let Some(remote) = &game.remote
+                        {
+                            crate::game::sunset_combat_wire::delivered(game, &release);
+                            remote.session.send(release);
+                        }
+                        if crate::game::sunset_lag::held(game, last) {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        crate::game::sunset_combat_wire::delivered(game, last);
+                        match changed {
+                            None => std::ops::ControlFlow::Continue(()),
+                            Some(changed) => {
+                                if let Some(r) = &game.remote {
+                                    r.session.send(changed);
+                                }
+                                std::ops::ControlFlow::Break(())
+                            }
+                        }
+                    }
+                    sunset_send(&*self, &packet)
+                } {
+                    return __horizon_mixins_return;
+                }
                 self.send_body(packet)
             }
         }
@@ -5583,6 +7221,19 @@ pub mod game {
         }
         impl __Fnr_Game_server_block for Game<'_> {
             fn server_block(&mut self, pos: [i32; 3], state: i32) {
+                {
+                    fn sunset_block_update(
+                        game: &crate::game::Game<'_>,
+                        pos: [i32; 3],
+                        state: i32,
+                    ) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_new_chunks::block_update(game, pos, state);
+                    }
+                    sunset_block_update(&*self, pos, state)
+                };
                 self.server_block_body(pos, state)
             }
         }
@@ -5612,6 +7263,15 @@ pub mod game {
                 position: [f64; 3],
                 rotation: [f32; 3],
             ) {
+                {
+                    fn sunset_antibot_entity(game: &crate::game::Game<'_>, id: i32) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_antibot::invalidate(game, id);
+                    }
+                    sunset_antibot_entity(&*self, id)
+                };
                 self.spawn_entity_body(id, kind, position, rotation)
             }
         }
@@ -6481,8 +8141,7 @@ pub mod game {
                     .map_or_else(
                         Vec::new,
                         |r| {
-                            r
-                                .players
+                            r.players
                                 .iter()
                                 .map(|(&u, n)| (
                                     u,
@@ -6508,8 +8167,7 @@ pub mod game {
                     .map_or_else(
                         Vec::new,
                         |r| {
-                            r
-                                .entities
+                            r.entities
                                 .iter()
                                 .take(4097)
                                 .map(|(&id, e)| (
@@ -7000,8 +8658,7 @@ pub mod game {
             ) -> bool {
                 player_uuid(game, id)
                     .is_some_and(|uuid| {
-                        game
-                            .remote
+                        game.remote
                             .as_ref()
                             .is_some_and(|r| r.tab_players.contains_key(&uuid))
                     })
@@ -7309,6 +8966,24 @@ pub mod game {
                 p: &play::LevelChunkWithLight,
                 scratch: &mut DecodeScratch,
             ) -> Result<Chunk, String> {
+                {
+                    fn sunset_chunk_packet(
+                        format: &ChunkFormat,
+                        p: &play::LevelChunkWithLight,
+                    ) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        crate::game::sunset_new_chunks::arrived(
+                            p.x,
+                            p.z,
+                            &p.chunk.buffer,
+                            format.sections,
+                            format.biome_bits,
+                        );
+                    }
+                    sunset_chunk_packet(&*self, p)
+                };
                 let generation = shared_generation();
                 let ours = block_strategy();
                 let offset = (self.min_y - self.column.min_y()).div_euclid(16);
@@ -7413,6 +9088,20 @@ pub mod game {
             /// `ClientboundRemoveEntitiesPacket`: a packet's ids go together, the big
             /// entity lists filtered once (#13007), each id's own cleanup in order.
             fn remove_entities(&mut self, ids: &[i32]) {
+                {
+                    fn sunset_antibot_despawn(
+                        game: &crate::game::Game<'_>,
+                        ids: &[i32],
+                    ) {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return;
+                        }
+                        for &id in ids {
+                            crate::game::sunset_antibot::invalidate(game, id);
+                        }
+                    }
+                    sunset_antibot_despawn(&*self, ids)
+                };
                 let removed: horizon_client::fast_hash::FxHashSet<u32> = ids
                     .iter()
                     .map(|&id| id as u32)
@@ -7529,6 +9218,95 @@ pub mod game {
             /// The local player's tick in its vehicle, in place of its own movement:
             /// false when it rides nothing.
             fn remote_ride(&mut self, keys: Keys, sprint_window: i32) -> Result<bool> {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_boat_ride(
+                        this: &mut Game<'_>,
+                        keys: Keys,
+                        sprint_window: i32,
+                    ) -> std::ops::ControlFlow<Result<bool>> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+                        static BUSY: AtomicBool = AtomicBool::new(false);
+                        if BUSY.load(Relaxed)
+                            || this
+                                .riding
+                                .is_none_or(|id| !this.boats.iter().any(|b| b.id == id))
+                        {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        BUSY.store(true, Relaxed);
+                        let value = this.remote_ride(keys, sprint_window);
+                        BUSY.store(false, Relaxed);
+                        if value.is_err() {
+                            return std::ops::ControlFlow::Break(value);
+                        }
+                        let Some(i) = this
+                            .riding
+                            .and_then(|id| this.boats.iter().position(|b| b.id == id))
+                        else {
+                            return std::ops::ControlFlow::Break(value);
+                        };
+                        let mut b = this.boats[i].clone();
+                        let cell = [
+                            b.position.x.floor() as i32,
+                            (b.position.y + 0.1).floor() as i32,
+                            b.position.z.floor() as i32,
+                        ];
+                        let f = crate::game::sunset_util::facts(this, cell);
+                        let in_water = f.fluid == crate::game::Fluid::Water
+                            || f.waterlogged;
+                        let Some((v, yaw)) = super::sunset_vehicle::boat(
+                            this,
+                            b.velocity,
+                            b.on_ground,
+                            in_water,
+                        ) else {
+                            return std::ops::ControlFlow::Break(value);
+                        };
+                        if let Some(yaw) = yaw {
+                            b.yaw = yaw;
+                        }
+                        let obstacles = this.boat_move_obstacles(&b);
+                        b.position = b.previous;
+                        let mut scene = horizon_client::collisions::EntityCollisions {
+                            blocks: horizon_client::collisions::SceneCollisions {
+                                world: &this.world,
+                                binding: this.collision,
+                                subject: None,
+                            },
+                            entities: &obstacles,
+                            border: None,
+                        };
+                        if let Ok(moved) = scene.resolve(b.bounds(), v, 0.0, b.on_ground)
+                        {
+                            b.position = Vec3::new(
+                                b.position.x + moved.x,
+                                b.position.y + moved.y,
+                                b.position.z + moved.z,
+                            );
+                            b.on_ground = v.y < 0.0 && moved.y > v.y;
+                            let keep = |want: f64, got: f64| {
+                                if (got - want).abs() > 1.0e-7 { 0.0 } else { want }
+                            };
+                            b.velocity = Vec3::new(
+                                keep(v.x, moved.x),
+                                keep(v.y, moved.y),
+                                keep(v.z, moved.z),
+                            );
+                        }
+                        this.boats.update(i, |slot| *slot = b);
+                        let seat = this.player_boat_seat(i);
+                        if let Some(p) = this.player.as_mut() {
+                            p.position = seat;
+                        }
+                        std::ops::ControlFlow::Break(value)
+                    }
+                    sunset_boat_ride(&mut *self, keys, sprint_window)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let Some(id) = self.riding else {
                     return Ok(false);
                 };
@@ -7789,7 +9567,50 @@ pub mod game {
                 };
                 let mut fog = horizon_client::fog::setup_fog(tables, &self.fog, &input);
                 if !self.settings.horizon.fog {
-                    horizon_client::fog::clear_distance_fog(&mut fog, &input);
+                    (|
+                        __horizon_mixins_arg0: &mut FogData,
+                        __horizon_mixins_arg1: &FogInputs|
+                    ({
+                        fn sunset_ambience_fog(
+                            fog: &mut FogData,
+                            input: &FogInputs,
+                            operation: impl FnOnce(&mut FogData, &FogInputs) -> (),
+                        ) {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return operation(fog, input);
+                            }
+                            let custom = *::sunset_core::fog::CUSTOM
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner());
+                            let Some((start, end, rgb, cover)) = custom
+                                .filter(|_| input.fog_type == FogType::Atmospheric) else {
+                                return operation(fog, input);
+                            };
+                            (fog.environmental_start, fog.environmental_end) = (
+                                start,
+                                end,
+                            );
+                            (fog.render_distance_start, fog.render_distance_end) = (
+                                start,
+                                end,
+                            );
+                            fog.color = [rgb[0], rgb[1], rgb[2], fog.color[3]];
+                            if cover {
+                                fog.sky_end = end;
+                            }
+                        }
+                        sunset_ambience_fog
+                    })(
+                        __horizon_mixins_arg0,
+                        __horizon_mixins_arg1,
+                        |
+                            __horizon_mixins_arg0: &mut FogData,
+                            __horizon_mixins_arg1: &FogInputs|
+                        horizon_client::fog::clear_distance_fog(
+                            __horizon_mixins_arg0,
+                            __horizon_mixins_arg1,
+                        ),
+                    ))(&mut fog, &input);
                 }
                 if self.title.is_none() {
                     fog.color = self
@@ -7824,7 +9645,33 @@ pub mod game {
                 let eye = self.eye_position();
                 if let Some(e) = eye {
                     let brightness = self.eye_brightness(e);
-                    let inside_portal = self.client_portal_effect();
+                    let inside_portal = ({
+                        fn sunset_portal_after(
+                            value: bool,
+                            game: &mut crate::game::Game<'_>,
+                        ) -> bool {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return value;
+                            }
+                            crate::game::sunset_parity::portal_after(game);
+                            value
+                        }
+                        sunset_portal_after
+                    })(
+                        {
+                            {
+                                fn sunset_portal_before(game: &mut crate::game::Game<'_>) {
+                                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                                        return;
+                                    }
+                                    crate::game::sunset_parity::portal_before(game);
+                                }
+                                sunset_portal_before(&mut *self)
+                            };
+                            self.client_portal_effect()
+                        },
+                        &mut *self,
+                    );
                     self.screen_fx.tick(brightness, inside_portal);
                     if self.remote.is_some() && self.portals.player.cooldown > 0 {
                         self.portals.player.cooldown -= 1;
@@ -8077,11 +9924,100 @@ pub mod game {
         impl __Fnr_Game_draw_scoreboard for Game<'_> {
             /// `Hud.extractScoreboardSidebar` / `displayScoreboardSidebar`.
             fn draw_scoreboard(&self, batch: &mut HudBatch) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_scoreboard() -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset_render::NO_SCOREBOARD
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                        {
+                            std::ops::ControlFlow::Break(())
+                        } else {
+                            std::ops::ControlFlow::Continue(())
+                        }
+                    }
+                    sunset_scoreboard()
+                } {
+                    return __horizon_mixins_return;
+                }
                 let board = &self.score.board;
                 let Some(objective) = self.sidebar_objective() else {
                     return;
                 };
-                let draws = hud_overlays::sidebar(
+                let draws = (|
+                    __horizon_mixins_arg0: i32,
+                    __horizon_mixins_arg1: i32,
+                    __horizon_mixins_arg2: &horizon_client::scoreboard::Scoreboard,
+                    __horizon_mixins_arg3: &horizon_client::scoreboard::Objective,
+                    __horizon_mixins_arg4: &horizon_client::font::Font,
+                    __horizon_mixins_arg5: u32,
+                    __horizon_mixins_arg6: u32|
+                ({
+                    fn sunset_sidebar(
+                        w: i32,
+                        h: i32,
+                        board: &horizon_client::scoreboard::Scoreboard,
+                        objective: &horizon_client::scoreboard::Objective,
+                        font: &horizon_client::font::Font,
+                        background: u32,
+                        header: u32,
+                        operation: impl FnOnce(
+                            i32,
+                            i32,
+                            &horizon_client::scoreboard::Scoreboard,
+                            &horizon_client::scoreboard::Objective,
+                            &horizon_client::font::Font,
+                            u32,
+                            u32,
+                        ) -> Vec<horizon_client::hud_layout::GuiDraw>,
+                    ) -> Vec<horizon_client::hud_layout::GuiDraw> {
+                        let mut draws = operation(
+                            w,
+                            h,
+                            board,
+                            objective,
+                            font,
+                            background,
+                            header,
+                        );
+                        if ::sunset_core::lifecycle::RUNTIME.running() {
+                            draws = crate::game::sunset_streamer::protect_draws(
+                                draws,
+                                font,
+                                false,
+                            );
+                            crate::game::sunset_scoreboard_pos::apply(&mut draws);
+                        }
+                        draws
+                    }
+                    sunset_sidebar
+                })(
+                    __horizon_mixins_arg0,
+                    __horizon_mixins_arg1,
+                    __horizon_mixins_arg2,
+                    __horizon_mixins_arg3,
+                    __horizon_mixins_arg4,
+                    __horizon_mixins_arg5,
+                    __horizon_mixins_arg6,
+                    |
+                        __horizon_mixins_arg0: i32,
+                        __horizon_mixins_arg1: i32,
+                        __horizon_mixins_arg2: &horizon_client::scoreboard::Scoreboard,
+                        __horizon_mixins_arg3: &horizon_client::scoreboard::Objective,
+                        __horizon_mixins_arg4: &horizon_client::font::Font,
+                        __horizon_mixins_arg5: u32,
+                        __horizon_mixins_arg6: u32|
+                    hud_overlays::sidebar(
+                        __horizon_mixins_arg0,
+                        __horizon_mixins_arg1,
+                        __horizon_mixins_arg2,
+                        __horizon_mixins_arg3,
+                        __horizon_mixins_arg4,
+                        __horizon_mixins_arg5,
+                        __horizon_mixins_arg6,
+                    ),
+                ))(
                     batch.width as i32,
                     batch.height as i32,
                     board,
@@ -8119,7 +10055,15 @@ pub mod game {
                             player
                         }),
                 );
-            players
+            ({
+                fn sunset_tab_marks_local(value: Vec<TabPlayer>) -> Vec<TabPlayer> {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return value;
+                    }
+                    crate::game::remote::sunset_tab_marks::local(value)
+                }
+                sunset_tab_marks_local
+            })(players)
         }
         #[doc(hidden)]
         pub fn __fnr_install_local_tab_players() -> bool {
@@ -8147,6 +10091,22 @@ pub mod game {
                 batch: &mut HudBatch,
                 phase: horizon_client::screen_draw::RenderPhase,
             ) {
+                {
+                    fn sunset_chat_suggest_draw(
+                        game: &crate::game::Game<'_>,
+                        batch: &mut horizon_client::hud::HudBatch,
+                        phase: horizon_client::screen_draw::RenderPhase,
+                    ) {
+                        if !::sunset_core::lifecycle::RUNTIME.running()
+                            || phase
+                                != horizon_client::screen_draw::RenderPhase::Foreground
+                        {
+                            return;
+                        }
+                        crate::game::sunset_chat_suggest::draw(game, batch);
+                    }
+                    sunset_chat_suggest_draw(&*self, &mut *batch, phase)
+                };
                 use horizon_client::screen_draw::RenderPhase;
                 let hook = match phase {
                     RenderPhase::Background => mod_api::HookId::ScreenRenderBackground,
@@ -8189,6 +10149,29 @@ pub mod game {
             /// behind an in-game screen (inventory, containers, creative, books, signs, editors),
             /// giving native mods a chance to suppress it (`Flow::Cancel`) or apply menu blur / tiled background.
             fn render_transparent_background(&self, screen: &str, batch: &mut HudBatch) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_menu_dark(
+                        game: &Game<'_>,
+                    ) -> ::core::ops::ControlFlow<()> {
+                        use std::sync::atomic::Ordering::Relaxed;
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return ::core::ops::ControlFlow::Continue(());
+                        }
+                        if ::sunset_core::overlay::INVENTORY_BLUR.load(Relaxed)
+                            && (game.screen == Screen::Inventory
+                                || game.screen == Screen::Creative)
+                        {
+                            game.screen_blur_requested.set(true);
+                        }
+                        if ::sunset_core::overlay::NO_MENU.load(Relaxed) {
+                            return ::core::ops::ControlFlow::Break(());
+                        }
+                        ::core::ops::ControlFlow::Continue(())
+                    }
+                    sunset_menu_dark(self)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let mut canceled = false;
                 self.native_screen_transparent_background(screen, batch, &mut canceled);
                 if !canceled {
@@ -8243,6 +10226,23 @@ pub mod game {
         impl __Fnr_Game_handle_pack_push for Game<'_> {
             /// `handleResourcePackPush`.
             fn handle_pack_push(&mut self, p: ResourcePackPush) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_fake_pack(
+                        game: &mut Game<'_>,
+                        p: &ResourcePackPush,
+                    ) -> ::core::ops::ControlFlow<()> {
+                        if ::sunset_core::lifecycle::RUNTIME.running()
+                            && valid_url(&p.url)
+                            && crate::game::sunset_client_spoofer::fake_pack(game, p.id)
+                        {
+                            return ::core::ops::ControlFlow::Break(());
+                        }
+                        ::core::ops::ControlFlow::Continue(())
+                    }
+                    sunset_fake_pack(&mut *self, &p)
+                } {
+                    return __horizon_mixins_return;
+                }
                 if !valid_url(&p.url) {
                     self.send_pack_status(p.id, action::INVALID_URL);
                     return;
@@ -8322,6 +10322,23 @@ pub mod game {
             /// `ClientPacketListener.handleOpenSignEditor`: the editor on a sign this
             /// client has.
             fn remote_open_sign_editor(&mut self, p: play::OpenSignEditor) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_auto_sign_open(
+                        p: &play::OpenSignEditor,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset_auto_sign::swallow(p.pos, p.front) {
+                            std::ops::ControlFlow::Break(())
+                        } else {
+                            std::ops::ControlFlow::Continue(())
+                        }
+                    }
+                    sunset_auto_sign_open(&p)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let key = (p.pos[0], p.pos[1], p.pos[2]);
                 if matches!(
                     self.world.block_entities.get(& key), Some(BlockEntity::Sign(_))
@@ -8432,6 +10449,55 @@ pub mod game {
                     y: f32,
                     after_name: Vec<(horizon_client::text::Text, u32)>,
                 ) {
+                    if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                        fn sunset_durability_line(
+                            game: &mut crate::game::Game<'_>,
+                            batch: &mut HudBatch,
+                            stack: &ItemStack,
+                            creative: bool,
+                            x: f32,
+                            y: f32,
+                            after_name: &Vec<(horizon_client::text::Text, u32)>,
+                        ) -> std::ops::ControlFlow<()> {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return std::ops::ControlFlow::Continue(());
+                            }
+                            crate::game::sunset_hud_bars::tooltip(
+                                game,
+                                batch,
+                                stack,
+                                creative,
+                                [x, y],
+                                after_name,
+                            )
+                        }
+                        sunset_durability_line(
+                            &mut *self,
+                            &mut *batch,
+                            stack,
+                            creative,
+                            x,
+                            y,
+                            &after_name,
+                        )
+                    } {
+                        return __horizon_mixins_return;
+                    }
+                    {
+                        fn sunset_peek(
+                            game: &crate::game::Game<'_>,
+                            batch: &mut HudBatch,
+                            stack: &ItemStack,
+                            x: f32,
+                            y: f32,
+                        ) {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return;
+                            }
+                            crate::game::sunset_render::peek(game, batch, stack, x, y);
+                        }
+                        sunset_peek(&*self, &mut *batch, stack, x, y)
+                    };
                     let mut lines = self.stack_tooltip_lines(stack, false, creative);
                     if lines.is_empty()
                         && !horizon_client::item_tooltip::tooltip_display(stack)
@@ -8442,7 +10508,26 @@ pub mod game {
                     let after_name_index = lines.len().min(1);
                     lines.splice(after_name_index..after_name_index, after_name);
                     let mut component = None;
-                    self.native_tooltip_component(stack, &mut component);
+                    {
+                        ({
+                            fn sunset_streamer_tooltip(
+                                lines: &mut Vec<(horizon_client::text::Text, u32)>,
+                            ) {
+                                if !::sunset_core::lifecycle::RUNTIME.running() {
+                                    return;
+                                }
+                                for (line, _) in lines.iter_mut() {
+                                    if let Some(shown) = crate::game::sunset_streamer::protect(
+                                        line,
+                                    ) {
+                                        *line = shown;
+                                    }
+                                }
+                            }
+                            sunset_streamer_tooltip
+                        })(&mut lines);
+                        self.native_tooltip_component(stack, &mut component);
+                    };
                     let images: Vec<TooltipImage> = tooltip_component_size(component)
                         .and_then(|size| {
                             Some(TooltipImage {
@@ -8547,6 +10632,23 @@ pub mod game {
         impl __Fnr_Game_draw_slot_tooltip for Game<'_> {
             /// Hovered-slot tooltip on the plain inventory, crafting and container screens.
             fn draw_slot_tooltip(&mut self, batch: &mut HudBatch) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_peek_pinned(
+                        game: &crate::game::Game<'_>,
+                        batch: &mut HudBatch,
+                    ) -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset_render::pinned(game, batch) {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_peek_pinned(&*self, &mut *batch)
+                } {
+                    return __horizon_mixins_return;
+                }
                 let Some(slot) = self.slot_at(batch, self.cursor.0, self.cursor.1) else {
                     return;
                 };
@@ -8601,7 +10703,22 @@ pub mod game {
                 let partial = self.clock.fraction() as f32;
                 let background = self.settings.text_background(0.0);
                 let font = &self.gui.atlas.font;
-                let draws = self.titles.overlay_message(w, h, partial, font, background);
+                let draws = ({
+                    fn sunset_streamer_centred(
+                        value: Vec<hud_layout::GuiDraw>,
+                        game: &Game<'_>,
+                    ) -> Vec<hud_layout::GuiDraw> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return value;
+                        }
+                        crate::game::sunset_streamer::protect_draws(
+                            value,
+                            &game.gui.atlas.font,
+                            true,
+                        )
+                    }
+                    sunset_streamer_centred
+                })(self.titles.overlay_message(w, h, partial, font, background), self);
                 hud_layout::paint(batch, &self.gui.atlas, &draws);
             }
         }
@@ -8622,11 +10739,43 @@ pub mod game {
         impl __Fnr_Game_draw_title for Game<'_> {
             /// `Hud.extractTitle`.
             fn draw_title(&self, batch: &mut HudBatch) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_title() -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if crate::game::sunset_render::NO_TITLES
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                        {
+                            std::ops::ControlFlow::Break(())
+                        } else {
+                            std::ops::ControlFlow::Continue(())
+                        }
+                    }
+                    sunset_title()
+                } {
+                    return __horizon_mixins_return;
+                }
                 let (w, h) = (batch.width as i32, batch.height as i32);
                 let partial = self.clock.fraction() as f32;
                 let background = self.settings.text_background(0.0);
                 let font = &self.gui.atlas.font;
-                let draws = self.titles.title(w, h, partial, font, background);
+                let draws = ({
+                    fn sunset_streamer_centred(
+                        value: Vec<hud_layout::GuiDraw>,
+                        game: &Game<'_>,
+                    ) -> Vec<hud_layout::GuiDraw> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return value;
+                        }
+                        crate::game::sunset_streamer::protect_draws(
+                            value,
+                            &game.gui.atlas.font,
+                            true,
+                        )
+                    }
+                    sunset_streamer_centred
+                })(self.titles.title(w, h, partial, font, background), self);
                 hud_layout::paint(batch, &self.gui.atlas, &draws);
             }
         }
@@ -8650,6 +10799,14 @@ pub mod game {
             /// menu items go back (Player.closeContainer), then the world is saved,
             /// once.
             fn finish_perf(&mut self) {
+                {
+                    fn sunset_atmosphere_finish(game: &mut crate::game::Game<'_>) {
+                        if let Some(renderer) = game.renderer.as_mut() {
+                            crate::game::sunset_atmosphere_renderer::release(renderer);
+                        }
+                    }
+                    sunset_atmosphere_finish(&mut *self)
+                };
                 if self.options.split_guest {
                     return;
                 }
@@ -8687,6 +10844,46 @@ pub mod game {
     }
     impl __Fnr_Game_hud_layers for Game<'_> {
         fn hud_layers(&mut self, size: [u32; 2]) -> HudBatch {
+            {
+                fn sunset_atmosphere_sync(game: &crate::game::Game<'_>) {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return;
+                    }
+                    crate::game::sunset_atmosphere::sync(game);
+                }
+                sunset_atmosphere_sync(&*self)
+            };
+            {
+                fn sunset_block_overlay_render(game: &crate::game::Game<'_>) {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return;
+                    }
+                    use ::sunset_core::block_overlay as flags;
+                    flags::publish(false);
+                    if !crate::game::sunset_compat::SunsetGame::sunset_window(&*game)
+                        || !crate::game::sunset_compat::SunsetGame::native_on(
+                            &*game,
+                            crate::game::sunset::ID,
+                        )
+                    {
+                        return;
+                    }
+                    crate::game::sunset::ensure_loaded(game);
+                    flags::publish(
+                        crate::game::sunset_block_overlay::suppress_native_outline(game),
+                    );
+                }
+                sunset_block_overlay_render(&*self)
+            };
+            {
+                fn sunset_crosshair(game: &crate::game::Game<'_>, size: [u32; 2]) {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return;
+                    }
+                    crate::game::sunset_crosshair::prepare(game, size);
+                }
+                sunset_crosshair(&*self, size)
+            };
             self.input_hud_begin();
             let mut batch = HudBatch::new(size, self.settings.gui_scale_inputs());
             batch.vertices = reused_hud_vertices();
@@ -8825,7 +11022,48 @@ pub mod game {
                                 self.crosshair_living(),
                             )
                         });
-                    let draws = hud_layout::crosshair(wi, hi, attack, full);
+                    let draws = (|
+                        __horizon_mixins_arg0: i32,
+                        __horizon_mixins_arg1: i32,
+                        __horizon_mixins_arg2: Option<f32>,
+                        __horizon_mixins_arg3: bool|
+                    ({
+                        fn sunset_crosshair_mark(
+                            w: i32,
+                            h: i32,
+                            attack: Option<f32>,
+                            full: bool,
+                            operation: impl FnOnce(
+                                i32,
+                                i32,
+                                Option<f32>,
+                                bool,
+                            ) -> Vec<hud_layout::GuiDraw>,
+                        ) -> Vec<hud_layout::GuiDraw> {
+                            let mut draws = operation(w, h, attack, full);
+                            if ::sunset_core::lifecycle::RUNTIME.running() {
+                                crate::game::sunset_crosshair_flags::hide_mark(&mut draws);
+                            }
+                            draws
+                        }
+                        sunset_crosshair_mark
+                    })(
+                        __horizon_mixins_arg0,
+                        __horizon_mixins_arg1,
+                        __horizon_mixins_arg2,
+                        __horizon_mixins_arg3,
+                        |
+                            __horizon_mixins_arg0: i32,
+                            __horizon_mixins_arg1: i32,
+                            __horizon_mixins_arg2: Option<f32>,
+                            __horizon_mixins_arg3: bool|
+                        hud_layout::crosshair(
+                            __horizon_mixins_arg0,
+                            __horizon_mixins_arg1,
+                            __horizon_mixins_arg2,
+                            __horizon_mixins_arg3,
+                        ),
+                    ))(wi, hi, attack, full);
                     self.gui_layer(
                         "minecraft:crosshair",
                         &mut batch,
@@ -8907,12 +11145,26 @@ pub mod game {
             }
             if show_hud {
                 let has_experience = !self.creative && !spectator;
-                let contextual = horizon_client::locator_bar::ContextualBar::next(
-                    self.waypoints.has_waypoints(),
-                    !spectator && self.jumpable_mount(),
-                    self.mount_jumping(),
+                let contextual = ({
+                    fn sunset_mount_xp(
+                        value: crate::game::sunset_hunger::InfoBar,
+                        has_experience: bool,
+                    ) -> crate::game::sunset_hunger::InfoBar {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return value;
+                        }
+                        crate::game::sunset_hunger::mount_xp_bar(value, has_experience)
+                    }
+                    sunset_mount_xp
+                })(
+                    horizon_client::locator_bar::ContextualBar::next(
+                        self.waypoints.has_waypoints(),
+                        !spectator && self.jumpable_mount(),
+                        self.mount_jumping(),
+                        has_experience,
+                        self.experience_recent(),
+                    ),
                     has_experience,
-                    self.experience_recent(),
                 );
                 use horizon_client::locator_bar::ContextualBar;
                 let vehicle_hearts = if spectator {
@@ -8955,7 +11207,53 @@ pub mod game {
                     };
                     let at = [p.position.x, p.position.y, p.position.z];
                     let mut native_health_hud = None;
-                    self.native_health_hud(&inputs, wi, hi, &mut native_health_hud);
+                    ({
+                        fn __horizon_mixins_after(
+                            __horizon_mixins_after_value: (),
+                            __horizon_mixins_context_0: &mut Game<'_>,
+                            __horizon_mixins_context_1: &mut Option<
+                                Vec<hud_layout::GuiDraw>,
+                            >,
+                            __horizon_mixins_context_2: &hud_layout::HealthInputs,
+                            __horizon_mixins_context_3: &HudBatch,
+                        ) -> () {
+                            fn sunset_hunger_bars(
+                                game: &mut Game<'_>,
+                                draws: &mut Option<Vec<hud_layout::GuiDraw>>,
+                                inputs: &hud_layout::HealthInputs,
+                                batch: &HudBatch,
+                            ) {
+                                if !::sunset_core::lifecycle::RUNTIME.running()
+                                    || draws.is_some()
+                                {
+                                    return;
+                                }
+                                let (w, h) = (batch.width as i32, batch.height as i32);
+                                if let std::ops::ControlFlow::Break(rows) = crate::game::sunset_hunger::layout(
+                                    &mut game.health_hud,
+                                    inputs,
+                                    w,
+                                    h,
+                                ) {
+                                    *draws = Some(rows);
+                                }
+                            }
+                            sunset_hunger_bars(
+                                __horizon_mixins_context_0,
+                                __horizon_mixins_context_1,
+                                __horizon_mixins_context_2,
+                                __horizon_mixins_context_3,
+                            );
+                            __horizon_mixins_after_value
+                        }
+                        __horizon_mixins_after
+                    })(
+                        self.native_health_hud(&inputs, wi, hi, &mut native_health_hud),
+                        &mut *self,
+                        &mut native_health_hud,
+                        &inputs,
+                        &batch,
+                    );
                     let draws = match native_health_hud {
                         Some(draws) => draws,
                         None => self.health_hud.layout(&inputs, wi, hi),
@@ -9230,6 +11528,22 @@ pub mod game {
         /// met its box at, measured from the mob's feet (`EntityHitResult
         /// .getLocation() - entity.position()`, the interact packet's location).
         fn mob_hit(&self) -> Option<(usize, f64, [f64; 3])> {
+            if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                fn sunset_mob_hit(
+                    game: &crate::game::Game<'_>,
+                ) -> std::ops::ControlFlow<Option<(usize, f64, [f64; 3])>> {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    match crate::game::sunset_player::mob_hit(game) {
+                        Some(hit) => std::ops::ControlFlow::Break(hit),
+                        None => std::ops::ControlFlow::Continue(()),
+                    }
+                }
+                sunset_mob_hit(&*self)
+            } {
+                return __horizon_mixins_return;
+            }
             if let Some(hit) = self.tick_mob {
                 return hit;
             }
@@ -9250,6 +11564,22 @@ pub mod game {
         /// Voxel traversal against non-air, non-fluid blocks, clipped against
         /// each block's outline shape (`BlockGetter.clip` with `ClipContext.Block.OUTLINE`).
         fn pick(&self) -> Option<Hit> {
+            if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                fn sunset_liquid_pick(
+                    game: &crate::game::Game<'_>,
+                ) -> std::ops::ControlFlow<Option<Hit>> {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    match crate::game::sunset_parity::liquid_pick(game) {
+                        Some(hit) => std::ops::ControlFlow::Break(hit),
+                        None => std::ops::ControlFlow::Continue(()),
+                    }
+                }
+                sunset_liquid_pick(&*self)
+            } {
+                return __horizon_mixins_return;
+            }
             if let Some(hit) = self.forced_hit {
                 return Some(hit);
             }
@@ -9280,6 +11610,26 @@ pub mod game {
     impl __Fnr_Game_reach for Game<'_> {
         /// `Player.blockInteractionRange`: the block pick's and mining's reach.
         fn reach(&self) -> f64 {
+            if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                fn sunset_reach(
+                    game: &crate::game::Game<'_>,
+                ) -> std::ops::ControlFlow<f64> {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    match crate::game::sunset_player::reach_extra() {
+                        Some(extra) => {
+                            std::ops::ControlFlow::Break(
+                                if game.creative { 5.0 } else { 4.5 } + extra,
+                            )
+                        }
+                        None => std::ops::ControlFlow::Continue(()),
+                    }
+                }
+                sunset_reach(&*self)
+            } {
+                return __horizon_mixins_return;
+            }
             self.block_reach
         }
     }
@@ -9295,6 +11645,12 @@ pub mod game {
     }
     impl __Fnr_Game_tick for Game<'_> {
         fn tick(&mut self) -> Result<()> {
+            {
+                fn sunset_pretick(game: &mut crate::game::Game<'_>) {
+                    crate::game::sunset::pre_tick(game);
+                }
+                sunset_pretick(&mut *self)
+            };
             self.expire_client_cracks();
             if self.agent.hold_server {
                 return Ok(());
@@ -9321,6 +11677,26 @@ pub mod game {
     /// from the keysym the keymap resolved instead. This includes function keys on
     /// remapped media rows; ordinary character bindings still use their physical key.
     pub fn follow_keymap(event: &mut WindowEvent) {
+        {
+            fn sunset_rf_click(event: &mut winit::event::WindowEvent) {
+                crate::game::sunset_hands::rf_event(event);
+            }
+            sunset_rf_click(&mut *event)
+        };
+        {
+            fn sunset_window_event(event: &winit::event::WindowEvent) {
+                if !::sunset_core::lifecycle::RUNTIME.running() {
+                    return;
+                }
+                crate::game::sunset::text_event(event);
+                crate::game::sunset::bind_event(event);
+                if let winit::event::WindowEvent::Focused(false) = event {
+                    crate::game::sunset_combat_macros::focus_lost();
+                    crate::game::sunset_hands::rf_focus_lost();
+                }
+            }
+            sunset_window_event(&*event)
+        };
         if let WindowEvent::KeyboardInput { event, .. } = event {
             follow_named_keymap(&event.logical_key, &mut event.physical_key);
         }
@@ -9462,8 +11838,7 @@ pub mod game {
                         (0.0, 0.0),
                         |(a, t), info| {
                             let sum = |name: &str| {
-                                info
-                                    .modifiers
+                                info.modifiers
                                     .iter()
                                     .filter(|m| m.attribute == name)
                                     .map(|m| m.amount as f32)
@@ -9638,8 +12013,7 @@ pub mod game {
                 .map_or(
                     0,
                     |n| {
-                        n
-                            .keys()
+                        n.keys()
                             .filter(|k| k.len() <= LONGEST)
                             .fold(0u32, |m, k| m | 1 << k.len())
                     },
@@ -13883,8 +16257,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                 c.generation = c.generation.wrapping_add(1).max(1);
                 let stale = world
                     .is_some_and(|world| {
-                        c
-                            .job
+                        c.job
                             .as_ref()
                             .is_some_and(|j| {
                                 j.world != world || j.dimension != game.dim.id()
@@ -14777,8 +17150,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
             let module = super::sunset::with(|s| s.module(NAME).cloned())
                 .ok_or("Missing Baritone settings.")?;
             let ordinary = state(|c| {
-                c
-                    .job
+                c.job
                     .as_ref()
                     .and_then(|j| {
                         let (source, pos) = match &j.source {
@@ -14799,8 +17171,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                     let name: Option<&str> = game
                         .sunset_baritone_observation(pos)
                         .map(|(id, _)| {
-                            game
-                                .res
+                            game.res
                                 .facts()
                                 .get(horizon_world::registry::BlockStateId(id))
                                 .name
@@ -14817,8 +17188,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                 return Ok(text);
             }
             let (query, excluded) = state(|c| {
-                    c
-                        .job
+                    c.job
                         .as_ref()
                         .map(|j| (
                             ores::MiningQuery {
@@ -17055,8 +19425,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                     .into_iter()
                     .flatten()
                     .any(|held| {
-                        game
-                            .res
+                        game.res
                             .items()
                             .get(&held.item)
                             .is_some_and(|item| item.block.is_some())
@@ -18258,16 +20627,15 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                     .mobs
                     .iter()
                     .filter(|m| {
-                        id
-                            .map_or_else(
-                                || {
-                                    super::sunset_util::dist(
-                                        local,
-                                        [m.position.x, m.position.y, m.position.z],
-                                    ) < 12.0
-                                },
-                                |id| id == m.id,
-                            )
+                        id.map_or_else(
+                            || {
+                                super::sunset_util::dist(
+                                    local,
+                                    [m.position.x, m.position.y, m.position.z],
+                                ) < 12.0
+                            },
+                            |id| id == m.id,
+                        )
                     })
                     .take(8)
                 {
@@ -21331,8 +23699,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                             store
                                 .read(n)
                                 .is_ok_and(|text| with(|s| {
-                                    s
-                                        .check_profile(&text)
+                                    s.check_profile(&text)
                                         .is_ok_and(|c| s.matches_profile(&c.body))
                                 }))
                         })
@@ -21453,8 +23820,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                 .filter(|h| !h.is_empty());
             match home
                 .and_then(|h| {
-                    path
-                        .strip_prefix(h)
+                    path.strip_prefix(h)
                         .ok()
                         .map(|rest| std::path::Path::new("~").join(rest))
                 })
@@ -21783,12 +24149,10 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                 return None;
             }
             let last = |key: &str| {
-                text
-                    .lines()
+                text.lines()
                     .rev()
                     .find_map(|l| {
-                        l
-                            .strip_prefix(key)
+                        l.strip_prefix(key)
                             .and_then(|r| r.strip_prefix('='))
                             .map(str::trim)
                     })
@@ -21826,8 +24190,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
         pub(super) const MENU_HIDDEN_LIST: u32 = 2;
         pub(super) fn hidden_since_1_3(text: &str) -> std::borrow::Cow<'_, str> {
             let saved_with = |l: &str| {
-                l
-                    .strip_prefix(MENU_HIDDEN)
+                l.strip_prefix(MENU_HIDDEN)
                     .and_then(|r| r.strip_prefix('='))
                     .and_then(|v| v.trim().parse::<u32>().ok())
             };
@@ -21837,8 +24200,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                 return std::borrow::Cow::Borrowed(text);
             }
             let last = |id: &str, field: &str| {
-                text
-                    .lines()
+                text.lines()
                     .rev()
                     .find_map(|l| {
                         l.strip_prefix(&format!("{id}.{field}=")).map(str::trim)
@@ -24214,10 +26576,9 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
         }
         pub(super) fn edge_sneak(game: &Game<'_>, m: &Module) -> bool {
             let block = |s: Option<&horizon_client::items::ItemStack>| {
-                s
-                    .is_some_and(|s| {
-                        game.res.items().get(&s.item).is_some_and(|i| i.block.is_some())
-                    })
+                s.is_some_and(|s| {
+                    game.res.items().get(&s.item).is_some_and(|i| i.block.is_some())
+                })
             };
             if (m.b("Only holding blocks") && !block(game.held())
                 && !block(game.offhand.as_ref()))
@@ -24855,8 +27216,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
         }
         fn auto_armor_key(game: &mut Game<'_>, key: &str) {
             let bound = with(|s| {
-                s
-                    .module("Inventory Manager")
+                s.module("Inventory Manager")
                     .map(|m| (key_from_text(m.t("Auto Armor key")), m.b("Auto Armor")))
             });
             let Some((Some(bound), on)) = bound else {
@@ -25045,8 +27405,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                 let item = st.item.clone();
                 let source = (9..36)
                     .find(|&i| {
-                        game
-                            .inventory
+                        game.inventory
                             .get(i)
                             .and_then(|s| s.as_ref())
                             .is_some_and(|s| s.item == item)
@@ -25304,8 +27663,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
             };
             let slot = (0..9)
                 .find(|&i| {
-                    game
-                        .inventory
+                    game.inventory
                         .get(i)
                         .and_then(|s| s.as_ref())
                         .is_some_and(|s| s.item.ends_with(want))
@@ -25970,8 +28328,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                 return;
             }
             if let Some((pause, disable)) = with(|s| {
-                s
-                    .module("Flight")
+                s.module("Flight")
                     .filter(|m| m.on)
                     .map(|m| (
                         m.n("Setback pause (ticks)") as u32,
@@ -26432,8 +28789,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
             );
             let sneaking = game.keys.raw(&KeyCode::ShiftLeft);
             let no_slow = with(|s| {
-                s
-                    .module("No Slow")
+                s.module("No Slow")
                     .filter(|m| m.on)
                     .map(|m| [m.n("Ground %"), m.n("Air %")])
             });
@@ -26934,8 +29290,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                 }
             }
             let share = |on: &str, h: &str, v: &str| {
-                m
-                    .filter(|m| m.b(on))
+                m.filter(|m| m.b(on))
                     .map_or([1.0; 2], |m| [velocity_share(m, h), velocity_share(m, v)])
             };
             let liquids = m
@@ -27655,8 +30010,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                 });
                 if ground && ticks > 3 && !with(|s| s.crit_again) {
                     let plan = with(|s| {
-                            s
-                                .module("Criticals")
+                            s.module("Criticals")
                                 .filter(|m| m.on)
                                 .cloned()
                                 .zip(s.crit_target)
@@ -27891,8 +30245,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
             let player = kind == Kind::Player;
             let identity = super::sunset_antibot::token(id);
             if with(|s| {
-                s
-                    .trigger_missed
+                s.trigger_missed
                     .is_some_and(|t| t.id != id || !super::sunset_antibot::current(t))
             }) {
                 with(|s| s.trigger_missed = None);
@@ -28093,8 +30446,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
             game.held()
                 .is_some_and(|h| {
                     let tagged = |tag: &str| {
-                        game
-                            .res
+                        game.res
                             .items()
                             .item_tags
                             .get(tag)
@@ -28645,8 +30997,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                     if game.remote.as_ref().is_some_and(|r| r.entity_id == p.id) {
                         fall(|f| f.confirm_smash(true, p.velocity[1]));
                         if with(|s| {
-                            s
-                                .module("Speed")
+                            s.module("Speed")
                                 .is_some_and(|m| m.on && m.p("Mode") == "Watchdog")
                         }) {
                             with(|s| s.watchdog.knocked(game.ticks, p.velocity));
@@ -28873,8 +31224,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
             };
             let (own, have) = ((game.yaw, game.pitch), last_look());
             if !turns(|t| {
-                t
-                    .queue
+                t.queue
                     .first()
                     .filter(|_| !t.carried)
                     .is_some_and(|head| Some(wire_look(have, own, head.look)) != have)
@@ -29599,8 +31949,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                     if !pasted
                         .lines()
                         .any(|l| {
-                            l
-                                .split_once('=')
+                            l.split_once('=')
                                 .is_some_and(|(k, _)| {
                                     k.trim().contains('.') && !k.trim().contains(' ')
                                 })
@@ -33899,12 +36248,10 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                 s.modules
                     .iter()
                     .flat_map(|m| {
-                        m
-                            .settings
+                        m.settings
                             .iter()
                             .filter_map(|st| {
-                                st
-                                    .name
+                                st.name
                                     .strip_suffix(" size")
                                     .map(|n| (
                                         n.to_owned(),
@@ -34570,8 +36917,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
             let (hover, hover_row) = (under.map(|(_, h)| h), under.map(|(r, _)| r));
             let searching = with(|s| !s.gui.search.trim().is_empty());
             let open: Vec<usize> = with(|s| {
-                s
-                    .gui
+                s.gui
                     .expanded
                     .iter()
                     .copied()
@@ -35452,8 +37798,7 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                 open_profile_menu(game);
             }
             let waiting = with(|s| {
-                s
-                    .gui
+                s.gui
                     .profile_menu
                     .as_ref()
                     .and_then(|m| Some((m.ask.clone()?, m.ask_file.clone())))
@@ -35853,10 +38198,9 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
             #[test]
             fn legacy_autoblock_preserves_old_shield_profiles_and_explicit_new_choices() {
                 let shown = |m: &Module, name: &str| {
-                    m
-                        .setting_visible(
-                            m.settings.iter().position(|s| s.name == name).unwrap(),
-                        )
+                    m.setting_visible(
+                        m.settings.iter().position(|s| s.name == name).unwrap(),
+                    )
                 };
                 let mut state = State::new();
                 state.load_text("killaura.shield=true\n");
@@ -35907,10 +38251,9 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                     .find(|m| m.name == "Auto Weapon")
                     .unwrap();
                 let shown = |m: &Module, name: &str| {
-                    m
-                        .setting_visible(
-                            m.settings.iter().position(|s| s.name == name).unwrap(),
-                        )
+                    m.setting_visible(
+                        m.settings.iter().position(|s| s.name == name).unwrap(),
+                    )
                 };
                 assert_eq!(weapon.p("Mode"), "Custom");
                 for name in ["Best weapon", "Axe on shields", "Prefer axes"] {
@@ -35987,10 +38330,9 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
             fn hud_places_and_inventory_blur_show_with_what_they_move() {
                 let mut state = State::new();
                 let shown = |m: &Module, name: &str| {
-                    m
-                        .setting_visible(
-                            m.settings.iter().position(|s| s.name == name).unwrap(),
-                        )
+                    m.setting_visible(
+                        m.settings.iter().position(|s| s.name == name).unwrap(),
+                    )
                 };
                 let set = |m: &mut Module, name: &str, value: &str| {
                     m.settings.iter_mut().find(|s| s.name == name).unwrap().parse(value)
@@ -36046,10 +38388,9 @@ fn sunset_atmosphere(ray: vec3<f32>) -> vec3<f32> {
                     .unwrap()
                     .parse("true");
                 let shown = |m: &Module, name: &str| {
-                    m
-                        .setting_visible(
-                            m.settings.iter().position(|s| s.name == name).unwrap(),
-                        )
+                    m.setting_visible(
+                        m.settings.iter().position(|s| s.name == name).unwrap(),
+                    )
                 };
                 for (mode, on, off) in [
                     (
@@ -36290,10 +38631,9 @@ offhand.refill=Inventory
                 let mut state = State::new();
                 let m = state.modules.iter_mut().find(|m| m.name == "Offhand").unwrap();
                 let shown = |m: &Module, name: &str| {
-                    m
-                        .setting_visible(
-                            m.settings.iter().position(|s| s.name == name).unwrap(),
-                        )
+                    m.setting_visible(
+                        m.settings.iter().position(|s| s.name == name).unwrap(),
+                    )
                 };
                 assert!(
                     shown(m, "Random slot") && shown(m, "Close inventory") && ! shown(m,
@@ -37457,10 +39797,9 @@ killaura.on=true
                 let mut state = State::new();
                 let m = hud(&mut state);
                 let shown = |m: &Module, name: &str| {
-                    m
-                        .setting_visible(
-                            m.settings.iter().position(|s| s.name == name).unwrap(),
-                        )
+                    m.setting_visible(
+                        m.settings.iter().position(|s| s.name == name).unwrap(),
+                    )
                 };
                 assert!(
                     shown(m, "Watermark position") && ! shown(m, "Watermark x") && !
@@ -37781,13 +40120,11 @@ killaura.on=true
                                 })
                         })
                         .filter(|line| {
-                            only
-                                .lines()
+                            only.lines()
                                 .any(|l| {
-                                    line
-                                        .starts_with(
-                                            &format!("{}:", l.split('=').next().unwrap_or("")),
-                                        )
+                                    line.starts_with(
+                                        &format!("{}:", l.split('=').next().unwrap_or("")),
+                                    )
                                 })
                         })
                         .collect()
@@ -40475,7 +42812,11 @@ killaura.on=true
                     SelectAll => self.selected = true,
                     Left => self.caret = if selected { 0 } else { self.previous() },
                     Right => {
-                        self.caret = if selected { self.text.len() } else { self.next() };
+                        self.caret = if selected {
+                            self.text.len()
+                        } else {
+                            self.next()
+                        };
                     }
                     Home => self.caret = 0,
                     End => self.caret = self.text.len(),
@@ -41233,8 +43574,7 @@ killaura.on=true
             };
             let back = name.len();
             let names = |src: &dyn Source| {
-                src
-                    .profiles()
+                src.profiles()
                     .into_iter()
                     .map(|p| Suggestion::new(p, "profile"))
                     .collect::<Vec<_>>()
@@ -41425,8 +43765,7 @@ killaura.on=true
                 ("list", "your loadouts"),
             ];
             let names = |src: &dyn Source, tip: &str| {
-                src
-                    .loadouts()
+                src.loadouts()
                     .into_iter()
                     .map(|l| Suggestion::new(l, tip))
                     .collect::<Vec<_>>()
@@ -42291,8 +44630,7 @@ killaura.on=true
                 let value = &screen.input.value;
                 screen.input.suggestion = applied
                     .and_then(|a| {
-                        a
-                            .strip_prefix(value.as_str())
+                        a.strip_prefix(value.as_str())
                             .filter(|r| !r.is_empty())
                             .map(str::to_owned)
                     });
@@ -43168,8 +45506,7 @@ killaura.on=true
         pub(super) fn wants_tip(i: usize) -> bool {
             !on()
                 || view(|v| {
-                    v
-                        .hover
+                    v.hover
                         .is_some_and(|(h, since)| {
                             h == Hit::Module(i)
                                 && since.elapsed().as_secs_f32() >= TIP_AFTER
@@ -44060,10 +46397,9 @@ killaura.on=true
         pub(super) fn hits(s: &State) -> Vec<([f32; 4], Hit)> {
             let mut out = vec![(frame(s), Hit::Dash(DashPart::Frame))];
             view(|v| {
-                out
-                    .extend(
-                        v.parts.iter().map(|&(r, p)| (r, Hit::Dash(DashPart::Side(p)))),
-                    )
+                out.extend(
+                    v.parts.iter().map(|&(r, p)| (r, Hit::Dash(DashPart::Side(p)))),
+                )
             });
             out
         }
@@ -45839,11 +48175,9 @@ killaura.on=true
             pub(super) fn import_names(&self) -> Vec<String> {
                 let mut found: Vec<String> = fs::read_dir(&self.imports)
                     .map(|dir| {
-                        dir
-                            .flatten()
+                        dir.flatten()
                             .filter_map(|e| {
-                                e
-                                    .file_name()
+                                e.file_name()
                                     .to_str()
                                     .and_then(|f| f.strip_suffix(".profile"))
                                     .map(str::to_owned)
@@ -46426,7 +48760,8 @@ killaura.on=true
                 match key {
                     "key.keyboard.up" => self.focus = self.focus.saturating_sub(1),
                     "key.keyboard.down" => {
-                        self.focus = (self.focus + 1).min(self.count().saturating_sub(1));
+                        self.focus = (self.focus + 1)
+                            .min(self.count().saturating_sub(1));
                     }
                     "key.keyboard.left" => {
                         self.switch(
@@ -48699,8 +51034,7 @@ killaura.on=true
             if m.b("Only on weapon") {
                 let held = game.held().map_or("", |s| &*s.item);
                 let tagged = |tag: &str| {
-                    game
-                        .res
+                    game.res
                         .items()
                         .item_tags
                         .get(tag)
@@ -50015,8 +52349,7 @@ killaura.on=true
                     .map_or(
                         0.0,
                         |i| {
-                            i
-                                .modifiers
+                            i.modifiers
                                 .iter()
                                 .filter(|m| m.attribute == attribute)
                                 .map(|m| m.amount as f32)
@@ -50029,8 +52362,7 @@ killaura.on=true
                 .map_or(
                     1.0,
                     |i| {
-                        i
-                            .tool
+                        i.tool
                             .iter()
                             .filter_map(|r| r.speed)
                             .fold(i.tool_default_speed.max(1.0), f32::max)
@@ -50265,13 +52597,12 @@ killaura.on=true
             let latency = super::remote::sunset_combat_remote::latency(game);
             if step.cursor() {
                 exec(|e| {
-                    e
-                        .sent(
-                            step,
-                            fingerprint,
-                            now,
-                            super::sunset_inventory_exec::settle_ticks(latency, 0),
-                        )
+                    e.sent(
+                        step,
+                        fingerprint,
+                        now,
+                        super::sunset_inventory_exec::settle_ticks(latency, 0),
+                    )
                 });
                 super::sunset_inventory_gate::refusable(game, false);
             } else {
@@ -50303,8 +52634,7 @@ killaura.on=true
             };
             let items: Vec<Option<plan::Item>> = (0..36)
                 .map(|i| {
-                    game
-                        .inventory
+                    game.inventory
                         .get(i)
                         .and_then(|s| s.as_ref())
                         .map(|s| plan_item(game, s))
@@ -50334,10 +52664,9 @@ killaura.on=true
             };
             let onto = game.inventory.get(target).is_some_and(|s| s.is_some());
             if !super::sunset_gui_move::direct(|| {
-                game
-                    .remote_menu_ops(
-                        &[(Some(target), 0, horizon_client::menu::Input::Pickup)],
-                    )
+                game.remote_menu_ops(
+                    &[(Some(target), 0, horizon_client::menu::Input::Pickup)],
+                )
             }) {
                 return;
             }
@@ -50410,8 +52739,7 @@ killaura.on=true
             loot.hash(&mut h);
             (game.screen == Screen::Inventory).hash(&mut h);
             super::sunset::with(|s| {
-                    s
-                        .module("Kill Aura")
+                    s.module("Kill Aura")
                         .map(|k| super::sunset_aura_timing::setting_of(k))
                 })
                 .hash(&mut h);
@@ -50431,16 +52759,14 @@ killaura.on=true
         ) -> Option<Step> {
             let items: Vec<Option<plan::Item>> = (0..36)
                 .map(|i| {
-                    game
-                        .inventory
+                    game.inventory
                         .get(i)
                         .and_then(|s| s.as_ref())
                         .map(|s| plan_item(game, s))
                 })
                 .collect();
             let kill_aura = super::sunset::with(|s| {
-                s
-                    .module("Kill Aura")
+                s.module("Kill Aura")
                     .map(|k| super::sunset_aura_timing::setting_of(k))
                     .unwrap_or("Auto")
             });
@@ -50450,20 +52776,19 @@ killaura.on=true
                 )
                 .0 == super::sunset_aura_timing::Version::Legacy;
             let slot_words: [&str; 9] = std::array::from_fn(|i| {
-                m
-                    .p(
-                        [
-                            "Slot 1",
-                            "Slot 2",
-                            "Slot 3",
-                            "Slot 4",
-                            "Slot 5",
-                            "Slot 6",
-                            "Slot 7",
-                            "Slot 8",
-                            "Slot 9",
-                        ][i],
-                    )
+                m.p(
+                    [
+                        "Slot 1",
+                        "Slot 2",
+                        "Slot 3",
+                        "Slot 4",
+                        "Slot 5",
+                        "Slot 6",
+                        "Slot 7",
+                        "Slot 8",
+                        "Slot 9",
+                    ][i],
+                )
             });
             let wants = plan::wants(slot_words, m.t("Hotbar layout"));
             let hotbar = plan::plan_hotbar(&items, &wants, locked, legacy);
@@ -50497,8 +52822,7 @@ killaura.on=true
             };
             if m.b("Duplicates") {
                 let worn: [Option<plan::Item>; 4] = std::array::from_fn(|a| {
-                    game
-                        .armor
+                    game.armor
                         .get(a)
                         .and_then(|s| s.as_ref())
                         .map(|s| plan_item(game, s))
@@ -51069,8 +53393,7 @@ killaura.on=true
             in_water: bool,
         ) -> Option<(Vec3, Option<f32>)> {
             with(|s| {
-                s
-                    .module("Entity Control")
+                s.module("Entity Control")
                     .filter(|m| m.on)
                     .map(|m| drive(game, m, velocity, on_ground, in_water))
             })
@@ -51645,8 +53968,7 @@ killaura.on=true
             );
             let eye = game.eye_position().unwrap_or([0.0; 3]);
             let saddled = |t: &Target| {
-                game
-                    .mobs
+                game.mobs
                     .iter()
                     .find(|x| x.id == t.id)
                     .is_some_and(|x| x.extra.saddled())
@@ -52589,8 +54911,7 @@ killaura.on=true
             let lists: Vec<Vec<&str>> = LISTS
                 .iter()
                 .map(|(list, ..)| {
-                    m
-                        .t(list)
+                    m.t(list)
                         .split(',')
                         .map(str::trim)
                         .filter(|x| !x.is_empty())
@@ -53882,8 +56203,7 @@ killaura.on=true
                         let Some(k) = list
                             .iter()
                             .position(|x| {
-                                x
-                                    .strip_prefix('*')
+                                x.strip_prefix('*')
                                     .map_or(*x == name, |end| name.ends_with(end))
                             }) else {
                             return u16::MAX;
@@ -57573,8 +59893,7 @@ killaura.on=true
                     .flatten()
             };
             let mob_at = |id: u32| {
-                game
-                    .mobs
+                game.mobs
                     .iter()
                     .find(|x| x.id == id)
                     .map(|x| [x.position.x, x.position.y, x.position.z])
@@ -58181,8 +60500,7 @@ killaura.on=true
             ) {
                 let Some(p) = self.player(name, now, forget) else { return };
                 let held = |slot: usize| {
-                    p
-                        .last[slot]
+                    p.last[slot]
                         .as_deref()
                         .is_some_and(|k| k.split('|').next() == Some(item))
                 };
@@ -58484,8 +60802,7 @@ killaura.on=true
                         && let Some(stack) = gs(|g| g.items.get(&id).cloned())
                     {
                         gs(|g| {
-                            g
-                                .book
+                            g.book
                                 .picked(
                                     &who,
                                     now,
@@ -59573,8 +61890,7 @@ killaura.on=true
             answer(game, m);
             let now = game.ticks;
             while let Some(p) = st(|s| {
-                s
-                    .pending
+                s.pending
                     .front()
                     .is_some_and(|(due, _)| *due <= now)
                     .then(|| s.pending.pop_front())
@@ -60231,7 +62547,8 @@ killaura.on=true
                     return horizon && m.b("Horizon HUD");
                 }
                 "Horizon labels" | "Label limit" | "Horizon tracers" | "Max markers" => {
-                    return horizon && (m.b("Horizon markers") || m.b("Activity markers"));
+                    return horizon
+                        && (m.b("Horizon markers") || m.b("Activity markers"));
                 }
                 "Activity color" => return horizon && m.b("Activity markers"),
                 "Notify interval" | "Anonymous notifications" => {
@@ -60470,8 +62787,7 @@ killaura.on=true
             let tab = super::remote::sunset_remote::tab_names(game);
             let own = game.options.player_name();
             let Some(m) = with(|s| {
-                s
-                    .module("Anti Vanish")
+                s.module("Anti Vanish")
                     .filter(|m| m.on && m.p("Mode") != "HorizonSMP")
                     .cloned()
             }) else {
@@ -60554,8 +62870,7 @@ killaura.on=true
                 C::SetEntityMotion(p) if Some(p.id) == me => {
                     let around = surroundings(game);
                     vs(|v| {
-                        v
-                            .staff
+                        v.staff
                             .push(sc::Push {
                                 tick: now,
                                 velocity: p.velocity,
@@ -64009,8 +66324,7 @@ killaura.on=true
             );
             let friends = super::sunset::with(|s| s.friends.clone());
             let friend = |id: u32| {
-                game
-                    .remote_player_name(id)
+                game.remote_player_name(id)
                     .is_some_and(|n| friends.iter().any(|f| f.eq_ignore_ascii_case(n)))
             };
             hits.iter().any(|(i, _)| game.mobs[*i].id == t.id)
@@ -64575,8 +66889,7 @@ killaura.on=true
                         );
                         let sensitivity = f64::from(game.settings.sensitivity);
                         st(|s| {
-                            s
-                                .advanced
+                            s.advanced
                                 .step(from, to, primary.id, on_target, sensitivity, k)
                         })
                     } else if m.p("Rotation mode") == "Adaptive" {
@@ -64663,8 +66976,7 @@ killaura.on=true
                 let seed = u64::from(primary.id) << 32 ^ game.ticks;
                 let pattern = timing::Pattern::named(m.p("CPS pattern"));
                 let click = st(|s| {
-                    s
-                        .clicks
+                    s.clicks
                         .get_or_insert_with(|| timing::Clicks::new(seed))
                         .tick(m.n("Min CPS"), m.n("Max CPS"), pattern)
                 });
@@ -68275,8 +70587,7 @@ killaura.on=true
                 return None;
             }
             let m = super::sunset::with(|s| {
-                s
-                    .module("Zoom")
+                s.module("Zoom")
                     .map(|m| (
                         m.on,
                         m.n("Zoom") as f32,
@@ -68486,8 +70797,7 @@ killaura.on=true
                 (None, true) => {
                     if let Some(f) = rs(|r| r.fl.take()) {
                         if super::sunset::with(|s| {
-                            s
-                                .module("Free Look")
+                            s.module("Free Look")
                                 .is_none_or(|m| m.b("Toggle perspective"))
                         }) {
                             game.camera_type = f.camera;
@@ -69973,8 +72283,7 @@ killaura.on=true
             slots
                 .iter()
                 .filter(|&&s| {
-                    game
-                        .slot_view(s)
+                    game.slot_view(s)
                         .is_some_and(|v| {
                             there.iter().any(|t| t.same_item_same_components(&v))
                         })
@@ -70544,8 +72853,7 @@ killaura.on=true
             port: u16,
         ) -> (Option<&'static str>, bool) {
             let norm = |s: &str| {
-                s
-                    .chars()
+                s.chars()
                     .filter(char::is_ascii_alphanumeric)
                     .collect::<String>()
                     .to_ascii_lowercase()
@@ -70855,8 +73163,7 @@ killaura.on=true
                 return;
             }
             let (on, analytics, presence) = with(|s| {
-                s
-                    .module(NAME)
+                s.module(NAME)
                     .map_or(
                         (false, false, false),
                         |m| (
@@ -71220,8 +73527,7 @@ killaura.on=true
                 v[k]
                     .as_array()
                     .map(|a| {
-                        a
-                            .iter()
+                        a.iter()
                             .filter_map(|x| x.as_str().map(str::to_owned))
                             .take(64)
                             .collect()
@@ -72165,8 +74471,7 @@ killaura.on=true
                 return false;
             }
             super::sunset::with(|s| {
-                s
-                    .module("Block Overlay")
+                s.module("Block Overlay")
                     .is_some_and(|m| {
                         m.on
                             && ((m.b("Outline")
@@ -74193,8 +76498,7 @@ killaura.on=true
                 return;
             }
             let stale = st(|s| {
-                s
-                    .weapon
+                s.weapon
                     .as_ref()
                     .is_some_and(|h| {
                         !same_setup_scene(game, &h.scene) || h.owned != game.selected
@@ -74280,8 +76584,7 @@ killaura.on=true
         }
         pub(super) fn idle_shared(game: &mut Game<'_>, owner: &str, requested: bool) {
             if st(|s| {
-                s
-                    .weapon
+                s.weapon
                     .as_ref()
                     .is_some_and(|h| h.owner == owner && game.ticks > h.until)
             }) {
@@ -74314,8 +76617,7 @@ killaura.on=true
         }
         pub(super) fn owns_selection(game: &Game<'_>) -> bool {
             st(|s| {
-                s
-                    .weapon
+                s.weapon
                     .as_ref()
                     .is_some_and(|lease| {
                         same_setup_scene(game, &lease.scene)
@@ -75305,8 +77607,7 @@ killaura.on=true
         }
         fn age(game: &Game<'_>, id: u32) -> u64 {
             st(|s| {
-                s
-                    .seen
+                s.seen
                     .iter()
                     .find(|(c, _)| *c == id)
                     .map_or(0, |(_, at)| game.ticks.saturating_sub(*at))
@@ -75566,8 +77867,7 @@ killaura.on=true
                     let same = session
                         .as_ref()
                         .is_some_and(|old| {
-                            game
-                                .remote
+                            game.remote
                                 .as_ref()
                                 .is_some_and(|r| Arc::ptr_eq(old, &r.session.counters))
                         });
@@ -77502,8 +79802,7 @@ killaura.on=true
                         util::dist(*first, eye) > 4.0 && !s.answered.contains(id)
                     })
                     .filter(|(id, _)| {
-                        seen
-                            .iter()
+                        seen.iter()
                             .any(|(i, at)| i == id && util::dist(*at, eye) <= range)
                     })
                     .map(|(id, _)| *id)
@@ -78610,8 +80909,7 @@ killaura.on=true
         }
         fn retry_blocked(game: &Game<'_>, p: [i32; 3]) -> bool {
             state(|s| {
-                s
-                    .failed
+                s.failed
                     .iter()
                     .any(|&(cell, b, until)| {
                         cell == p && b == block(game, p) && game.ticks < until
@@ -79602,8 +81900,7 @@ killaura.on=true
                 info.components.iter().any(|component| component == name)
             };
             let tag = |name: &str| {
-                game
-                    .items()
+                game.items()
                     .item_tags
                     .get(name)
                     .is_some_and(|items| items.contains(&*stack.item))
@@ -80236,8 +82533,7 @@ killaura.on=true
                     .as_ref()
                     .is_some_and(|s| enchant_damage(game, s))
                 && state(|s| {
-                    s
-                        .main
+                    s.main
                         .as_ref()
                         .is_none_or(|(_, _, since)| {
                             game.ticks < *since || game.ticks - *since < 2
@@ -80493,8 +82789,7 @@ killaura.on=true
                 || ["minecraft:swords", "minecraft:axes"]
                     .iter()
                     .any(|tag| {
-                        game
-                            .items()
+                        game.items()
                             .item_tags
                             .get(*tag)
                             .is_some_and(|items| items.contains(&*stack.item))
@@ -82597,8 +84892,7 @@ killaura.on=true
                             s.generation,
                             game.ticks,
                             |id| {
-                                game
-                                    .mobs
+                                game.mobs
                                     .iter()
                                     .any(|m| m.id == id && m.alive() && !m.removed)
                             },
@@ -82612,8 +84906,7 @@ killaura.on=true
         }
         pub(super) fn rtt(game: &Game<'_>) -> u32 {
             state(|s| {
-                s
-                    .receipts
+                s.receipts
                     .rtt_ticks(
                         super::remote::sunset_combat_remote::latency(game).unwrap_or(0),
                     )
@@ -82691,8 +84984,7 @@ killaura.on=true
             ahead: u32,
         ) -> Option<Target> {
             if let Some(cached) = state(|s| {
-                s
-                    .cache
+                s.cache
                     .iter()
                     .find(|p| p.0 == target.id && p.1 == ahead)
                     .map(|p| p.2.clone())
@@ -82704,8 +84996,7 @@ killaura.on=true
                 target.id,
             )?;
             let motion = state(|s| {
-                s
-                    .tracks
+                s.tracks
                     .observe(
                         target.id,
                         game.ticks,
@@ -83836,8 +86127,7 @@ killaura.on=true
                         || ["minecraft:swords", "minecraft:axes"]
                             .iter()
                             .any(|tag| {
-                                game
-                                    .items()
+                                game.items()
                                     .item_tags
                                     .get(*tag)
                                     .is_some_and(|items| items.contains(&*s.item))
@@ -87203,8 +89493,7 @@ killaura.on=true
             let friend = hits
                 .as_ref()
                 .and_then(|hits| {
-                    hits
-                        .iter()
+                    hits.iter()
                         .map(|&i| game.mobs[i].id)
                         .find(|&id| known_friend(game, id))
                 });
@@ -87293,8 +89582,7 @@ killaura.on=true
                         .into_iter()
                         .flatten()
                         .any(|item| {
-                            game
-                                .res
+                            game.res
                                 .items()
                                 .get(&*item)
                                 .is_some_and(|i| i.blocks_attacks.is_some())
@@ -87328,8 +89616,7 @@ killaura.on=true
         }
         fn stack_kind(game: &Game<'_>, stack: &ItemStack) -> &'static str {
             let tagged = |tag: &str| {
-                game
-                    .res
+                game.res
                     .items()
                     .item_tags
                     .get(tag)
@@ -88294,8 +90581,7 @@ killaura.on=true
                                 return;
                             }
                             let under = |game: &Game<'_>, id: u32| {
-                                game
-                                    .mob_hit()
+                                game.mob_hit()
                                     .is_some_and(|(i, d, _)| {
                                         game.mobs[i].id == id && game.before_block(d)
                                     })
@@ -88390,8 +90676,7 @@ killaura.on=true
             if let Some(owner) = state(|s| s.queued) {
                 if !allowed(game) || section(owner).is_none()
                     || state(|s| {
-                        s
-                            .queued_since
+                        s.queued_since
                             .is_none_or(|t| t.elapsed() > Duration::from_millis(200))
                     })
                 {
@@ -88446,8 +90731,7 @@ killaura.on=true
         }
         fn broken_shield(game: &Game<'_>, id: u32) -> bool {
             state(|s| {
-                s
-                    .broken_shield
+                s.broken_shield
                     .is_some_and(|(target, until)| target == id && game.ticks < until)
             })
         }
@@ -88679,8 +90963,7 @@ killaura.on=true
         fn held_is(game: &Game<'_>, tag: &str) -> bool {
             game.held()
                 .is_some_and(|s| {
-                    game
-                        .res
+                    game.res
                         .items()
                         .item_tags
                         .get(tag)
@@ -88876,8 +91159,7 @@ killaura.on=true
         }
         pub(super) fn pending_target_id() -> Option<u32> {
             st(|s| {
-                s
-                    .assisted
+                s.assisted
                     .map(|guard| guard.id())
                     .or_else(|| s.held.map(|held| held.0.id))
             })
@@ -88906,8 +91188,7 @@ killaura.on=true
                 return false;
             }
             let waiting = st(|s| {
-                s
-                    .held
+                s.held
                     .is_some_and(|(token, at)| {
                         token.id == target.id && super::sunset_antibot::current(token)
                             && at.elapsed() < HIT_FIX_WAIT
@@ -89039,8 +91320,7 @@ killaura.on=true
                     ((average / 50) as i32, average)
                 });
                 let since = st(|s| {
-                    s
-                        .select
+                    s.select
                         .reset_at
                         .map_or(u64::MAX, |at| at.elapsed().as_millis() as u64)
                 });
@@ -89211,8 +91491,7 @@ killaura.on=true
             stack
                 .is_some_and(|s| {
                     let tagged = |tag: &str| {
-                        game
-                            .res
+                        game.res
                             .items()
                             .item_tags
                             .get(tag)
@@ -89592,8 +91871,7 @@ killaura.on=true
                 if newly && !busy && m.b("Swap to sword")
                     && let Some(slot) = (0..9)
                         .find(|&i| {
-                            game
-                                .stack_in(i)
+                            game.stack_in(i)
                                 .is_some_and(|s| tagged(game, &s.item, "minecraft:swords"))
                         })
                 {
@@ -89670,8 +91948,7 @@ killaura.on=true
                 return Some(false);
             }
             let swung = st(|s| {
-                s
-                    .swings
+                s.swings
                     .iter()
                     .find(|(id, _, _)| *id == target.id)
                     .map_or(0, |(_, at, _)| *at)
@@ -90046,8 +92323,7 @@ killaura.on=true
         fn roll(game: &Game<'_>, lo: f64, hi: f64) -> f64 {
             let (lo, hi) = if lo <= hi { (lo, hi) } else { (hi, lo) };
             let r = st(|s| {
-                s
-                    .rng
+                s.rng
                     .get_or_insert_with(|| Rng::new(game.ticks ^ 0x5DEE_CE66_D1CE_4E5B))
                     .next()
             });
@@ -91851,8 +94127,7 @@ killaura.on=true
             if !worn {
                 if let Some(slot) = (0..9)
                     .find(|&s| {
-                        game
-                            .stack_in(s)
+                        game.stack_in(s)
                             .is_some_and(|i| util::short(&i.item) == "elytra")
                     })
                 {
@@ -92445,8 +94720,7 @@ killaura.on=true
         fn item_at(game: &Game<'_>, item: &str) -> Option<usize> {
             (0..36)
                 .find(|&i| {
-                    game
-                        .inventory
+                    game.inventory
                         .get(i)
                         .and_then(|s| s.as_ref())
                         .is_some_and(|s| util::short(&s.item) == item)
@@ -92495,8 +94769,7 @@ killaura.on=true
         fn rocket(game: &mut Game<'_>) -> bool {
             let Some(slot) = (0..9)
                 .find(|&i| {
-                    game
-                        .inventory
+                    game.inventory
                         .get(i)
                         .and_then(|s| s.as_ref())
                         .is_some_and(|s| util::short(&s.item) == "firework_rocket")
@@ -92599,8 +94872,7 @@ killaura.on=true
                 Stage::Rocket => {
                     let in_hotbar = (0..9)
                         .any(|i| {
-                            game
-                                .inventory
+                            game.inventory
                                 .get(i)
                                 .and_then(|s| s.as_ref())
                                 .is_some_and(|s| util::short(&s.item) == "firework_rocket")
@@ -103018,8 +105290,7 @@ killaura.on=true
                 }
                 let height_context = HeightContext::new(min_y, max_y);
                 let arc = |m: HashMap<Direction, Vec<BlockPos>>| {
-                    m
-                        .into_iter()
+                    m.into_iter()
                         .map(|(d, v)| (d, Arc::new(v)))
                         .collect::<HashMap<_, _>>()
                 };
@@ -106548,8 +108819,7 @@ killaura.on=true
             ]
                 .iter()
                 .any(|w| {
-                    name
-                        .strip_prefix(w)
+                    name.strip_prefix(w)
                         .is_some_and(|s| {
                             [
                                 "_planks",
@@ -106672,20 +108942,18 @@ killaura.on=true
                     .map_or(
                         0,
                         |c| {
-                            c
-                                .world_surface(
-                                    x & 15,
-                                    z & 15,
-                                    |id| {
-                                        self
-                                            .table
-                                            .names
-                                            .get(id as usize)
-                                            .is_some_and(|n| {
-                                                matches!(* n, "air" | "cave_air" | "void_air")
-                                            })
-                                    },
-                                )
+                            c.world_surface(
+                                x & 15,
+                                z & 15,
+                                |id| {
+                                    self.table
+                                        .names
+                                        .get(id as usize)
+                                        .is_some_and(|n| {
+                                            matches!(* n, "air" | "cave_air" | "void_air")
+                                        })
+                                },
+                            )
                         },
                     )
             }
@@ -107335,8 +109603,7 @@ killaura.on=true
                     .highest(
                         self.air,
                         |y| {
-                            self
-                                .solid
+                            self.solid
                                 .get(chunk.get(x, y, z) as usize)
                                 .copied()
                                 .unwrap_or(false)
@@ -107678,8 +109945,7 @@ killaura.on=true
                         && Some(mob.id as i32) != own
                 })
                 .filter(|mob| {
-                    mob
-                        .extra
+                    mob.extra
                         .sunset_main_hand()
                         .as_deref()
                         .is_some_and(|item| listed(game, m.t("Murderer items"), item))
@@ -108147,8 +110413,7 @@ killaura.on=true
             let slots = |item: &str| -> Vec<usize> {
                 (0..36)
                     .filter(|&i| {
-                        game
-                            .inventory
+                        game.inventory
                             .get(i)
                             .and_then(|s| s.as_ref())
                             .is_some_and(|s| short(&s.item) == item)
@@ -108231,8 +110496,7 @@ killaura.on=true
                 m.n(shortest).max(m.n(longest)),
             );
             let r = st(|s| {
-                s
-                    .rng
+                s.rng
                     .get_or_insert_with(|| Rng::new(game.ticks ^ 0x2545_F491_4F6C_DD1D))
                     .next()
             });
@@ -108834,8 +111098,7 @@ killaura.on=true
                             {
                                 let slot = (0..9)
                                     .filter(|&s| {
-                                        game
-                                            .inventory[s]
+                                        game.inventory[s]
                                             .as_ref()
                                             .is_none_or(|i| util::short(&i.item) != "glowstone")
                                     })
@@ -109561,11 +111824,9 @@ killaura.on=true
         }
         pub(super) fn migrated(text: Cow<'_, str>) -> Cow<'_, str> {
             let line_of = |l: &str| {
-                l
-                    .split_once('=')
+                l.split_once('=')
                     .and_then(|(k, v)| {
-                        k
-                            .strip_prefix("fakelag.")
+                        k.strip_prefix("fakelag.")
                             .map(|f| (f.to_owned(), v.trim().to_owned()))
                     })
             };
@@ -110756,8 +113017,7 @@ killaura.on=true
         }
         fn rocket(game: &mut Game<'_>) -> Option<Option<usize>> {
             let is_rocket = |game: &Game<'_>, slot: usize| {
-                game
-                    .stack_in(slot)
+                game.stack_in(slot)
                     .is_some_and(|s| s.count > 0 && s.item.ends_with("firework_rocket"))
             };
             let off = super::sunset_util::OFFHAND;
@@ -114859,8 +117119,7 @@ modules.sunsetpresence=true
             let item = super::sunset_player::plan_item(game, stack);
             let name = item.name.clone();
             let level = |e: &str| {
-                item
-                    .enchants
+                item.enchants
                     .iter()
                     .find(|(x, _)| super::sunset_util::short(x) == e)
                     .map_or(0, |x| x.1)
@@ -115641,8 +117900,7 @@ modules.sunsetpresence=true
                         score(b.1, legacy)
                             .total_cmp(&score(a.1, legacy))
                             .then_with(|| {
-                                a
-                                    .0
+                                a.0
                                     .map_or(-1, |i| i as i64)
                                     .cmp(&b.0.map_or(-1, |i| i as i64))
                             })
@@ -119239,8 +121497,7 @@ modules.sunsetpresence=true
                         || ["minecraft:swords", "minecraft:axes"]
                             .iter()
                             .any(|t| {
-                                game
-                                    .res
+                                game.res
                                     .items()
                                     .item_tags
                                     .get(*t)
@@ -119597,8 +121854,7 @@ modules.sunsetpresence=true
                 .filter(|mob| Some(mob.id) != me && util::player_enemy(game, mob))
                 .map(util::mob_target)
                 .filter(|t| {
-                    game
-                        .player
+                    game.player
                         .as_ref()
                         .is_some_and(|p| {
                             util::dist([p.position.x, p.position.y, p.position.z], t.pos)
@@ -119837,8 +122093,7 @@ modules.sunsetpresence=true
                         .any(|d| !air(game, [cell[0], feet - d, cell[2]]));
                     let lava = (0..=3)
                         .any(|d| {
-                            game
-                                .res
+                            game.res
                                 .facts()
                                 .get(game.world.block(cell[0], feet - d, cell[2]))
                                 .name
@@ -121091,8 +123346,7 @@ modules.sunsetpresence=true
             let Some(m) = module(mods, "Chest Index")
                 .filter(|m| !m.t("Search").trim().is_empty()) else { return };
             let mut matches = state(|s| {
-                s
-                    .containers
+                s.containers
                     .iter()
                     .filter_map(|c| {
                         let count: u32 = c
@@ -121433,8 +123687,7 @@ modules.sunsetpresence=true
                 return;
             }
             let next = state(|s| {
-                s
-                    .shop
+                s.shop
                     .as_mut()
                     .and_then(|shop| {
                         if shop.slots.is_empty() {
@@ -121508,8 +123761,7 @@ modules.sunsetpresence=true
                 return;
             }
             let item = state(|s| {
-                s
-                    .sell
+                s.sell
                     .as_mut()
                     .and_then(|sale| {
                         if sale.slots.is_empty() {
@@ -122109,8 +124361,7 @@ modules.sunsetpresence=true
         fn block<'a>(game: &'a Game<'_>, pos: Pos) -> Option<&'a str> {
             loaded(game, pos)
                 .then(|| {
-                    game
-                        .res
+                    game.res
                         .facts()
                         .get(game.world.block(pos[0], pos[1], pos[2]))
                         .name
@@ -122740,8 +124991,7 @@ modules.sunsetpresence=true
                             .0 == super::sunset_aura_timing::Version::Legacy
                         && super::sunset_aura::target_id()
                             .is_some_and(|id| {
-                                game
-                                    .mobs
+                                game.mobs
                                     .iter()
                                     .any(|mob| mob.id == id && mob.alive() && !mob.removed)
                             })
@@ -122775,8 +125025,7 @@ modules.sunsetpresence=true
             let scale = legacy_using()
                 .then(|| {
                     let no_slow = with(|s| {
-                        s
-                            .module("No Slow")
+                        s.module("No Slow")
                             .filter(|m| m.on && m.p("Mode") != "GrimAC")
                             .map(|m| [m.n("Ground %"), m.n("Air %")])
                     });
@@ -123082,8 +125331,7 @@ modules.sunsetpresence=true
             let feet = p.position;
             let here = connection(game);
             let learned = duel(|d| {
-                d
-                    .blast_after
+                d.blast_after
                     .as_ref()
                     .filter(|(at, _)| Some(*at) == here)
                     .and_then(|(_, after)| after.iter().min().copied())
@@ -123461,8 +125709,7 @@ modules.sunsetpresence=true
         }
         pub(super) fn locked_slots() -> [bool; 36] {
             with(|s| {
-                    s
-                        .module("Loadouts")
+                    s.module("Loadouts")
                         .filter(|m| m.on)
                         .map(|m| slot_numbers(m.t("Locked slots")))
                 })
@@ -123517,8 +125764,7 @@ modules.sunsetpresence=true
                     })
             };
             let slots = |s: Option<&str>| {
-                s
-                    .filter(|s| !s.is_empty())
+                s.filter(|s| !s.is_empty())
                     .map_or_else(Vec::new, |s| s.split(',').map(slot).collect())
             };
             let hotbar = slots(parts.next());
@@ -123748,8 +125994,7 @@ modules.sunsetpresence=true
                 let spare = (9..36)
                     .filter(|&k| !locked[k])
                     .filter_map(|k| {
-                        game
-                            .inventory[k]
+                        game.inventory[k]
                             .as_ref()
                             .filter(|s| *s.item == **item)
                             .map(|s| (s.damage, k))
@@ -123764,8 +126009,7 @@ modules.sunsetpresence=true
         fn rule_score(game: &Game<'_>, rule: &str, s: &ItemStack) -> Option<f64> {
             let info = game.res.items().get(&s.item);
             let tag = |t: &str| {
-                game
-                    .res
+                game.res
                     .items()
                     .item_tags
                     .get(t)
@@ -124062,8 +126306,7 @@ modules.sunsetpresence=true
                         Some(i) => {
                             let name = list[i].name.clone();
                             with(|s| {
-                                s
-                                    .loadouts
+                                s.loadouts
                                     .retain(|l| parse(l).is_none_or(|l| l.name != name))
                             });
                             store(game);
@@ -124076,8 +126319,7 @@ modules.sunsetpresence=true
                     match find_loadout(&list, &what) {
                         Some(i) => {
                             let line = with(|s| {
-                                s
-                                    .loadouts
+                                s.loadouts
                                     .iter()
                                     .find(|l| parse(l).is_some_and(|l| l.name == list[i].name))
                                     .cloned()
@@ -124320,8 +126562,7 @@ modules.sunsetpresence=true
         }
         pub(super) fn ignored_effect(id: &str) -> bool {
             with(|s| {
-                s
-                    .module("No Status Effects")
+                s.module("No Status Effects")
                     .filter(|m| m.on)
                     .is_some_and(|m| listed(m.t("Effects"), id))
             })
@@ -126700,8 +128941,7 @@ modules.sunsetpresence=true
                 .iter()
                 .flatten()
                 .all(|s| {
-                    game
-                        .res
+                    game.res
                         .items()
                         .get(&s.item)
                         .is_some_and(|info| s.count > 0 && s.count <= info.max_stack)
@@ -126711,8 +128951,7 @@ modules.sunsetpresence=true
             }
             if before[0].is_none() || before[0] == before[1]
                 || state(|s| {
-                    s
-                        .failures
+                    s.failures
                         .iter()
                         .any(|(o, f)| *o == owner && f.blocks([from, to], &before))
                 })
@@ -126938,8 +129177,7 @@ modules.sunsetpresence=true
         }
         fn count_totems(game: &Game<'_>) -> u32 {
             let totems = |s: &Option<ItemStack>| {
-                s
-                    .as_ref()
+                s.as_ref()
                     .filter(|s| &*s.item == "minecraft:totem_of_undying")
                     .map_or(0, |s| s.count)
             };
@@ -127785,14 +130023,13 @@ modules.sunsetpresence=true
                         .to_string();
                     let path = (1..)
                         .map(|n| {
-                            dir
-                                .join(
-                                    if n == 1 {
-                                        format!("{base}.md")
-                                    } else {
-                                        format!("{base}_{n}.md")
-                                    },
-                                )
+                            dir.join(
+                                if n == 1 {
+                                    format!("{base}.md")
+                                } else {
+                                    format!("{base}_{n}.md")
+                                },
+                            )
                         })
                         .find(|p| !p.exists())
                         .unwrap_or_else(|| dir.join(format!("{base}.md")));
@@ -129093,13 +131330,25 @@ modules.sunsetpresence=true
                     }
                     Shape::Quad(corners, _) => *corners = corners.map(at),
                     Shape::Text(t, p, argb) => {
-                        *shape = Shape::Sized(std::mem::take(t), at(*p), *argb, s, false);
+                        *shape = Shape::Sized(
+                            std::mem::take(t),
+                            at(*p),
+                            *argb,
+                            s,
+                            false,
+                        );
                     }
                     Shape::Head(t, p, argb) => {
                         *shape = Shape::Sized(std::mem::take(t), at(*p), *argb, s, true);
                     }
                     Shape::Plain(t, p, argb, bold) => {
-                        *shape = Shape::Sized(std::mem::take(t), at(*p), *argb, s, *bold);
+                        *shape = Shape::Sized(
+                            std::mem::take(t),
+                            at(*p),
+                            *argb,
+                            s,
+                            *bold,
+                        );
                     }
                     Shape::Scaled(_, p, _, k)
                     | Shape::Sized(_, p, _, k, _)
@@ -130172,8 +132421,7 @@ modules.sunsetpresence=true
                     .map_or_else(
                         Vec::new,
                         |s| {
-                            s
-                                .alerts
+                            s.alerts
                                 .update(
                                     &entries,
                                     d.time,
@@ -130608,16 +132856,15 @@ modules.sunsetpresence=true
             evidence::SOURCES
                 .into_iter()
                 .filter(|source| {
-                    m
-                        .b(
-                            match source {
-                                FacetTag::Profile | FacetTag::List => "UUID evidence",
-                                FacetTag::Locator => "Locator evidence",
-                                FacetTag::BlockBreak => "Block activity",
-                                FacetTag::Passenger => "Passenger evidence",
-                                _ => "Entity activity",
-                            },
-                        )
+                    m.b(
+                        match source {
+                            FacetTag::Profile | FacetTag::List => "UUID evidence",
+                            FacetTag::Locator => "Locator evidence",
+                            FacetTag::BlockBreak => "Block activity",
+                            FacetTag::Passenger => "Passenger evidence",
+                            _ => "Entity activity",
+                        },
+                    )
                 })
                 .fold(0, |mask, source| mask | source.bit())
         }
