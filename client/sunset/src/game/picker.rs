@@ -228,6 +228,12 @@ pub(super) fn done_button(r: [f32; 4]) -> [f32; 4] {
     [r[0] + r[2] - 62.0, r[1] + r[3] - 19.0, 56.0, 15.0]
 }
 
+// Clear, beside Done: unticks everything.
+pub(super) fn clear_button(r: [f32; 4]) -> [f32; 4] {
+    let done = done_button(r);
+    [done[0] - 44.0, done[1], 40.0, done[3]]
+}
+
 // How far the list can scroll.
 pub(super) fn max_scroll(count: usize, r: [f32; 4]) -> f32 {
     (count as f32 * ROW - list_area(r)[3]).max(0.0)

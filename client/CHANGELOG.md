@@ -31,6 +31,7 @@ section of the version they build into the signed manifest, and the launcher sho
 
 ### Changed
 - ClickGUI, first fixes from a fresh look at every screen: the Dashboard marks the chosen module with a bar in the accent colour and says what its number counts ("27 modules", "2 found"); list pickers have tick boxes and a plain "11 of 16 chosen" line; the settings window no longer puts a "Bind" heading over its Bind row; switches that are off have a knob you can see; text on orange buttons has no smudged shadow
+- ClickGUI, more from that look: a module's description shows beside its row instead of over the rows under it; the settings window opens beside the panel it came from, has the module's switch in its title and is solid in Grey; a panel's number says what it counts ("3 on", "2 found"); a number shows its unit after it ("150 ms", "40%"); a list setting says how many it holds ("11 blocks"); list pickers have Clear; the search box and the switches are the same everywhere; scrolling lists have a marker on a track and fade where there is more
 - Target HUD is a module of its own (Render) instead of a switch in HUD: its switch, mode and place carry over, and it shows with HUD off too
 - **Blink is now Fake Lag's Hold mode: your Blink key, switch and Max ticks carry over, and `.t blink` still works**
 - HUD's position, x and y settings are no longer rows in the menus: open the chat and drag an element (right click puts it back); saved layouts stay as they are
@@ -108,3 +109,4 @@ section of the version they build into the signed manifest, and the launcher sho
 ### Fixed
 - Profiles with Fake Lag's old Range choke value load again
 - Streamer Mode no longer slows down text drawing
+

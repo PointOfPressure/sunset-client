@@ -2418,9 +2418,10 @@ def gui_size():
 
 
 def panel_width():
-    """A panel's width at the defaults: 100, or less so that the six (Combat to Client) fit in a row."""
+    """A panel's width at the defaults: 120 (ClickGUI's Panel width), or less so that the six (Combat to Client) fit in
+    a row."""
     w, _ = gui_size()
-    return min(100, (w - 4 - 3 * 5) // 6)
+    return min(120, (w - 4 - 3 * 5) // 6)
 
 
 def menu_row(panel, row):
@@ -2948,7 +2949,11 @@ def _():
         ctl("click-at", *map(str, menu_row(3, 1)), "right")
         wait(4)
         img = shot(f"window_{theme}")
-        box = (w / 2 - 20, h / 2 - 10, w / 2 + 20, h / 2 + 10)
+        # The window opens beside Xray's row (to its right while the screen has room): the part of its title between
+        # the name and the switch.
+        ww = min(max(width * 1.6, 150), w - 8)
+        wx = x0 + width + 4 if x0 + width + 4 + ww <= w - 2 else x0 - 4 - ww
+        box = (wx + ww / 2 - 10, 32 + 3, wx + ww - 40, 32 + 13)
         got["window"], look["window"] = black(img, box), grey(img, box)
         close_menu()
         setting("clickgui", "settings", "Inline")
@@ -4957,13 +4962,15 @@ def _():
         wait(3)
         return [line for line in sunset_said(mark) if line.startswith(prefix)]
 
-    # A module with no settings (Auto Walk) gets a window too, centred 40 down, holding its bind: title, one line of
-    # description, the Bind group's name, the Bind row.
+    # A module with no settings (Auto Walk) gets a window too, beside the row that was clicked (to its right while the
+    # screen has room, its title level with the row), holding its bind: title, one line of description, the Bind row.
     w, _ = gui_size()
     panel = panel_width()
     ww = min(max(panel * 1.6, 150), w - 8)
-    x = (w - ww) / 2
-    bind_row = (x + ww / 2, 40 + 16 + 14 + 14 + 7)
+    x, top = 2 + (panel + 3) + panel + 4, 32
+    if x + ww > w - 2:
+        x = 2 + (panel + 3) - 4 - ww
+    bind_row = (x + ww / 2, top + 16 + 14 + 7)
     setting("clickgui", "settings", "Window")
     say(".menu auto walk")
     wait(5)
@@ -4974,7 +4981,7 @@ def _():
     ctl("key", "k", "tap")
     wait(2)
     # The close button; then nothing is under the Bind row's place.
-    ctl("click-at", str(x + ww - 8), "48")
+    ctl("click-at", str(x + ww - 8), str(top + 8))
     wait(2)
     ctl("click-at", *map(str, bind_row))
     wait(2)
@@ -5010,6 +5017,83 @@ def _():
           and refused == ["Height: 0.5"] and cancelled == ["Height: 0.5"])
     return ok, (f"bind set in Auto Walk's window: {bound}; typed 3: {typed_in}, 99: {clamped}, 0: {low}, ab: {refused}, "
                 f"1 then Esc: {cancelled}")
+
+
+@test("Click GUI (window beside its row, its switch; the picker's Clear)")
+def _():
+    # ClickGUI Settings: Window. A right click on Fullbright's row (Render's first with "fullbright" searched) opens its
+    # window beside the row, to the right, its title level with the row: a click on the switch in its title (left of
+    # the close button) turns Fullbright on, and the close button shuts the window. With the window shut the same click
+    # finds nothing; open again, it turns Fullbright off. Then Settings: Inline and Xray's Blocks picker: Clear, beside
+    # Done, empties the list (it is there only while something is ticked).
+    def esc():
+        ctl("key", "esc", "tap")
+        wait(3)
+        if state().get("screen") == "paused":
+            ctl("resume")
+            wait(3)
+
+    w, h = gui_size()
+    panel = panel_width()
+    ww = min(max(panel * 1.6, 150), w - 8)
+    row = menu_row(3, 1)
+    x, top = 2 + 3 * (panel + 3) + panel + 4, 32
+    if x + ww > w - 2:
+        x = 2 + 3 * (panel + 3) - 4 - ww
+    switch, close = (x + ww - 16 - 2 - 7, top + 8), (x + ww - 8, top + 8)
+    setting("clickgui", "settings", "Window")
+    was = is_on("Fullbright")
+    seen = []
+    for window in (True, False, True):
+        say(".menu fullbright")
+        wait(5)
+        if window:
+            ctl("click-at", *map(str, row), "right")
+            wait(3)
+        ctl("click-at", *map(str, switch))
+        wait(3)
+        if window:
+            ctl("click-at", *map(str, close))
+            wait(3)
+        esc()
+        seen.append(is_on("Fullbright"))
+    if seen[-1] != was:
+        say(".t fullbright")
+    setting("clickgui", "settings", "Inline")
+
+    def blocks():
+        mark = log_mark()
+        say(".settings xray")
+        wait(3)
+        return next((line for line in sunset_said(mark) if line.startswith("Blocks:")), "")
+
+    before = blocks()
+    width, height = min(max(w - 8, 1), 300), min(max(h - 16, 1), 280)
+    px, py = (w - width) / 2, max((h - height) / 2, 0)
+    clear, done = (px + width - 62 - 44 + 20, py + height - 19 + 7.5), (px + width - 62 + 28, py + height - 19 + 7.5)
+    # open_picker's right click opens Xray's settings in the panel, or shuts them if an earlier test left them open
+    # (no picker then, and the clicks find nothing): the second go opens them.
+    for go in range(2):
+        open_picker("")
+        ctl("click-at", *map(str, clear))
+        wait(3)
+        ctl("click-at", *map(str, done))
+        wait(3)
+        esc()
+        after = blocks()
+        if after != before:
+            break
+    if go == 0:
+        # Shut again, as they were.
+        say(".menu xray")
+        wait(5)
+        ctl("click-at", *map(str, menu_row(3, 1)), "right")
+        wait(3)
+        esc()
+    say(".reset xray")
+    touched.add("xray")
+    ok = seen == [not was, not was, was] and "ore" in before and "ore" not in after and after != ""
+    return ok, f"Fullbright on after each visit (window, none, window), from {was}: {seen}; Xray's blocks before Clear: {before[:40]!r}, after: {after!r}"
 
 
 def is_on(name):

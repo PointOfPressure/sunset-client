@@ -81,6 +81,36 @@ impl Setting {
             Value::Text(t) => t.chars().map(|c| if c.is_control() { '?' } else { c }).collect(),
         }
     }
+    // The unit a number's name ends in ("Delay (ms)", "Chance (%)"...): the menu shows it after the value ("150 ms",
+    // "40%") and leaves it out of the name. The name itself, which configs, profiles and commands use, is unchanged.
+    fn unit(&self) -> Option<(&'static str, &'static str)> {
+        if !matches!(self.value, Value::Num { .. }) {
+            return None;
+        }
+        let (label, unit) = self.name.strip_suffix(')')?.rsplit_once(" (")?;
+        let unit = match unit {
+            "ms" => " ms",
+            "ticks" => " ticks",
+            "s" | "seconds" => " s",
+            "min" => " min",
+            "%" => "%",
+            _ => return None,
+        };
+        Some((label, unit))
+    }
+    // The setting's name as a menu row shows it.
+    pub(super) fn label(&self) -> &'static str {
+        self.unit().map_or(self.name, |(label, _)| label)
+    }
+    // Its value as a menu row shows it: a number with its unit.
+    pub(super) fn shown_value(&self) -> String {
+        let text = self.value_text();
+        match self.unit() {
+            Some((_, " ticks")) if text == "1" => "1 tick".to_owned(),
+            Some((_, unit)) if text.parse::<f64>().is_ok() => format!("{text}{unit}"),
+            _ => text,
+        }
+    }
     // ESP's, Tracers' and Nametags' Range at 0: everything the server sent, however far.
     fn all_loaded(&self, v: f64) -> bool {
         self.name == "Range" && v == 0.0 && matches!(self.value, Value::Num { min, max, .. } if min == 0.0 && max == ALL_RANGE_MAX)

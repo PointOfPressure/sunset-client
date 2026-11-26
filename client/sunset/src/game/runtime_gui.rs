@@ -237,9 +237,10 @@ pub(super) enum Hit {
     Module(usize),
     Bind(usize),
     Setting(usize, usize),
-    // The settings window: anywhere on it, its title (to drag it) and its close button.
+    // The settings window: anywhere on it, its title (to drag it), its module's switch and its close button.
     WinBody,
     WinTitle,
+    WinToggle,
     WinClose,
     // The Dashboard style's own parts.
     Dash(super::sunset_dashboard::Part),
@@ -517,6 +518,26 @@ pub(super) fn win_close(frame: [f32; 4]) -> [f32; 4] {
     [frame[0] + frame[2] - head_h(), frame[1], head_h(), head_h()]
 }
 
+// The module's own switch, in the title beside the close button (the size of a setting's).
+pub(super) fn win_toggle(frame: [f32; 4]) -> [f32; 4] {
+    let close = win_close(frame);
+    [close[0] - 2.0 - 14.0, frame[1] + (head_h() - 8.0) / 2.0, 14.0, 8.0]
+}
+
+// Where a module's settings window opens: beside the row that was clicked (to its right, or its left where the screen
+// ends), its title level with the row, so the panel it came from stays in view; in the middle when neither side has room.
+pub(super) fn win_home(s: &State, row: [f32; 4]) -> [f32; 2] {
+    let (ww, view) = (win_w(s), s.gui.view_w);
+    let (right, left) = (row[0] + row[2] + 4.0, row[0] - 4.0 - ww);
+    if right + ww <= view - 2.0 {
+        [right, (row[1] - head_h()).max(2.0)]
+    } else if left >= 2.0 {
+        [left, (row[1] - head_h()).max(2.0)]
+    } else {
+        [(view - ww) / 2.0, 40.0]
+    }
+}
+
 // The window's rows in view, and where.
 pub(super) fn win_rows(s: &State) -> Vec<([f32; 4], WinRow)> {
     let Some(w) = s.gui.window else {
@@ -544,7 +565,12 @@ fn window_hits(s: &State) -> Vec<([f32; 4], Hit)> {
         return Vec::new();
     };
     let frame = win_frame(s, &w);
-    let mut out = vec![(frame, Hit::WinBody), ([frame[0], frame[1], frame[2], head_h()], Hit::WinTitle), (win_close(frame), Hit::WinClose)];
+    let mut out = vec![
+        (frame, Hit::WinBody),
+        ([frame[0], frame[1], frame[2], head_h()], Hit::WinTitle),
+        (win_toggle(frame), Hit::WinToggle),
+        (win_close(frame), Hit::WinClose),
+    ];
     let top = frame[1] + head_h() + w.about_h;
     out.extend(win_rows(s).into_iter().filter_map(|(r, row)| match row {
         WinRow::Row(hit) => in_view(r, [top, top + w.room]).map(|r| (r, hit)),

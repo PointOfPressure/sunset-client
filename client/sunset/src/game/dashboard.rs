@@ -5,7 +5,7 @@
 use crate::game::sunset_compat::SunsetGame as _;
 
 use super::Game;
-use super::sunset::{CATEGORIES, Hit, Shape, State, accent, pal, control_radius, dash_menu, dash_search_clear, fit_to, panel_radius, row_h, row_hh, snap_scroll, text_y, wanted_panel_w};
+use super::sunset::{CATEGORIES, Hit, Shape, State, accent, pal, control_radius, dash_menu, dash_search_clear, fade, fit_to, panel_radius, row_h, row_hh, scrollbar, search_text, snap_scroll, switch, text_y, wanted_panel_w};
 use super::sunset_smooth as smooth;
 use horizon_client::hud::HudBatch;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -103,7 +103,7 @@ fn sidebar() -> bool {
 const WIDTH_BASE: f32 = 190.0;
 const WIDTH_PER_PANEL: f32 = 3.5;
 const HEIGHT: f32 = 420.0;
-const SIDE: f32 = 116.0;
+const SIDE: f32 = 104.0;
 // Above and below the columns, so a lit row stays clear of the panel's corners.
 const PAD: f32 = 8.0;
 const LIST_MIN: f32 = 150.0;
@@ -254,16 +254,25 @@ pub(super) fn prepare(s: &State) {
             let m = &s.modules[i];
             let (bind, settings): (Vec<usize>, Vec<usize>) =
                 (0..m.settings.len()).filter(|&j| m.setting_visible(j)).partition(|&j| m.settings[j].name == "Bind mode");
-            for hit in std::iter::once(Hit::Bind(i)).chain(bind.into_iter().map(|j| Hit::Setting(i, j))) {
+            // The bind has a card of its own, as every section has.
+            y += CARD_PAD;
+            for (n, hit) in std::iter::once(Hit::Bind(i)).chain(bind.into_iter().map(|j| Hit::Setting(i, j))).enumerate() {
+                if n > 0 {
+                    lined.push(hit);
+                }
                 pane.rows.push((y, hit));
                 y += row_h(s, hit);
             }
+            y += CARD_PAD;
+            cards.push(Card { top: 0.0, bottom: y, title: None });
             let mut section: Option<Option<&'static str>> = None;
             for j in settings {
                 let hit = Hit::Setting(i, j);
                 let group = m.group_of(j);
                 if section != Some(group) {
-                    if let Some(card) = cards.last_mut() {
+                    if section.is_some()
+                        && let Some(card) = cards.last_mut()
+                    {
                         y += CARD_PAD;
                         card.bottom = y;
                     }
@@ -279,7 +288,9 @@ pub(super) fn prepare(s: &State) {
                 pane.stops.push((y, hit));
                 y += row_h(s, hit);
             }
-            if let Some(card) = cards.last_mut() {
+            if section.is_some()
+                && let Some(card) = cards.last_mut()
+            {
                 y += CARD_PAD;
                 card.bottom = y;
             }
@@ -526,9 +537,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     let r = [list[0] + CARD_M, f[1] + (HEADER_H - SEARCH_H) / 2.0, (list[2] + pane[2] - 2.0 * CARD_M).clamp(0.0, SEARCH_MAX), SEARCH_H];
     let selected = menu.select_all && !menu.search.is_empty();
     out.push(Shape::Round(r, radius, if selected { 0xFF30_60B0 } else { pal().dash_control }));
-    let text = if menu.search.is_empty() { "Search modules".to_owned() } else { format!("{}_", menu.search) };
-    let colour = if menu.search.is_empty() { MUTED } else { 0xFFFFFF };
-    out.push(Shape::Text(fit_to(game, &text, r[2] - 16.0), [r[0] + 8.0, r[1] + text_y(r[3])], colour));
+    search_text(game, out, r, menu.search, menu.search.len(), "Search modules");
 
     // The categories: the one shown a capsule in the accent colour.
     for p in 1..=CATEGORIES.len() {
@@ -585,10 +594,8 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         out.push(Shape::Head(fit_to(game, m.name, room), [pane[0] + CARD_M + 2.0, band_y + 5.0], 0xFFFFFF));
         out.push(Shape::Text(fit_to(game, m.about, room), [pane[0] + CARD_M + 2.0, band_y + 18.0], MUTED));
         let lit = glow(Hit::Dash(Part::Toggle));
-        out.push(Shape::Round(t, TOGGLE_H / 2.0, if m.on { solid } else { pal().dash_toggle_off + (lit << 16 | lit << 8 | lit) }));
-        let knob = TOGGLE_H - 4.0;
-        let kx = if m.on { t[0] + t[2] - knob - 2.0 } else { t[0] + 2.0 };
-        out.push(Shape::Round([kx, t[1] + 2.0, knob, knob], knob / 2.0, if m.on { 0xFFFF_FFFF } else { 0xFFB4_B4BA }));
+        // The same switch as a setting's, bigger.
+        switch(out, t, m.on, lit);
     }
 
     // Its sections: a card each, with its title.
@@ -607,16 +614,31 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         }
         out.push(Shape::ClipEnd([pane[0], pane[1], pane[0] + pane[2], pane[1] + pane[3]]));
     });
-    let (content, pane_content) = view(|v| (v.list.content, v.pane.content));
+}
 
-    // The scroll markers: how much of a column shows, and where.
-    for (c, content, at) in [(list, content, scroll), (pane, pane_content, pane_at)] {
+// Over the rows: where a column has more past its top or bottom edge the rows fade into the surface there (a row the
+// edge cuts reads as "more this way", not as a broken row), and each column's scroll marker on its track.
+pub(super) fn front(s: &State, px: f32, out: &mut Vec<Shape>) {
+    if sidebar() || !on() {
+        return;
+    }
+    let (list, pane) = columns(s);
+    let (list_at, pane_at) = (smooth::shown(smooth::DASHBOARD, list_scroll()), smooth::shown(smooth::PANE, pane_scroll()));
+    let (content, pane_content) = view(|v| (v.list.content, v.pane.content));
+    for (c, content, at) in [(list, content, list_at), (pane, pane_content, pane_at)] {
         let room = c[3];
-        if content > room && room > 0.0 {
-            let thumb = (room * room / content).max(10.0);
-            let t = (at / (content - room)).min(1.0);
-            out.push(Shape::Round([c[0] + c[2] - 3.0, c[1] + (room - thumb) * t, 2.0, thumb], 1.0, 0x50FF_FFFF));
+        if room <= 0.0 {
+            continue;
         }
+        // Clear of the hairline down the column's left.
+        let (x, w) = (c[0] + px, c[2] - px);
+        if at > 0.5 {
+            fade(out, [x, c[1], w], pal().dash_surface, px, false);
+        }
+        if content - at > room + 0.5 {
+            fade(out, [x, c[1] + room, w], pal().dash_surface, px, true);
+        }
+        scrollbar(out, c[0] + c[2] - 4.0, c[1] + 1.0, room - 2.0, content, room, at);
     }
 }
 

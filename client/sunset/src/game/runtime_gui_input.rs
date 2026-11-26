@@ -214,6 +214,13 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             let area = pick::list_area(r);
             if !right && inside(pick::done_button(r), at) {
                 s.gui.editor = None;
+            } else if !right && inside(pick::clear_button(r), at) {
+                // Clear (it shows while anything is ticked): the list emptied.
+                let (i, j) = (*module, *setting);
+                if matches!(&s.modules[i].settings[j].value, Value::Text(t) if !pick::chosen(t).is_empty()) {
+                    s.modules[i].settings[j].value = Value::Text(String::new());
+                    changed = true;
+                }
             } else if !right && inside(area, at) {
                 let (i, j) = (*module, *setting);
                 let row = ((at.1 - area[1] + super::sunset_smooth::shown(super::sunset_smooth::PICKER, picker.scroll)) / pick::ROW) as usize;
@@ -268,7 +275,8 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                 }
             }
             (Hit::WinClose, false) => s.gui.window = None,
-            (Hit::WinBody | Hit::WinTitle | Hit::WinClose, _) => {}
+            (Hit::WinToggle, false) => toggled = s.gui.window.map(|w| w.module),
+            (Hit::WinBody | Hit::WinTitle | Hit::WinToggle | Hit::WinClose, _) => {}
             (Hit::Dash(super::sunset_dashboard::Part::Toggle), false) => toggled = super::sunset_dashboard::chosen(),
             (Hit::Dash(super::sunset_dashboard::Part::Side(super::sunset_sidebar::Part::Title)), false) => {
                 let [x, y] = super::sunset_sidebar::corner(s);
@@ -298,12 +306,12 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     s.gui.expanded.push(i);
                 }
             }
-            // Its own window, in the middle at first (the same module again closes it).
+            // Its own window, beside the row at first (the same module again closes it).
             (Hit::Module(i), true) => {
                 s.gui.window = match s.gui.window {
                     Some(w) if w.module == i => None,
                     _ => {
-                        let at = [(s.gui.view_w - win_w(s)) / 2.0, 40.0];
+                        let at = win_home(s, r);
                         Some(Win { module: i, x: at[0], y: at[1], home: at, scroll: 0.0, about_h: 0.0, content: 0.0, room: 0.0 })
                     }
                 };
@@ -322,7 +330,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                 };
                 // A click on the number: it is typed instead (all of it selected, so typing replaces it).
                 if let (Some(v), false) = (number, right)
-                    && at.0 >= r[0] + r[2] - RIGHT_PAD - game.sunset_text_width(&num(v)) - 3.0
+                    && at.0 >= r[0] + r[2] - RIGHT_PAD - game.sunset_text_width(&s.modules[i].settings[j].shown_value()) - 3.0
                     && at.1 < number_band(r)
                 {
                     let mut draft = Draft::new(&num(v));

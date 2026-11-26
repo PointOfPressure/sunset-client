@@ -144,8 +144,8 @@ pub(super) struct Palette {
 
 const GREY: Palette = Palette {
     panel: 0xC00E_0E0E,
-    frame: 0xF812_1212,
-    dialog: 0xF814_1414,
+    frame: 0xFF12_1212,
+    dialog: 0xFF14_1414,
     border: 0,
     field: 0xFF08_0808,
     value_box: 0xFF1E_1E1E,
@@ -154,7 +154,7 @@ const GREY: Palette = Palette {
     knob: 0xFF10_1010,
     check_off: 0xFF3A_3A3A,
     button: 0xFF3A_3A3A,
-    tooltip: 0xF80A_0A0A,
+    tooltip: 0xFF0A_0A0A,
     line: 0x12FF_FFFF,
     rule: 0x24FF_FFFF,
     dash_surface: 0xFF12_1214,
