@@ -119,6 +119,7 @@ fn report(game: &Game<'_>, limits: &Limits) -> String {
         chrono::Local::now().format("UTC%:z")
     );
     header(&mut out, game);
+    super::sunset::kept_report(game, &mut out);
     player(&mut out, game);
     input(&mut out, game);
     modules(&mut out);

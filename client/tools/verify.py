@@ -13906,7 +13906,8 @@ GRIM_LINES = [
 ]
 GRIM_COUNTS = {"Simulation": (15, "173.0"), "GroundSpoof": (7, "45.0"), "Post": (2, "5.0"), "PacketOrderO": (2, "23.0"),
                "Hitboxes": (1, "3.0"), "BadPacketsX": (1, "0.0")}
-REPORT_SECTIONS = ["# Sunset debug report", "## Versions and server", "## Player", "## Input", "## Modules",
+REPORT_SECTIONS = ["# Sunset debug report", "## Versions and server", "## Settings file", "- At launch: ", "- Saved since: ",
+                   "## Player", "## Input", "## Modules",
                    "## Anticheat flags", "### Server position packets", "### Disconnects and kicks", "## Packets sent",
                    "## Chat"]
 

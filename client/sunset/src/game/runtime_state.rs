@@ -842,6 +842,11 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
     // Sunset saves its config in its data directory as a single file.
     let mut text = std::fs::read_to_string(data.join("config")).unwrap_or_default();
     let mut recovered = false;
+    let read = match (text.is_empty(), super::sunset_profiles::whole_config(&text)) {
+        (_, true) => format!("read {} lines", text.lines().count()),
+        (true, false) => "no settings file".to_owned(),
+        (false, false) => format!("a settings file cut short ({} bytes)", text.len()),
+    };
     // A config cut short (a crash while an older version wrote it, a disk that filled up): the copy kept at the last
     // launch that loaded a whole one. Without either, the defaults (a first launch).
     if !super::sunset_profiles::whole_config(&text)
@@ -858,6 +863,15 @@ pub(super) fn ensure_loaded(game: &Game<'_>) {
     {
         notice(format!("Couldn't keep a copy of the settings ({e})."));
     }
+    *KEPT.lock().unwrap_or_else(|e| e.into_inner()) = Some(Kept {
+        folder: data.clone(),
+        loaded: match (recovered, super::sunset_profiles::whole_config(&text)) {
+            (true, _) => format!("{read}: loaded the copy kept at the last launch ({} lines)", text.lines().count()),
+            (false, true) => read,
+            (false, false) => format!("{read}: the defaults"),
+        },
+        ..Kept::default()
+    });
     with(|s| {
         s.raw = text.clone();
         s.load_text(&text);
@@ -907,7 +921,17 @@ pub(super) fn save(game: &Game<'_>) {
     if *last == Some(hash) {
         return;
     }
-    match super::sunset_profiles::write_config(&game.native_data_dir(ID), "config", &text) {
+    let written = super::sunset_profiles::write_config(&game.native_data_dir(ID), "config", &text);
+    if let Some(kept) = KEPT.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        match &written {
+            Ok(()) => kept.saves += 1,
+            Err(e) => {
+                kept.failed += 1;
+                kept.last_error.clone_from(e);
+            }
+        }
+    }
+    match written {
         Ok(()) => *last = Some(hash),
         Err(e) => {
             // A virus scanner holding the old file can stop the rename: the game's own writer still gets it saved.
@@ -920,6 +944,53 @@ pub(super) fn save(game: &Game<'_>) {
 
 // What the config was last written as, so the same text isn't written again.
 static LAST_SAVED: Mutex<Option<u64>> = Mutex::new(None);
+
+// How the settings came in at this launch and how the saves since went, for the Debug Report: settings that "reset"
+// were not read, not written, or kept in another folder than the one the next launch reads.
+#[derive(Default)]
+struct Kept {
+    folder: std::path::PathBuf,
+    loaded: String,
+    saves: u32,
+    failed: u32,
+    last_error: String,
+}
+
+static KEPT: Mutex<Option<Kept>> = Mutex::new(None);
+
+// A path as a report shows it: the home folder (which names the computer's user) as ~.
+fn home_as_tilde(path: &std::path::Path) -> String {
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).filter(|h| !h.is_empty());
+    match home.and_then(|h| path.strip_prefix(h).ok().map(|rest| std::path::Path::new("~").join(rest))) {
+        Some(short) => short.display().to_string(),
+        None => path.display().to_string(),
+    }
+}
+
+// The Debug Report's "Settings file" section.
+pub(super) fn kept_report(game: &Game<'_>, out: &mut String) {
+    use std::fmt::Write as _;
+    let now = game.native_data_dir(ID);
+    let _ = writeln!(out, "\n## Settings file");
+    let kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(kept) = kept.as_ref() else {
+        let _ = writeln!(out, "- Not read yet. Folder: {}", home_as_tilde(&now));
+        return;
+    };
+    let _ = writeln!(out, "- Folder: {}", home_as_tilde(&now));
+    if kept.folder != now {
+        // The game's folder is its working folder: one that changed since the launch splits the settings in two.
+        let _ = writeln!(out, "- CHANGED since launch, when it was: {}", home_as_tilde(&kept.folder));
+    }
+    let _ = writeln!(out, "- At launch: {}", kept.loaded);
+    let failed = if kept.failed == 0 { String::new() } else { format!(", {} failed safely and went the plain way (last: {})", kept.failed, kept.last_error) };
+    let _ = writeln!(out, "- Saved since: {} times{failed}{}", kept.saves, if running() { "" } else { " (Panic: nothing is saved)" });
+    let on_disk = std::fs::metadata(now.join("config")).ok().map(|m| {
+        let age = m.modified().ok().and_then(|t| t.elapsed().ok()).map_or("at an unknown time".to_owned(), |d| format!("{} s ago", d.as_secs()));
+        format!("{} bytes, written {age}", m.len())
+    });
+    let _ = writeln!(out, "- On disk now: {}", on_disk.unwrap_or_else(|| "no config file".to_owned()));
+}
 
 // Lines for the chat from where there is none to write to (loading the settings): said at the next tick in a world,
 // each once.
