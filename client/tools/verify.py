@@ -210,12 +210,15 @@ def clean():
     wait(3)
     # A world with real terrain (a server's) has hills round the platform: clear a wide ring, high enough for No
     # Fall's 12-block drop (else the player is teleported into a hill and suffocates for 1 health).
-    cmd("gamemode survival @s", "clear @s", "effect clear @s", "xp set @s 0 levels", "xp set @s 0 points",
-        "kill @e[type=!player]", "difficulty peaceful", "time set 6000", "weather clear", "gamerule natural_health_regeneration true",
-        f"fill {X0-24} {Y-1} {Z0-24} {X0+24} {Y+4} {Z0+24} minecraft:air",
+    # The platform and the place on it come before survival: in a new world there is no platform yet, and on a slow
+    # rig a player made survival first fell to the ground and died before it was built (the session's first test then
+    # typed into the death screen).
+    cmd(f"fill {X0-24} {Y-1} {Z0-24} {X0+24} {Y+4} {Z0+24} minecraft:air",
         f"fill {X0-24} {Y+5} {Z0-24} {X0+24} {Y+16} {Z0+24} minecraft:air",
         f"fill {X0-16} {Y} {Z0-16} {X0+16} {Y} {Z0+16} minecraft:stone",
         f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0",
+        "gamemode survival @s", "clear @s", "effect clear @s", "xp set @s 0 levels", "xp set @s 0 points",
+        "kill @e[type=!player]", "difficulty peaceful", "time set 6000", "weather clear", "gamerule natural_health_regeneration true",
         "effect give @s minecraft:instant_health 1 10 true", "effect give @s minecraft:saturation 1 10 true")
     # A moment in water: any fall the server still counts (one Sunset kept from it) is gone.
     cmd(f"setblock {X0} {Y+1} {Z0} minecraft:water")

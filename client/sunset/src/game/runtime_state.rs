@@ -610,7 +610,11 @@ impl State {
             }
         }
         if checked.body.is_empty() && !checked.skipped.is_empty() {
-            return Err(format!("nothing in it this version of Sunset knows ({} lines left out)", checked.skipped.len()));
+            // The line (or the first of them) is named, as a load that leaves lines out names it: which one to mend.
+            return Err(match checked.skipped.as_slice() {
+                [one] => format!("nothing in it this version of Sunset knows: {one}"),
+                all => format!("nothing in it this version of Sunset knows ({} lines left out, the first {})", all.len(), all[0]),
+            });
         }
         Ok(checked)
     }

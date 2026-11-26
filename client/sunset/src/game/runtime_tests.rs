@@ -1091,6 +1091,11 @@ mod profile_robustness_tests {
         assert_eq!(checked.skipped.len(), 3, "{:?}", checked.skipped);
         assert!(checked.skipped_note().contains("3 lines"));
         assert!(state.check_profile(&format!("{HEADER}\nnosuchmodule.on=true\n")).is_err());
+        // A profile with nothing to keep names what it refused: the one line, or how many and the first.
+        let one = state.check_profile(&format!("{HEADER}\nkillaura.range=lots\n")).unwrap_err();
+        assert!(one.contains("killaura.range=lots") && !one.contains("lines"), "{one}");
+        let two = state.check_profile(&format!("{HEADER}\nkillaura.range=lots\nnosuchmodule.on=true\n")).unwrap_err();
+        assert!(two.contains("2 lines left out, the first killaura.range=lots"), "{two}");
         assert!(state.check_profile("sprint.on=true\n").is_err());
     }
 
