@@ -7029,21 +7029,26 @@ def _():
     return ok, f"hits in 3 s: {full} at the full cooldown, {half} at 50%; Miss chance 25: {missed} of 16 looks let go ({windows})"
 
 
+def trigger_section():
+    """The Debug Report's Trigger Bot counts since it was last turned on: ticks, ticks with something under the
+    crosshair, hits, and what held each of the others."""
+    line, text = debug_report(lambda: say(".debug 20"))
+    sec = (text or "").split("## Trigger Bot", 1)[-1].split("\n## ", 1)[0] if text and "## Trigger Bot" in text else ""
+    ran = re.search(r"(\d+) ticks \(\d+ s\), (\d+) of them", sec)
+    of = re.search(r"Of those \d+: (\d+) hits; held by: (.*)", sec)
+    if not ran or not of:
+        return {"ticks": 0, "seen": 0, "hits": 0, "held": {}, "raw": sec.strip() or line}
+    held = {why.strip(): int(n) for n, why in re.findall(r"(\d+) ([^;\n]+)", of.group(2))}
+    return {"ticks": int(ran.group(1)), "seen": int(ran.group(2)), "hits": int(of.group(1)), "held": held}
+
+
 @test("Trigger Bot (what each tick did, Debug Report)")
 def _():
     # A husk that can't be hurt, a sword in hand. The Debug Report's Trigger Bot section counts every tick Trigger Bot
     # ran since it was turned on: steady on the husk it hits at the sword's cooldown and every other tick waits on
     # it; an apple being eaten holds the hits (an item in use); walking across in front of the husk, each pass is hit;
     # Wait for cooldown off with Delay 4 hits every fifth tick; looking away, nothing counts as under the crosshair.
-    def section():
-        line, text = debug_report(lambda: say(".debug 20"))
-        sec = (text or "").split("## Trigger Bot", 1)[-1].split("\n## ", 1)[0] if text and "## Trigger Bot" in text else ""
-        ran = re.search(r"(\d+) ticks \(\d+ s\), (\d+) of them", sec)
-        of = re.search(r"Of those \d+: (\d+) hits; held by: (.*)", sec)
-        if not ran or not of:
-            return {"ticks": 0, "seen": 0, "hits": 0, "held": {}, "raw": sec.strip() or line}
-        held = {why.strip(): int(n) for n, why in re.findall(r"(\d+) ([^;\n]+)", of.group(2))}
-        return {"ticks": int(ran.group(1)), "seen": int(ran.group(2)), "hits": int(of.group(1)), "held": held}
+    section = trigger_section
 
     reset()
     slot(0, "diamond_sword")
@@ -7114,6 +7119,74 @@ def _():
     brief = lambda r: r.get("raw") or f"{r['hits']} hits in {r['seen']} ticks on target of {r['ticks']} ({rate(r)}/s), held {r['held']}"
     return ok, (f"{fps:.0f} FPS; steady: {brief(steady)}; eating: {brief(eating)}; {passes} passes across: {brief(across)}; "
                 f"no cooldown, Delay 4: {brief(delayed)}; looking away: {brief(away)}")
+
+
+@test("Trigger Bot (Anti bot and a real player)")
+def _():
+    # Bot1 is a real player, so Anti bot must never hold a hit on him, at any sensitivity: standing, jumping, circling
+    # you while he looks at you (how a strafing fighter moves, and how a watchdog bot moves too), sneaking, standing
+    # after a circle at a run. The Debug
+    # Report counts the ticks Anti bot held on their own. Last, Bot1 shrunk to a fifth and invisible (a decoy's
+    # shape): what Anti bot makes of that is reported, not required.
+    if not CTL2:
+        return None, "needs a second player"
+    bot_ready(2.5, 180, "attribute Bot1 minecraft:knockback_resistance base set 1")
+    slot(0, "diamond_sword")
+    ctl("key", "1", "tap")
+    bot = next(e["id"] for e in ctl("entities")["entities"] if e.get("type") == "minecraft:player")
+    tester = next(e["id"] for e in ctl2("entities").get("entities", []) if e.get("type") == "minecraft:player")
+    setting("triggerbot", "hostiles", "false")
+
+    def run(ticks, keys=(), circle=False):
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5} 180 0",
+            "effect give Bot1 minecraft:instant_health 1 28 true")
+        wait(5)
+        for k in keys:
+            ctl2("key", k, "down")
+        ctl("look-at-entity", str(bot))
+        only("triggerbot")
+        for _ in range(ticks // 2):
+            ctl("look-at-entity", str(bot))
+            if circle:
+                ctl2("look-at-entity", str(tester))
+            wait(2)
+        r = trigger_section()
+        only()
+        for k in keys:
+            ctl2("key", k, "up")
+        a, b = state()["player"]["position"], (ctl2("state").get("player") or {}).get("position", [0, 0, 0])
+        r["apart"] = round(math.dist([a[0], a[2]], [b[0], b[2]]), 1)
+        return r
+
+    out, ok = [], True
+    for sens in ("Balanced", "Conservative", "Sensitive"):
+        setting("triggerbot", "anti bot sensitivity", sens)
+        for name, keys, circle in (("standing", (), False), ("jumping", ("space",), False),
+                                   ("circling you, sneaking", ("shift", "d"), True), ("sneaking", ("shift",), False),
+                                   ("standing after circling you at a run", None, False)):
+            if keys is None:
+                # A walking-speed circle spirals out of reach between two looks on this rig: run it unaimed, then
+                # stand him in front of you and see whether what Anti bot saw holds the hits.
+                run(60, ("d",), True)
+                keys = ()
+            r = run(40 if circle else 60, keys, circle)
+            bots = r["held"].get("Anti bot", 0)
+            ok = ok and r["seen"] >= 10 and r["hits"] >= 2 and bots == 0
+            out.append(f"{sens} {name}: " + (r.get("raw") or f"{r['hits']} hits in {r['seen']} on target of {r['ticks']}, Anti bot held {bots}, {r['apart']} apart"))
+    setting("triggerbot", "anti bot", "false")
+    off = run(40, ("shift", "d"), True)
+    ok = ok and off["hits"] >= 2 and off["held"].get("Anti bot", 0) == 0
+    out.append(f"Anti bot off, circling sneaking: {off['hits']} hits in {off['seen']} of {off['ticks']}, Anti bot held {off['held'].get('Anti bot', 0)}, {off['apart']} apart")
+    setting("triggerbot", "anti bot", "true")
+    setting("triggerbot", "anti bot sensitivity", "Sensitive")
+    cmd("attribute Bot1 minecraft:scale base set 0.2", "effect give Bot1 minecraft:invisibility 30 0 true")
+    wait(10)
+    decoy = run(60)
+    out.append(f"shrunk and invisible, Sensitive: {decoy['hits']} hits in {decoy['seen']}, Anti bot held {decoy['held'].get('Anti bot', 0)}")
+    cmd("attribute Bot1 minecraft:scale base set 1", "attribute Bot1 minecraft:knockback_resistance base set 0", "effect clear Bot1")
+    say(".reset triggerbot")
+    bot_done()
+    return ok, "; ".join(out)
 
 
 @test("Velocity (knockback chance)")

@@ -596,11 +596,12 @@ struct TriggerStats {
     held: [u32; TRIGGER_HELD.len()],
 }
 
-const TRIGGER_HELD: [&str; 8] = [
+const TRIGGER_HELD: [&str; 9] = [
     "a screen over the game, asleep, or Only on left click with no click",
     "an item in use",
     "a hit already on its way (Criticals, a queued strike)",
-    "not a target (its kind, a friend, a team mate, Anti bot)",
+    "not a target (its kind, a friend, a team mate)",
+    "Anti bot",
     "Sticky target on another",
     "Crit timing or Crits only",
     "the cooldown or the delay",
@@ -610,10 +611,11 @@ const HELD_INPUT: usize = 0;
 const HELD_USING: usize = 1;
 const HELD_BUSY: usize = 2;
 const HELD_UNWANTED: usize = 3;
-const HELD_STICKY: usize = 4;
-const HELD_CRIT: usize = 5;
-const HELD_COOLDOWN: usize = 6;
-const HELD_MISS: usize = 7;
+const HELD_BOT: usize = 4;
+const HELD_STICKY: usize = 5;
+const HELD_CRIT: usize = 6;
+const HELD_COOLDOWN: usize = 7;
+const HELD_MISS: usize = 8;
 
 static TRIGGER_STATS: std::sync::Mutex<TriggerStats> = std::sync::Mutex::new(TriggerStats { last: 0, ticks: 0, seen: 0, hits: 0, held: [0; TRIGGER_HELD.len()] });
 
@@ -699,6 +701,11 @@ pub(super) fn trigger_bot(game: &mut Game<'_>, m: &Module, crits: bool) {
     let identity = super::sunset_antibot::token(id);
     if with(|s| s.trigger_missed.is_some_and(|t| t.id != id || !super::sunset_antibot::current(t))) {
         with(|s| s.trigger_missed = None);
+    }
+    // Anti bot counted on its own: a real player it takes for a bot is a hit lost that nothing else explains.
+    if want && super::sunset_antibot::blocked_for(id, m) {
+        trigger_held(HELD_BOT);
+        return;
     }
     if !want || (player && is_friend(&friends, &names, id)) || !super::sunset_util::combat_eligible(game, m, mob) {
         trigger_held(HELD_UNWANTED);
