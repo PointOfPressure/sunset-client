@@ -117,8 +117,8 @@ const TAB_H: f32 = 20.0;
 const TAB_GAP: f32 = 2.0;
 const TABS_Y: f32 = HEADER_H + 8.0;
 // The chosen module's switch, at the right of its band.
-const TOGGLE_W: f32 = 22.0;
-const TOGGLE_H: f32 = 12.0;
+const TOGGLE_W: f32 = 18.0;
+const TOGGLE_H: f32 = 10.0;
 // The settings' sections: inset from the column's sides, apart from each other, the rows inside them, a title's height.
 const CARD_M: f32 = 8.0;
 const CARD_GAP: f32 = 6.0;
@@ -560,13 +560,19 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     let band_y = list[1] - BAND_H;
     out.push(Shape::Head(title.to_owned(), [list[0] + 10.0, band_y + text_y(BAND_H)], 0xFFFFFF));
     // What the number counts: the category's modules, or the search's finds.
+    let on = view(|v| v.listed.ids.iter().filter(|&&i| s.modules[i].on).count());
     let count = match (page, count) {
         (0, n) => format!("{n} found"),
-        (_, 1) => "1 module".to_owned(),
-        (_, n) => format!("{n} modules"),
+        (_, 1) => format!("1 module, {on} on"),
+        (_, n) => format!("{n} modules, {on} on"),
     };
+    // A search that finds nothing says so in the list.
+    if page == 0 && view(|v| v.listed.ids.is_empty()) {
+        let none = format!("Nothing matches \"{}\"", menu.search.trim());
+        out.push(Shape::Text(fit_to(game, &none, list[2] + pane[2] - 24.0), [list[0] + 10.0, list[1] + 6.0], MUTED));
+    }
     let tw = game.sunset_text_width(title) + 1.0;
-    out.push(Shape::Text(count, [list[0] + 10.0 + tw + 6.0, band_y + text_y(BAND_H)], MUTED));
+    out.push(Shape::Text(fit_to(game, &count, (list[2] - 20.0 - tw - 6.0).max(0.0)), [list[0] + 10.0 + tw + 6.0, band_y + text_y(BAND_H)], MUTED));
 
     // The list's rows: the chosen one lit (an enabled module's name is in the accent colour: draw_row).
     let scroll = smooth::shown(smooth::DASHBOARD, list_scroll());
@@ -578,7 +584,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
                 && v.chosen == Some(i)
             {
                 // The chosen module: lit, with a bar in the accent colour, so a row only pointed at never looks the same.
-                out.push(Shape::Fill([list[0], list[1] + off - scroll, list[2], module_h()], 0x16FF_FFFF));
+                out.push(Shape::Fill([list[0], list[1] + off - scroll, list[2], module_h()], 0x22FF_FFFF));
                 out.push(Shape::Fill([list[0], list[1] + off - scroll, 2.0, module_h()], solid));
             }
         }
@@ -609,7 +615,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
             }
             out.push(Shape::Round([pane[0] + CARD_M, top, pane[2] - 2.0 * CARD_M, bottom - top], control_radius().max(4.0), pal().dash_card));
             if let Some(title) = card.title {
-                out.push(Shape::Text(title.to_owned(), [pane[0] + CARD_M + 7.0, top + 3.0], MUTED));
+                out.push(Shape::Text(title.to_owned(), [pane[0] + CARD_M + CARD_IN + super::sunset::indent() + 4.0, top + 3.0], MUTED));
             }
         }
         out.push(Shape::ClipEnd([pane[0], pane[1], pane[0] + pane[2], pane[1] + pane[3]]));

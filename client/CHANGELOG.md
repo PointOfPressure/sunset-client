@@ -28,10 +28,13 @@ section of the version they build into the signed manifest, and the launcher sho
 - **HUD > Smooth text (on by default): Sunset's text is spaced as its font spaces it, each letter drawn at the nearest quarter of a pixel, instead of every letter snapped to a whole pixel with its width rounded; turn it off for the old, harder look. Minecraft's font is unchanged**
 - Debug Report has a Settings file section: the folder your settings are kept in, how they were read at this launch and how the saves since went (for settings that come back reset)
 - Debug Report has a Trigger Bot section: of the ticks it ran since it was turned on, how many had something under the crosshair, how many of those hit, and what held each of the others (the cooldown, an item in use, Anti bot, Miss chance...), to compare two players' fights
+- **Profiles menu (the Profiles row) has an Import tab: the .profile files in the imports folder, one click each; a name that is taken asks whether to keep both or replace; Paste a profile keeps the one on the clipboard. No command needed**
+- HUD > Facing axis: off, the facing reads "South" instead of "South +Z"
 
 ### Changed
 - ClickGUI, first fixes from a fresh look at every screen: the Dashboard marks the chosen module with a bar in the accent colour and says what its number counts ("27 modules", "2 found"); list pickers have tick boxes and a plain "11 of 16 chosen" line; the settings window no longer puts a "Bind" heading over its Bind row; switches that are off have a knob you can see; text on orange buttons has no smudged shadow
 - ClickGUI, more from that look: a module's description shows beside its row instead of over the rows under it; the settings window opens beside the panel it came from, has the module's switch in its title and is solid in Grey; a panel's number says what it counts ("3 on", "2 found"); a number shows its unit after it ("150 ms", "40%"); a list setting says how many it holds ("11 blocks"); list pickers have Clear; the search box and the switches are the same everywhere; scrolling lists have a marker on a track and fade where there is more
+- ClickGUI, a second fresh look: the hint line says what the keys do now (searching, choosing a bind, or neither); every panel shows its count ("0 on"); a search that finds nothing says so; a bind being chosen shows "Press a key" in full; the settings window has an edge, shows its whole description and fades at its foot, as long panels do; a list's count matches its picker ("11 of 16"); pickers tick what is chosen and never cut a row; the Dashboard counts what is on ("27 modules, 3 on"); one close cross in every window; the Profiles menu's tabs are filled when shown
 - Target HUD is a module of its own (Render) instead of a switch in HUD: its switch, mode and place carry over, and it shows with HUD off too
 - **Blink is now Fake Lag's Hold mode: your Blink key, switch and Max ticks carry over, and `.t blink` still works**
 - HUD's position, x and y settings are no longer rows in the menus: open the chat and drag an element (right click puts it back); saved layouts stay as they are
@@ -109,4 +112,5 @@ section of the version they build into the signed manifest, and the launcher sho
 ### Fixed
 - Profiles with Fake Lag's old Range choke value load again
 - Streamer Mode no longer slows down text drawing
+
 

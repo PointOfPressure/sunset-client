@@ -24,7 +24,7 @@ pub(super) fn defaults() -> Vec<Module> {
     vec![
         Module::new("Unlock All Recipes", Category::World,
             "Shows every recipe as unlocked."),
-        Module::new("Profiles", Category::Client, "Saved settings to load."),
+        Module::new("Profiles", Category::Client, "Your saved settings: save, load and import profiles, or take a preset."),
         Module::new("Client Sort", Category::Client,
             "Sorts inventories in your order.")
             .bool("Shift fill", false)

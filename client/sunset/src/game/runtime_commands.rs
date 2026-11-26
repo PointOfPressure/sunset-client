@@ -306,10 +306,7 @@ pub(super) fn profile_action(game: &mut Game<'_>, args: &[&str]) -> Result<Strin
         }
         // .profile import alone: what is in the imports folder.
         if sub == "import" && args.len() < 2 {
-            let mut found: Vec<String> = std::fs::read_dir(store.imports())
-                .map(|dir| dir.flatten().filter_map(|e| e.file_name().to_str().and_then(|f| f.strip_suffix(".profile")).map(str::to_owned)).collect())
-                .unwrap_or_default();
-            found.sort();
+            let found = store.import_names();
             return Ok(if found.is_empty() {
                 format!("Nothing to import: put a .profile file in {} (or copy one's text and use .profile paste <name>).", store.imports().display())
             } else {

@@ -190,7 +190,7 @@ const OLED: Palette = Palette {
     dash_surface: 0xFF00_0000,
     dash_hairline: 0xFF2C_2C2C,
     dash_control: 0xFF14_1414,
-    dash_card: 0xFF0C_0C0C,
+    dash_card: 0xFF12_1214,
     dash_toggle_off: 0xFF2A_2A2A,
     profile_panel: 0xFF00_0000,
     profile_tab: 0xFF1A_1A1A,

@@ -250,6 +250,15 @@ impl Store {
     pub(super) fn imports(&self) -> &Path {
         &self.imports
     }
+
+    // The .profile files waiting in the imports folder, by name, A to Z.
+    pub(super) fn import_names(&self) -> Vec<String> {
+        let mut found: Vec<String> = fs::read_dir(&self.imports)
+            .map(|dir| dir.flatten().filter_map(|e| e.file_name().to_str().and_then(|f| f.strip_suffix(".profile")).map(str::to_owned)).collect())
+            .unwrap_or_default();
+        found.sort();
+        found
+    }
 }
 
 fn read(path: &Path) -> Result<String, String> {

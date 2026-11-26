@@ -312,6 +312,8 @@ pub(super) fn defaults() -> Vec<Module> {
             .num("Speed y", 0.1, 0.0, 1.0, 0.001)
             .num("Speed size", 1.0, 0.5, 3.0, 0.05)
             .bool("Facing", true)
+            // "South +Z" or only "South".
+            .bool("Facing axis", true)
             .pick("Facing position", &["Default", "Custom"])
             .num("Facing x", 0.0, 0.0, 1.0, 0.001)
             .num("Facing y", 0.15, 0.0, 1.0, 0.001)

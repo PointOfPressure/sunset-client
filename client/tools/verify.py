@@ -2302,6 +2302,82 @@ def _():
     return ok, f"copy: {copied!r}; paste: {pasted!r}; again: {asks!r}; keep: {kept!r}; replace: {replaced!r}; import alone: {listed!r}; import taken: {imported_asks!r}; keep: {imported_kept!r}; list: {names!r}"
 
 
+@test("Profiles menu (Import tab, a name that is taken, Paste a profile)")
+def _():
+    # The Profiles row's menu has an Import tab listing the imports folder's .profile files. A click on one whose name
+    # is free saves it; on one whose name is taken the menu asks, and Keep both saves it numbered, Replace over the
+    # saved one (its setting then loads). Paste a profile keeps the clipboard's profile as "pasted". Each import
+    # leaves the menu on the saved profiles; a click off the menu shuts it.
+    one = lambda line: " ".join(said_after(line, 6))
+    reset()
+    w, h = gui_size()
+    ww = min(w - 16, 300)
+
+    def frame(count):
+        hh = min(min(max(count, 1), 10) * 18 + 47, h - 16)
+        return (w - ww) / 2, (h - hh) / 2, hh
+
+    def names():
+        line = one(".profile list")
+        return line.split("Profiles: ", 1)[1].split(". In use")[0].split(", ") if "Profiles: " in line else []
+
+    setting("sprint", "keep sprint", "true")
+    one(".profile save impa")
+    found = [os.path.join(r, f) for r, d, fs in os.walk(os.path.join(session_dir(), "home")) for f in d if f == "imports"]
+    if not found:
+        return False, "no imports folder"
+    for name in ("impa", "impb"):
+        with open(os.path.join(found[0], f"{name}.profile"), "w") as f:
+            f.write("sunset-profile=1\nsprint.keepsprint=false\n")
+    one(".profile copy impa")
+
+    def visit(click, shot=None):
+        """The menu at its Import tab (a row for each file in the folder, earlier tests' too), the clicks in it, then
+        shut by a click off it."""
+        files = sorted(f[:-8] for f in os.listdir(found[0]) if f.endswith(".profile"))
+        x, y, _ = frame(len(names()))
+        say(".menu profiles")
+        wait(5)
+        ctl("click-at", *map(str, menu_row(5, 1)))
+        wait(4)
+        ctl("click-at", str(x + ww - 54), str(y + 11))
+        wait(3)
+        x, y, hh = frame(max(len(files), 2))
+        spots = {"keep": (x + ww - 100, y + hh - 11.5), "replace": (x + ww - 36, y + hh - 11.5), "paste": (x + ww - 56, y + hh - 11.5)}
+        spots.update({name: (x + 40, y + 25 + 18 * n + 9) for n, name in enumerate(files)})
+        for n, spot in enumerate(click):
+            if n:
+                # The first click left the menu on the question (the Import tab still).
+                wait(2)
+                if shot:
+                    ctl("screenshot", shot)
+                    time.sleep(2)
+            ctl("click-at", *map(str, spots[spot]))
+            wait(4)
+        ctl("click-at", "3", str(h - 3))
+        wait(2)
+        close_menu()
+        return names()
+
+    free = visit(["impb"])
+    kept = visit(["impa", "keep"], f"{SHOTS}/profiles_import_ask.png")
+    setting("sprint", "keep sprint", "true")
+    replaced = visit(["impa", "replace"])
+    loaded = one(".profile load impa")
+    sprint = one(".settings sprint")
+    pasted = visit(["paste"])
+    one(".profile load before-load")
+    for name in ("impa", "impb", "impa-2", "pasted"):
+        say(f".profile delete {name}")
+    for name in ("impa", "impb"):
+        os.remove(os.path.join(found[0], f"{name}.profile"))
+    touched.add("sprint")
+    ok = ("impb" in free and "impa-2" not in free and "impa-2" in kept and sorted(replaced) == sorted(kept) and "Loaded" in loaded
+          and "Keep sprint: OFF" in sprint and "pasted" in pasted)
+    return ok, (f"after a free name: {free}; taken, Keep both: {kept}; taken, Replace: {replaced} then {loaded[:24]!r}, {sprint!r}; "
+                f"Paste a profile: {pasted} (shot {SHOTS}/profiles_import_ask.png)")
+
+
 @test("Old profile converts")
 def _():
     reset()
@@ -2378,7 +2454,7 @@ def _():
     if saved and saved[0].startswith("Profiles:"):
         names = saved[0].removeprefix("Profiles: ").split(". In use")[0].split(", ")
         sh = min(min(max(len(names), 1), 10) * 18 + 47, h - 16)
-        ctl("click-at", str(x + ww - 58), str((h - sh) / 2 + 11))
+        ctl("click-at", str(x + ww - 110), str((h - sh) / 2 + 11))
         wait(3)
     ctl("screenshot", f"{SHOTS}/presets_list.png")
     time.sleep(2)
@@ -2391,6 +2467,11 @@ def _():
     wait(4)
     ctl("screenshot", f"{SHOTS}/preset_applied.png")
     time.sleep(2)
+    if not keys:
+        # Without Enter the preview is still up, and Esc from horizon-ctl never reaches the menu: a click off it shuts
+        # it, or it would be over the next test's menu.
+        ctl("click-at", "3", str(h - 3))
+        wait(2)
     close_menu()
     by_menu = modules_on()
     menu_applied = "Kill Aura" not in by_menu if keys else None

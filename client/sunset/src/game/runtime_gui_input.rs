@@ -177,10 +177,12 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             && s.binding.is_none()
             && hit_at(s, at).is_some_and(|(_, hit)| matches!(hit, Hit::Module(i) if s.modules[i].name == "Profiles"))
     }) {
-        let result = super::sunset_profiles::Store::new(game.native_data_dir(ID)).and_then(|store| store.list());
+        let store = super::sunset_profiles::Store::new(game.native_data_dir(ID));
+        let result = store.as_ref().map_err(Clone::clone).and_then(|store| store.list());
+        let (imports, folder) = store.as_ref().map(|store| (store.import_names(), store.imports().display().to_string())).unwrap_or_default();
         with(|s| {
             let names = result.as_ref().cloned().unwrap_or_default();
-            let mut menu = super::sunset_profile_menu::Menu::new(names, s.selection.selected(), s.gui.view_w, s.gui.view_h);
+            let mut menu = super::sunset_profile_menu::Menu::new(names, imports, folder, s.selection.selected(), s.gui.view_w, s.gui.view_h);
             menu.error = result.err();
             s.gui.profile_menu = Some(menu);
             s.gui.drag = None;

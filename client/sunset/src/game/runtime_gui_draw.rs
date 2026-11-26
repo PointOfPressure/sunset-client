@@ -117,6 +117,9 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
         let mark = [area[0] + 3.0, ry + (pick::ROW - 7.0) / 2.0, 7.0, 7.0];
         if *have {
             out.push(Shape::Round(mark, 2.0, solid(accent())));
+            let (mx, my) = (mark[0], mark[1]);
+            line(out, [mx + 1.5, my + 3.6], [mx + 3.0, my + 5.2], 0xFFFF_FFFF, 1.0);
+            line(out, [mx + 3.0, my + 5.2], [mx + 5.6, my + 1.8], 0xFFFF_FFFF, 1.0);
         } else {
             out.push(Shape::Round(mark, 2.0, 0x70FF_FFFF));
             out.push(Shape::Round([mark[0] + 1.0, mark[1] + 1.0, mark[2] - 2.0, mark[3] - 2.0], 1.0, pal().dialog));
@@ -165,12 +168,20 @@ pub(super) fn switch(out: &mut Vec<Shape>, [x, y, w, h]: [f32; 4], on: bool, lit
     let (pill, dot) = if on {
         (0xFF00_0000 | accent(), if light { pal().knob } else { 0xFFFF_FFFF })
     } else {
-        (pal().toggle_off + (lit << 16 | lit << 8 | lit), 0xFF9A_9AA2)
+        (pal().toggle_off + (lit << 16 | lit << 8 | lit), 0xFFC4_C4CC)
     };
     out.push(Shape::Round([x, y, w, h], radius, pill));
     let knob = h - 2.0 * inset;
     let kx = if on { x + w - knob - inset } else { x + inset };
     out.push(Shape::Round([kx, y + inset, knob, knob], (radius - inset).max(0.0), dot));
+}
+
+// A close button's cross in the middle of `r`: quiet until the pointer is on it.
+pub(super) fn cross(out: &mut Vec<Shape>, r: [f32; 4], lit: bool) {
+    let (cx, cy, d) = (r[0] + r[2] / 2.0, r[1] + r[3] / 2.0, 2.5);
+    for (a, b) in [([cx - d, cy - d], [cx + d, cy + d]), ([cx - d, cy + d], [cx + d, cy - d])] {
+        line(out, a, b, if lit { 0xFFFF_FFFF } else { 0xFF9A_9AA2 }, 1.0);
+    }
 }
 
 // A scroll marker on its track, `len` long from `y` down: how much of a list shows (`room` of `content`), and where.
@@ -303,11 +314,11 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     });
     // The settings window: its description in lines, sized to what it holds and kept on the screen where it is, 4
     // short of the bottom: a taller one scrolls (three rows at least, moved up if need be). The description takes
-    // three lines at most, the last cut short (its module's tooltip has it all).
+    // six lines at most, the last cut short (the window's own module shows no tip).
     let about = with(|s| s.gui.window.map(|w| (s.modules[w.module].about, win_w(s)))).map_or_else(Vec::new, |(text, ww)| {
         let mut lines = wrap(game, text, ww - 2.0 * indent());
-        if lines.len() > 3 {
-            let rest = lines.split_off(2).join(" ");
+        if lines.len() > 6 {
+            let rest = lines.split_off(5).join(" ");
             lines.push(fit_to(game, &rest, ww - 2.0 * indent()));
         }
         lines
@@ -329,6 +340,9 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     let at = gui_cursor(game);
     let (rows, binding, under, editing) = with(|s| (panel_rows(s), s.binding, hit_at(s, at), s.gui.editor.clone()));
     // What the pointer is on, and that row's place (a tip goes beside it).
+    // Behind a dialog or the profiles menu nothing is pointed at.
+    let modal = editing.as_ref().is_some_and(|e| !e.inline) || with(|s| s.gui.profile_menu.is_some());
+    let under = under.filter(|_| !modal);
     let (hover, hover_row) = (under.map(|(_, h)| h), under.map(|(r, _)| r));
     let searching = with(|s| !s.gui.search.trim().is_empty());
     // Modules whose settings are open (inline or in the window): a mark by the name.
@@ -390,8 +404,17 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
             }
             Hit::Bind(i) => {
                 let waiting = binding == Some(i);
-                let key = if waiting { "Press a key or button".to_owned() } else { key_label(modules[i].key.as_deref()) };
-                let bw = value_box(out, &key, r, if waiting { accent() } else { 0xC8C8C8 });
+                if waiting {
+                    // The prompt takes the row, so it is never cut to "Press a...".
+                    let b = [setting_x, y + 2.0, x + rw - RIGHT_PAD - setting_x, row_hh() - 4.0];
+                    out.push(Shape::Round(b, control, pal().value_box));
+                    let text = fit("Press a key", b[2] - 6.0);
+                    let tw = width_of(game, &text);
+                    out.push(Shape::Text(text, [b[0] + (b[2] - tw) / 2.0, y + text_y(row_hh())], accent()));
+                    return None;
+                }
+                let key = key_label(modules[i].key.as_deref());
+                let bw = value_box(out, &key, r, 0xC8C8C8);
                 label(out, "Bind", r, setting_x, bw, 0xB4B4B4);
                 None
             }
@@ -438,8 +461,20 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                     Value::Pick { .. } => value_box(out, &st.value_text(), r, 0xE4E4E4),
                     // A list of blocks, items, mobs or players: how many it holds, in a box (a click opens its picker).
                     Value::Text(ref t) if super::sunset_picker::list_kind(modules[i].name, st.name).is_some() => {
-                        let kind = super::sunset_picker::list_kind(modules[i].name, st.name).unwrap_or(super::sunset_picker::ListKind::Blocks);
-                        value_box(out, &list_count(kind, t), r, 0xE4E4E4)
+                        use super::sunset_picker as pick;
+                        let kind = pick::list_kind(modules[i].name, st.name).unwrap_or(pick::ListKind::Blocks);
+                        // Xray's Simple list ticks kinds of block (ore and deepslate ore are one row): counted so.
+                        let full = if modules[i].name == "Xray" && modules[i].p("List") == "Simple" {
+                            let have = pick::chosen(t);
+                            let n = pick::VALUABLES.iter().filter(|g| g.iter().all(|b| have.contains(b))).count();
+                            format!("{n} of {}", pick::VALUABLES.len())
+                        } else {
+                            list_count(kind, t)
+                        };
+                        // Where the name would be cut for it, only the number.
+                        let room = x + rw - RIGHT_PAD - setting_x - 3.0;
+                        let text = if width_of(game, st.label()) + width_of(game, &full) + 8.0 > room { full.split(' ').next().unwrap_or_default().to_owned() } else { full };
+                        value_box(out, &text, r, 0xE4E4E4)
                     }
                     Value::Text(_) => {
                         // The text itself: the name keeps its width, the text gets what is left (a quarter at least).
@@ -466,6 +501,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     }
     let mut whole: Option<&str> = None;
     let mut first_row = false;
+    let mut fades: Vec<[f32; 3]> = Vec::new();
     // The list the rows scroll in, top and bottom: a row part way out of it is cut.
     let mut body = with(|s| super::sunset_dashboard::list_y(s)).unwrap_or([f32::MIN, f32::MAX]);
     for (k, (r, hit)) in rows.iter().enumerate() {
@@ -497,11 +533,11 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                 out.push(Shape::Fill([x, y + rh - px, rw, px], pal().rule));
             }
             let name = CATEGORIES[c].label();
-            // Beside the name, what the number counts: the panel's modules that are on (nothing when none is), or
-            // what the search found in it. A panel too narrow for the words keeps the number.
+            // Beside the name, what the number counts: the panel's modules that are on, or what the search found in
+            // it. A panel too narrow for the words keeps the number.
             let on = modules.iter().filter(|m| m.category == CATEGORIES[c] && m.in_gui && m.on).count();
             let (n, what) = if searching { (listed, "found") } else { (on, "on") };
-            let mut count = if n == 0 && !searching { String::new() } else { format!("{n} {what}") };
+            let mut count = format!("{n} {what}");
             if game.sunset_text_width(&count) + game.sunset_text_width(name) + 6.0 > rw - indent() - RIGHT_PAD {
                 count = format!("{n}");
             }
@@ -511,6 +547,10 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
             // The scroll marker: how much of the panel shows, and where.
             if !folded {
                 scrollbar(out, x + rw - 4.0, y + rh + 1.0, room - 2.0, content, room, scroll);
+                // More rows under the screen's edge: the last ones fade (drawn over the rows, after them).
+                if content - scroll > room + 0.5 {
+                    fades.push([x + 2.0, y + rh + room, rw - 8.0]);
+                }
             }
             continue;
         }
@@ -524,6 +564,10 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
             let last = rows.get(k + 1).is_none_or(|(_, next)| matches!(next, Hit::Header(_)));
             lit(out, *r, line, last);
         }
+        // A panel's settings (open in it, or found by the search) hang off a thin line under their module.
+        if !dash && matches!(hit, Hit::Setting(..) | Hit::Bind(_)) {
+            out.push(Shape::Fill([x + indent() + 1.0, y, px, rh], pal().rule));
+        }
         let text = if dash && matches!(hit, Hit::Module(_)) { super::sunset_dashboard::module_text(*r) } else { *r };
         if let Some(name) = draw_row(out, text, *hit, hovered) {
             whole = Some(name);
@@ -535,11 +579,16 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     if dash {
         with(|s| super::sunset_dashboard::front(s, px, out));
     }
+    for at in fades {
+        fade(out, at, pal().panel, px, true);
+    }
     // The settings window, over the panels: its title, the module's switch, the close button, description, groups and
     // rows.
     if let Some((win, frame, list, about)) = &window {
         let [x, y, ww, wh] = *frame;
-        framed(out, *frame, panel_radius(), pal().frame, px);
+        // An edge of its own in both themes: it lies over panels of nearly its colour.
+        out.push(Shape::Round([x - px, y - px, ww + 2.0 * px, wh + 2.0 * px], panel_radius() + px, 0xFF4A_4A52));
+        out.push(Shape::Round(*frame, panel_radius(), pal().frame));
         let hh = head_h();
         let toggle = win_toggle(*frame);
         out.push(Shape::Head(fit(modules[win.module].name, toggle[0] - x - indent() - 4.0), [x + indent(), y + text_y(hh)], 0xFFFFFF));
@@ -550,10 +599,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         if on_close {
             out.push(Shape::Corners(close, panel_radius(), [false, true, false, false], 0x24FF_FFFF));
         }
-        let (cx, cy, d) = (close[0] + close[2] / 2.0, close[1] + close[3] / 2.0, 2.5);
-        for (a, b) in [([cx - d, cy - d], [cx + d, cy + d]), ([cx - d, cy + d], [cx + d, cy - d])] {
-            line(out, a, b, if on_close { 0xFFFF_FFFF } else { 0xFF9A_9AA2 }, 1.0);
-        }
+        cross(out, close, on_close);
         out.push(Shape::Fill([x, y + hh - px, ww, px], pal().rule));
         for (n, l) in about.iter().enumerate() {
             out.push(Shape::Text(l.clone(), [x + indent(), y + hh + 3.0 + n as f32 * 10.0], 0xA8A8A8));
@@ -591,6 +637,9 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         }
         // Its scroll marker.
         let at = super::sunset_smooth::shown(super::sunset_smooth::WINDOW, win.scroll);
+        if win.content - at > win.room + 0.5 {
+            fade(out, [x + 2.0, view[1], ww - 8.0], pal().frame, px, true);
+        }
         scrollbar(out, x + ww - 4.0, y + hh + win.about_h + 1.0, win.room - 2.0, win.content, win.room, at);
     }
     // Where a tip goes: beside the row it is about (to its right, or its left where the screen ends), level with it,
@@ -683,10 +732,11 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
             out.push(if label == "Apply" { Shape::Plain(label.to_owned(), at, 0xFFFFFF, false) } else { Shape::Text(label.to_owned(), at, 0xFFFFFF) });
         }
     }
-    // The saved profiles, when the Profiles module's row was clicked.
-    with(|s| super::sunset_profile_menu::draw(game, w, h, at, s.selection.selected(), s.gui.profile_menu.as_ref(), out));
+    // The saved profiles, when the Profiles module's row was clicked: over everything, the search box too.
+    let profiles = |out: &mut Vec<Shape>| with(|s| super::sunset_profile_menu::draw(game, w, h, at, s.selection.selected(), s.gui.profile_menu.as_ref(), out));
     // The Dashboard has its own search box.
     if dash {
+        profiles(out);
         return;
     }
     // The search box (typing anywhere goes to it): a field of one width in the middle, as the Dashboard's and the
@@ -697,11 +747,26 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     let field = [((w - fw) / 2.0).floor(), 15.0, fw, 14.0];
     framed(out, field, panel_radius(), if selected { 0xFF30_60B0 } else { bg(pal().panel) }, px);
     search_text(game, out, field, &search, search.len(), "Search modules");
-    let hint = "Right click: settings   Enter: turn the found module on or off   Esc: close";
+    // A search that finds nothing says so (every panel is gone then).
+    if searching && rows.is_empty() {
+        let none = fit(&format!("Nothing matches \"{}\"", search.trim()), w - 16.0);
+        let nw = game.sunset_text_width(&none);
+        framed(out, [((w - nw) / 2.0 - 6.0).floor(), 33.0, nw + 12.0, 14.0], panel_radius(), bg(pal().panel), px);
+        out.push(Shape::Text(none, [((w - nw) / 2.0).floor(), 33.0 + text_y(14.0)], 0xB4B4B4));
+    }
+    // What the keys and clicks do now: while a bind waits, while searching, or else.
+    let hint = if binding.is_some() {
+        "Press a key or a mouse button   Esc: cancel   Backspace: no bind"
+    } else if searching {
+        "Enter: turn the first found on or off   Right click: settings   Esc: close"
+    } else {
+        "Left click: on or off   Right click: settings   Type to search   Esc: close"
+    };
     let hint = fit(hint, w - 16.0);
     let hw = game.sunset_text_width(&hint);
     framed(out, [((w - hw) / 2.0 - 6.0).floor(), 1.0, hw + 12.0, 12.0], panel_radius(), bg(pal().panel), px);
     out.push(Shape::Text(hint, [((w - hw) / 2.0).floor(), 1.0 + text_y(12.0)], 0xB4B4B4));
+    profiles(out);
 }
 
 // A profile picked in the Profile list: loaded and the list closed, or the error shown in it.
@@ -718,6 +783,30 @@ pub(super) fn profile_menu_choice(game: &mut Game<'_>, choice: super::sunset_pro
             let result = take_preset(game, i);
             return menu_result(game, result);
         }
+        Choice::Import(name) => {
+            use super::sunset_profiles as profiles;
+            // A name that is taken: the menu asks (keep both, or replace) before anything is written.
+            let taken = profiles::Store::new(game.native_data_dir(ID)).is_ok_and(|store| profiles::name(&name).is_ok_and(|n| store.exists(&n)));
+            if taken {
+                return with(|s| {
+                    if let Some(m) = &mut s.gui.profile_menu {
+                        m.error = None;
+                        m.ask = Some(name);
+                    }
+                });
+            }
+            let result = profile_action(game, &["import", &name]);
+            return taken_in(game, result);
+        }
+        Choice::ImportAs(name, replace) => {
+            let result = profile_action(game, &["import", &name, if replace { "replace" } else { "keep" }]);
+            return taken_in(game, result);
+        }
+        // The clipboard's profile is kept as "pasted" (numbered when that is taken: nothing of yours is replaced).
+        Choice::Paste => {
+            let result = profile_action(game, &["paste", "pasted", "keep"]);
+            return taken_in(game, result);
+        }
         Choice::Preview(i) => i,
     };
     let preview = with(|s| s.preview(&super::sunset_presets::PRESETS[preset]));
@@ -731,6 +820,37 @@ pub(super) fn profile_menu_choice(game: &mut Game<'_>, choice: super::sunset_pro
             }
         }
     });
+}
+
+// An import or a paste from the Profiles menu: done, the menu shows the saved profiles with the new one marked and
+// says so (the chat too); else the menu shows why not.
+fn taken_in(game: &mut Game<'_>, result: Result<String, String>) {
+    let message = match result {
+        Ok(message) => message,
+        Err(e) => {
+            return with(|s| {
+                if let Some(m) = &mut s.gui.profile_menu {
+                    m.ask = None;
+                    m.error = Some(e);
+                }
+            });
+        }
+    };
+    let names = super::sunset_profiles::Store::new(game.native_data_dir(ID)).and_then(|store| store.list()).unwrap_or_default();
+    // "Imported profile NAME; .profile load NAME uses it." and what was left out: the menu says it its own way.
+    let landed = message.split_once("profile ").and_then(|(_, rest)| rest.split_once(';')).map(|(name, _)| name.to_owned());
+    let skipped = message.split_once(" uses it.").map_or("", |(_, rest)| rest);
+    let note = match &landed {
+        Some(name) => format!("{name} is saved: click it to load it.{skipped}"),
+        None => message.clone(),
+    };
+    with(|s| {
+        let (w, h) = (s.gui.view_w, s.gui.view_h);
+        if let Some(m) = &mut s.gui.profile_menu {
+            m.took(names, landed.as_deref(), note, w, h);
+        }
+    });
+    say(game, &message);
 }
 
 fn load_profile_from_menu(game: &mut Game<'_>, name: &str) {

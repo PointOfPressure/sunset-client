@@ -221,7 +221,9 @@ pub(super) fn rect(w: f32, h: f32) -> [f32; 4] {
 }
 
 pub(super) fn list_area(r: [f32; 4]) -> [f32; 4] {
-    [r[0] + 6.0, r[1] + 42.0, r[2] - 12.0, (r[3] - 64.0).max(0.0)]
+    // Whole rows: none is cut by the list's foot.
+    let h = (r[3] - 64.0).max(0.0);
+    [r[0] + 6.0, r[1] + 42.0, r[2] - 12.0, if h >= ROW { h - h % ROW } else { h }]
 }
 
 pub(super) fn done_button(r: [f32; 4]) -> [f32; 4] {

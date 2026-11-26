@@ -226,7 +226,10 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             if hud.b("Facing") {
                 const NAMES: [&str; 8] = ["South +Z", "South-West", "West -X", "North-West", "North -Z", "North-East", "East +X", "South-East"];
                 let yaw = f64::from(p.yaw).rem_euclid(360.0);
-                info.push(("Facing", NAMES[((yaw + 22.5) / 45.0).floor() as usize % 8].to_owned()));
+                let name = NAMES[((yaw + 22.5) / 45.0).floor() as usize % 8];
+                // Without Facing axis, the direction alone.
+                let name = if hud.b("Facing axis") { name } else { name.split(' ').next().unwrap_or(name) };
+                info.push(("Facing", name.to_owned()));
             }
             if hud.b("Totems") {
                 let count = |s: &Option<horizon_client::items::ItemStack>| {

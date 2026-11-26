@@ -1,5 +1,7 @@
-// The list the Profiles module's row opens: the saved profiles, or (its Presets tab) the pre-made ones. A click, or
-// the arrows and Enter, loads a saved one; a preset first shows what taking it turns on and off, with Apply and Back.
+// The list the Profiles module's row opens: the saved profiles, (its Presets tab) the pre-made ones, or (its Import
+// tab) the .profile files waiting in the imports folder, with a button that takes the profile on the clipboard. A
+// click, or the arrows and Enter, loads a saved one; a preset first shows what taking it turns on and off, with Apply
+// and Back; an import goes in among the saved ones (a name that is taken asks: keep both, or replace).
 // Save (under the saved ones) writes the settings as they are now to the profile in use. Left and Right change tabs. The files are read when it opens and when one loads, never while drawing.
 use crate::game::sunset_compat::SunsetGame as _;
 use super::{Game, sunset::{Shape, accent, panel_radius}};
@@ -17,6 +19,7 @@ const BUTTONS: f32 = 30.0;
 pub(super) enum Tab {
     Saved,
     Presets,
+    Import,
 }
 
 // What a click or a key in the menu asks for.
@@ -25,6 +28,11 @@ pub(super) enum Choice {
     Save(String),
     Preview(usize),
     Apply(usize),
+    // A file of the imports folder taken in; the same with the answer when its name is taken (true: over the saved
+    // one, false: beside it, numbered); and the profile on the clipboard.
+    Import(String),
+    ImportAs(String, bool),
+    Paste,
 }
 
 // A preset's preview: its lines (text, colour), fitted to the menu's width when it was made.
@@ -37,7 +45,14 @@ pub(super) struct Preview {
 #[derive(Clone, Debug)]
 pub(super) struct Menu {
     pub(super) names: Vec<String>,
+    // The .profile files in the imports folder, and where that folder is (shown while it is empty).
+    imports: Vec<String>,
+    folder: String,
     pub(super) error: Option<String>,
+    // What the last import or paste did.
+    note: Option<String>,
+    // An import whose name is taken: the menu asks whether to keep both or replace.
+    pub(super) ask: Option<String>,
     pub(super) tab: Tab,
     pub(super) preview: Option<Preview>,
     // The saved profile in use, which Save writes to.
@@ -79,10 +94,20 @@ fn save_button(r: [f32; 4]) -> [f32; 4] {
     [r[0] + r[2] - 98.0, r[1] + r[3] - 19.0, 90.0, 15.0]
 }
 
-// The two tabs in the title row.
-fn tabs(r: [f32; 4]) -> [([f32; 4], Tab, &'static str); 2] {
-    let y = r[1] + 4.0;
-    [([r[0] + r[2] - 140.0, y, 50.0, 15.0], Tab::Saved, "Saved"), ([r[0] + r[2] - 86.0, y, 56.0, 15.0], Tab::Presets, "Presets")]
+// Paste a profile, at the foot of the Import tab; and the two answers when an import's name is taken.
+fn paste_button(r: [f32; 4]) -> [f32; 4] {
+    [r[0] + r[2] - 104.0, r[1] + r[3] - 19.0, 96.0, 15.0]
+}
+
+fn ask_buttons(r: [f32; 4]) -> ([f32; 4], [f32; 4]) {
+    let y = r[1] + r[3] - 19.0;
+    ([r[0] + r[2] - 132.0, y, 64.0, 15.0], [r[0] + r[2] - 64.0, y, 56.0, 15.0])
+}
+
+// The three tabs in the title row.
+fn tabs(r: [f32; 4]) -> [([f32; 4], Tab, &'static str); 3] {
+    let (x, y) = (r[0] + r[2], r[1] + 4.0);
+    [([x - 190.0, y, 50.0, 15.0], Tab::Saved, "Saved"), ([x - 138.0, y, 56.0, 15.0], Tab::Presets, "Presets"), ([x - 80.0, y, 52.0, 15.0], Tab::Import, "Import")]
 }
 
 // How many rows fit.
@@ -96,11 +121,11 @@ fn inside(r: [f32; 4], at: (f32, f32)) -> bool {
 
 impl Menu {
     // On the saved profiles, or the presets when none is saved.
-    pub(super) fn new(names: Vec<String>, selected: Option<&str>, w: f32, h: f32) -> Self {
+    pub(super) fn new(names: Vec<String>, imports: Vec<String>, folder: String, selected: Option<&str>, w: f32, h: f32) -> Self {
         let tab = if names.is_empty() { Tab::Presets } else { Tab::Saved };
         let focus = selected.and_then(|n| names.iter().position(|p| p == n)).unwrap_or(0);
         let in_use = selected.filter(|n| names.iter().any(|p| p == n)).map(str::to_owned);
-        let mut menu = Self { names, error: None, tab, preview: None, in_use, focus, start: 0 };
+        let mut menu = Self { names, imports, folder, error: None, note: None, ask: None, tab, preview: None, in_use, focus, start: 0 };
         menu.reveal(w, h);
         menu
     }
@@ -109,18 +134,24 @@ impl Menu {
         match self.tab {
             Tab::Saved => self.names.len(),
             Tab::Presets => PRESETS.len(),
+            Tab::Import => self.imports.len(),
         }
+    }
+
+    // The list's frame: tall enough for its rows (an empty Import tab says where files go, in two lines).
+    fn list_frame(&self, w: f32, h: f32) -> [f32; 4] {
+        frame(w, h, if self.tab == Tab::Import { self.count().max(2) } else { self.count() })
     }
 
     fn rect(&self, w: f32, h: f32) -> [f32; 4] {
         match &self.preview {
             Some(p) => preview_frame(w, h, p.lines.len()),
-            None => frame(w, h, self.count()),
+            None => self.list_frame(w, h),
         }
     }
 
     fn reveal(&mut self, w: f32, h: f32) {
-        let count = rows(frame(w, h, self.count()));
+        let count = rows(self.list_frame(w, h));
         self.start = self.start.min(self.focus).max((self.focus + 1).saturating_sub(count));
     }
 
@@ -130,15 +161,30 @@ impl Menu {
             self.focus = 0;
             self.start = 0;
             self.error = None;
+            self.note = None;
+            self.ask = None;
             self.reveal(w, h);
         }
     }
 
-    // The row `i` of the tab shown: a profile to load or a preset to preview.
+    // An import or a paste went in: the saved profiles again with the new one marked, and what happened.
+    pub(super) fn took(&mut self, names: Vec<String>, landed: Option<&str>, note: String, w: f32, h: f32) {
+        self.names = names;
+        self.tab = Tab::Saved;
+        self.focus = landed.and_then(|n| self.names.iter().position(|p| p == n)).unwrap_or(0);
+        self.start = 0;
+        self.error = None;
+        self.ask = None;
+        self.note = Some(note);
+        self.reveal(w, h);
+    }
+
+    // The row `i` of the tab shown: a profile to load, a preset to preview or a file to import.
     fn choice(&self, i: usize) -> Option<Choice> {
         match self.tab {
             Tab::Saved => self.names.get(i).cloned().map(Choice::Load),
             Tab::Presets => (i < PRESETS.len()).then_some(Choice::Preview(i)),
+            Tab::Import => self.imports.get(i).cloned().map(Choice::Import),
         }
     }
 
@@ -146,14 +192,14 @@ impl Menu {
         if self.preview.is_some() {
             return;
         }
-        let max = self.count().saturating_sub(rows(frame(w, h, self.count())));
+        let max = self.count().saturating_sub(rows(self.list_frame(w, h)));
         self.start = (self.start as i32 + steps).clamp(0, max as i32) as usize;
     }
 
-    // Esc: out of a preview (true), else the menu closes.
+    // Esc: out of a preview or a question (true), else the menu closes.
     pub(super) fn back(&mut self) -> bool {
         self.error = None;
-        self.preview.take().is_some()
+        self.ask.take().is_some() || self.preview.take().is_some()
     }
 
     // Up and Down move the mark, Left and Right change tabs, Enter loads or previews (and in a preview, applies).
@@ -165,8 +211,8 @@ impl Menu {
         match key {
             "key.keyboard.up" => self.focus = self.focus.saturating_sub(1),
             "key.keyboard.down" => self.focus = (self.focus + 1).min(self.count().saturating_sub(1)),
-            "key.keyboard.left" => self.switch(Tab::Saved, w, h),
-            "key.keyboard.right" => self.switch(Tab::Presets, w, h),
+            "key.keyboard.left" => self.switch(if self.tab == Tab::Import { Tab::Presets } else { Tab::Saved }, w, h),
+            "key.keyboard.right" => self.switch(if self.tab == Tab::Saved { Tab::Presets } else { Tab::Import }, w, h),
             _ if enter => return self.choice(self.focus),
             _ => return None,
         }
@@ -193,6 +239,16 @@ impl Menu {
         }
         if self.tab == Tab::Saved && let Some(name) = &self.in_use && inside(save_button(r), at) {
             return Some(Choice::Save(name.clone()));
+        }
+        if self.tab == Tab::Import {
+            if let Some(name) = &self.ask {
+                let (keep, replace) = ask_buttons(r);
+                if inside(keep, at) || inside(replace, at) {
+                    return Some(Choice::ImportAs(name.clone(), inside(replace, at)));
+                }
+            } else if inside(paste_button(r), at) {
+                return Some(Choice::Paste);
+            }
         }
         let list = [r[0] + 4.0, r[1] + TOP, r[2] - 8.0, rows(r) as f32 * ROW];
         inside(list, at).then(|| self.choice(self.start + ((at.1 - list[1]) / ROW) as usize)).flatten()
@@ -235,7 +291,8 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
     let r = menu.rect(w, h);
     out.push(Shape::Fill([0.0, 0.0, w, h], 0x8000_0000));
     super::sunset::framed(out, r, panel_radius(), super::sunset::pal().profile_panel, 1.0);
-    out.push(Shape::Text("x".into(), [r[0] + r[2] - 15.0, r[1] + 7.0], 0xFFFFFF));
+    let close = [r[0] + r[2] - 25.0, r[1], 25.0, 22.0];
+    super::sunset::cross(out, close, inside(close, at));
     if let Some(p) = &menu.preview {
         out.push(Shape::Head(fit(game, PRESETS[p.preset].title, r[2] - 40.0), [r[0] + 8.0, r[1] + 7.0], 0xFFFFFF));
         let fits = preview_rows(r);
@@ -256,14 +313,28 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
     }
     out.push(Shape::Head("Profiles".into(), [r[0] + 8.0, r[1] + 7.0], 0xFFFFFF));
     for (t, tab, label) in tabs(r) {
-        if menu.tab == tab {
-            out.push(Shape::Round(t, panel_radius(), super::sunset::pal().profile_tab));
-        }
+        // The tab shown is filled in the accent colour (its text plain: the menu's shadow would smudge it).
         let tw = game.sunset_text_width(label);
-        out.push(Shape::Text(label.to_owned(), [t[0] + (t[2] - tw) / 2.0, t[1] + 3.0], if menu.tab == tab { accent() } else { 0x909090 }));
+        let text_at = [t[0] + (t[2] - tw) / 2.0, t[1] + 3.0];
+        if menu.tab == tab {
+            out.push(Shape::Round(t, panel_radius(), 0xFF00_0000 | accent()));
+            out.push(Shape::Plain(label.to_owned(), text_at, 0xFFFFFF, false));
+        } else {
+            out.push(Shape::Text(label.to_owned(), text_at, if inside(t, at) { 0xD4D4D8 } else { 0x909090 }));
+        }
     }
     if menu.tab == Tab::Saved && menu.names.is_empty() {
         out.push(Shape::Text("None saved yet: .profile save <name>".into(), [r[0] + 8.0, r[1] + TOP + 5.0], 0xFFFFFF));
+    }
+    if menu.tab == Tab::Import && menu.imports.is_empty() {
+        // Where files go: the end of the folder's path shows when it is too long for the line.
+        out.push(Shape::Text("No files to import yet. Put .profile files in:".into(), [r[0] + 8.0, r[1] + TOP + 5.0], 0xFFFFFF));
+        let mut folder = menu.folder.as_str();
+        while game.sunset_text_width(folder) > r[2] - 30.0 && !folder.is_empty() {
+            folder = &folder[folder.chars().next().map_or(1, char::len_utf8)..];
+        }
+        let cut = if folder.len() < menu.folder.len() { "..." } else { "" };
+        out.push(Shape::Text(format!("{cut}{folder}"), [r[0] + 8.0, r[1] + TOP + 5.0 + LINE], 0x909090));
     }
     for i in (menu.start..menu.count()).take(rows(r)) {
         let row = [r[0] + 4.0, r[1] + TOP + (i - menu.start) as f32 * ROW, r[2] - 8.0, ROW];
@@ -288,7 +359,28 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
                     out.push(Shape::Text(fit(game, preset.about, room), [at_text[0] + tw + 8.0, at_text[1]], 0x808080));
                 }
             }
+            Tab::Import => out.push(Shape::Text(fit(game, &menu.imports[i], row[2] - 10.0), at_text, 0xFFFFFF)),
         }
+    }
+    let button = |out: &mut Vec<Shape>, b: [f32; 4], label: &str| {
+        out.push(Shape::Round(b, panel_radius(), if inside(b, at) { 0xFF00_0000 | accent() } else { super::sunset::pal().button }));
+        let tw = game.sunset_text_width(label);
+        out.push(Shape::Text(label.to_owned(), [b[0] + (b[2] - tw) / 2.0, b[1] + 3.0], 0xFFFFFF));
+    };
+    // The Import tab's foot: the question when a name is taken, else the clipboard's button.
+    let mut taken = 8.0;
+    if menu.tab == Tab::Import {
+        if let Some(name) = &menu.ask {
+            let (keep, replace) = ask_buttons(r);
+            button(out, keep, "Keep both");
+            button(out, replace, "Replace");
+            let said = fit(game, &format!("{name} is saved already."), keep[0] - r[0] - 14.0);
+            out.push(Shape::Text(said, [r[0] + 8.0, r[1] + r[3] - 16.0], 0xFFFFFF));
+            return;
+        }
+        let b = paste_button(r);
+        button(out, b, "Paste a profile");
+        taken = b[2] + 14.0;
     }
     let saving = menu.tab == Tab::Saved && menu.in_use.is_some();
     if let Some(name) = menu.in_use.as_deref().filter(|_| saving) {
@@ -298,8 +390,11 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
         let tw = game.sunset_text_width(&label);
         out.push(Shape::Text(label, [b[0] + (b[2] - tw) / 2.0, b[1] + 3.0], 0xFFFFFF));
     }
+    // What went wrong, or what the last import did, beside the foot's button.
+    let room = r[2] - 8.0 - if saving { 104.0 } else { taken };
     if let Some(error) = &menu.error {
-        let room = if saving { r[2] - 112.0 } else { r[2] - 16.0 };
         out.push(Shape::Text(fit(game, error, room), [r[0] + 8.0, r[1] + r[3] - 16.0], 0xFF9090));
+    } else if let Some(note) = &menu.note {
+        out.push(Shape::Text(fit(game, note, room), [r[0] + 8.0, r[1] + r[3] - 16.0], 0xC8C8C8));
     }
 }

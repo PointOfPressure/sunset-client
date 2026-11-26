@@ -380,6 +380,7 @@ impl Module {
                 "Pack load time" => self.b("Fake resource packs"),
                 "Speed x" | "Speed y" => self.b("Speed") && self.p("Speed position") == "Custom",
                 "Facing x" | "Facing y" => self.b("Facing") && self.p("Facing position") == "Custom",
+                "Facing axis" => self.b("Facing"),
                 "Totems x" | "Totems y" => self.b("Totems") && self.p("Totems position") == "Custom",
                 "Shield status x" | "Shield status y" => self.b("Shield status") && self.p("Shield status position") == "Custom",
                 _ if name.starts_with("Armor HUD ") => self.b("Armor HUD"),
