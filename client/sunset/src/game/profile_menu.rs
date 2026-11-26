@@ -45,9 +45,8 @@ pub(super) struct Preview {
 #[derive(Clone, Debug)]
 pub(super) struct Menu {
     pub(super) names: Vec<String>,
-    // The .profile files in the imports folder, and where that folder is (shown while it is empty).
+    // The .profile files in the imports folder.
     imports: Vec<String>,
-    folder: String,
     pub(super) error: Option<String>,
     // What the last import or paste did.
     note: Option<String>,
@@ -98,7 +97,7 @@ fn save_button(r: [f32; 4]) -> [f32; 4] {
 
 // Paste a profile, at the foot of the Import tab; and the two answers when an import's name is taken.
 fn paste_button(r: [f32; 4]) -> [f32; 4] {
-    [r[0] + r[2] - 104.0, r[1] + r[3] - 19.0, 96.0, 15.0]
+    [r[0] + r[2] - 118.0, r[1] + r[3] - 19.0, 110.0, 15.0]
 }
 
 fn ask_buttons(r: [f32; 4]) -> ([f32; 4], [f32; 4]) {
@@ -123,11 +122,11 @@ fn inside(r: [f32; 4], at: (f32, f32)) -> bool {
 
 impl Menu {
     // On the saved profiles, or the presets when none is saved.
-    pub(super) fn new(names: Vec<String>, imports: Vec<String>, folder: String, selected: Option<&str>, w: f32, h: f32) -> Self {
+    pub(super) fn new(names: Vec<String>, imports: Vec<String>, selected: Option<&str>, w: f32, h: f32) -> Self {
         let tab = if names.is_empty() { Tab::Presets } else { Tab::Saved };
         let focus = selected.and_then(|n| names.iter().position(|p| p == n)).unwrap_or(0);
         let in_use = selected.filter(|n| names.iter().any(|p| p == n)).map(str::to_owned);
-        let mut menu = Self { names, imports, folder, error: None, note: None, ask: None, ask_file: None, tab, preview: None, in_use, focus, start: 0 };
+        let mut menu = Self { names, imports, error: None, note: None, ask: None, ask_file: None, tab, preview: None, in_use, focus, start: 0 };
         menu.reveal(w, h);
         menu
     }
@@ -140,9 +139,10 @@ impl Menu {
         }
     }
 
-    // The list's frame: tall enough for its rows (an empty Import tab says where files go, in two lines).
+    // The list's frame: tall enough for the longest of its three tabs (an empty Import tab says where files go, in
+    // two lines), so the menu keeps its height and the tabs their place when one is clicked.
     fn list_frame(&self, w: f32, h: f32) -> [f32; 4] {
-        frame(w, h, if self.tab == Tab::Import { self.count().max(2) } else { self.count() })
+        frame(w, h, self.names.len().max(PRESETS.len()).max(self.imports.len().max(2)))
     }
 
     fn rect(&self, w: f32, h: f32) -> [f32; 4] {
@@ -299,7 +299,7 @@ pub(super) fn preview_lines(game: &Game<'_>, w: f32, preset: usize, lines: &[Str
     out
 }
 
-pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Option<&str>, menu: Option<&Menu>, out: &mut Vec<Shape>) {
+pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Option<&str>, in_use: &str, menu: Option<&Menu>, out: &mut Vec<Shape>) {
     let Some(menu) = menu else {
         return;
     };
@@ -342,14 +342,9 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
         out.push(Shape::Text("None saved yet: .profile save <name>".into(), [r[0] + 8.0, r[1] + TOP + 5.0], 0xFFFFFF));
     }
     if menu.tab == Tab::Import && menu.imports.is_empty() {
-        // Where files go: the end of the folder's path shows when it is too long for the line.
-        out.push(Shape::Text("Drop .profile files on this menu, or put them in:".into(), [r[0] + 8.0, r[1] + TOP + 5.0], 0xFFFFFF));
-        let mut folder = menu.folder.as_str();
-        while game.sunset_text_width(folder) > r[2] - 30.0 && !folder.is_empty() {
-            folder = &folder[folder.chars().next().map_or(1, char::len_utf8)..];
-        }
-        let cut = if folder.len() < menu.folder.len() { "..." } else { "" };
-        out.push(Shape::Text(format!("{cut}{folder}"), [r[0] + 8.0, r[1] + TOP + 5.0 + LINE], 0x909090));
+        // Two ways that need no folder (the imports folder still works: .profile import <name> says where it is).
+        out.push(Shape::Text(fit(game, "No files waiting. Drop .profile files on this menu,", r[2] - 16.0), [r[0] + 8.0, r[1] + TOP + 5.0], 0xFFFFFF));
+        out.push(Shape::Text(fit(game, "or type .profile import to choose them.", r[2] - 16.0), [r[0] + 8.0, r[1] + TOP + 5.0 + LINE], 0xFFFFFF));
     }
     for i in (menu.start..menu.count()).take(rows(r)) {
         let row = [r[0] + 4.0, r[1] + TOP + (i - menu.start) as f32 * ROW, r[2] - 8.0, ROW];
@@ -394,7 +389,7 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
             return;
         }
         let b = paste_button(r);
-        button(out, b, "Paste a profile");
+        button(out, b, "Paste from clipboard");
         taken = b[2] + 14.0;
     }
     let saving = menu.tab == Tab::Saved && menu.in_use.is_some();
@@ -411,5 +406,13 @@ pub(super) fn draw(game: &Game<'_>, w: f32, h: f32, at: (f32, f32), selected: Op
         out.push(Shape::Text(fit(game, error, room), [r[0] + 8.0, r[1] + r[3] - 16.0], 0xFF9090));
     } else if let Some(note) = &menu.note {
         out.push(Shape::Text(fit(game, note, room), [r[0] + 8.0, r[1] + r[3] - 16.0], 0xC8C8C8));
+    } else if menu.tab != Tab::Import {
+        // Nothing to report: which profile is in use (as the HUD's watermark says), and what a click does.
+        let said = match (menu.tab, menu.names.is_empty()) {
+            (Tab::Presets, _) => format!("In use: {in_use}. Click a preset to see what it changes."),
+            (_, true) => format!("In use: {in_use}."),
+            (_, false) => format!("In use: {in_use}. Click a profile to load it."),
+        };
+        out.push(Shape::Text(fit(game, &said, room), [r[0] + 8.0, r[1] + r[3] - 16.0], 0x909090));
     }
 }

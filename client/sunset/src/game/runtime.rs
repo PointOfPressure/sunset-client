@@ -64,6 +64,9 @@ pub(super) static LOOK: [std::sync::atomic::AtomicU32; 11] = [
     std::sync::atomic::AtomicU32::new(0),
 ];
 
+// ClickGUI's Fit to screen: the menu's scale comes down until nothing of it has to be narrowed (runtime_hud.rs).
+pub(super) static FIT_SCREEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
 pub(super) fn accent() -> u32 {
     LOOK[0].load(Ordering::Relaxed)
 }

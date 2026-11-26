@@ -20,6 +20,9 @@ pub(super) struct Selection {
     current: Option<(String, u64)>,
     before: Option<(String, u64)>,
     modified: bool,
+    // With no profile in use: the settings are a fresh install's (the Default preset's), so the label says Default
+    // (State::refresh_selection sets it; a profile's name wins).
+    pub(super) fresh: bool,
 }
 
 pub(super) fn fingerprint(text: &str) -> u64 {
@@ -36,6 +39,7 @@ impl Selection {
     pub(super) fn label(&self) -> String {
         match self.selected() {
             Some(name) => format!("{name}{}", if self.modified { " (modified)" } else { "" }),
+            None if self.fresh => "Default".into(),
             None => "Custom".into(),
         }
     }
@@ -87,6 +91,13 @@ mod selection_tests {
         s.refresh("hud.on=false");
         assert_eq!(s.label(), "bedwars (modified)");
         s.refresh("hud.on=true");
+        assert_eq!(s.label(), "bedwars");
+        // No profile in use: Custom, or Default while the settings are a fresh install's; a profile's name wins.
+        let mut none = Selection::default();
+        assert_eq!(none.label(), "Custom");
+        none.fresh = true;
+        assert_eq!(none.label(), "Default");
+        s.fresh = true;
         assert_eq!(s.label(), "bedwars");
     }
     #[test]

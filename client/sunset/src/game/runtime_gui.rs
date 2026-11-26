@@ -252,10 +252,13 @@ pub(super) struct DashMenu<'a> {
     pub(super) select_all: bool,
     pub(super) view_w: f32,
     pub(super) view_h: f32,
+    // A bind waits for its key, or the Profiles menu is open: typing does not go to the search box then.
+    pub(super) binding: bool,
+    pub(super) menu_open: bool,
 }
 
 pub(super) fn dash_menu(s: &State) -> DashMenu<'_> {
-    DashMenu { search: &s.gui.search, select_all: s.gui.select_all, view_w: s.gui.view_w, view_h: s.gui.view_h }
+    DashMenu { search: &s.gui.search, select_all: s.gui.select_all, view_w: s.gui.view_w, view_h: s.gui.view_h, binding: s.binding.is_some(), menu_open: s.gui.profile_menu.is_some() }
 }
 
 pub(super) fn dash_search_clear(s: &mut State) {

@@ -241,6 +241,9 @@ pub(super) fn defaults() -> Vec<Module> {
             .pick("Animations", &["Minimal", "Off"])
             .colour("Accent color", "Sunset Orange")
             .num("GUI scale", 1.0, 0.75, 2.0, 0.05)
+            // The menu shrinks, when it has to, until the panels keep their Panel width in one row (the Dashboard:
+            // its full width), so names are not cut; off, the panels get narrower instead (runtime_hud.rs).
+            .bool("Fit to screen", true)
             .num("Panel width", 120.0, 60.0, 140.0, 2.0)
             .num("Panel radius", 4.0, 0.0, 12.0, 1.0)
             .num("Control radius", 3.0, 0.0, 6.0, 1.0)

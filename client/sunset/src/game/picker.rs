@@ -38,6 +38,8 @@ pub(super) struct Picker {
     pub(super) all: Arc<[Box<str>]>,
     pub(super) groups: Option<&'static [&'static [&'static str]]>,
     pub(super) scroll: f32,
+    // The list as it was before Clear emptied it: Undo, which Clear turns into until something is ticked, puts it back.
+    pub(super) cleared: Option<String>,
 }
 
 // Xray's Simple list: the ores and valuables, each row the blocks it stands for (the first names the row).
@@ -65,7 +67,7 @@ const GROUPS: [&str; 4] = ["@all", "@player", "@hostile", "@passive"];
 
 // The short list a picker of groups offers.
 pub(super) fn short_list(groups: &'static [&'static [&'static str]]) -> Picker {
-    Picker { kind: ListKind::Blocks, all: Arc::new([]), groups: Some(groups), scroll: 0.0 }
+    Picker { kind: ListKind::Blocks, all: Arc::new([]), groups: Some(groups), scroll: 0.0, cleared: None }
 }
 
 pub(super) fn open(game: &Game<'_>, kind: ListKind) -> Picker {
@@ -88,7 +90,7 @@ pub(super) fn open(game: &Game<'_>, kind: ListKind) -> Picker {
     if kind == ListKind::Entities {
         names.splice(0..0, GROUPS.iter().map(|g| (*g).into()));
     }
-    Picker { kind, all: names.into(), groups: None, scroll: 0.0 }
+    Picker { kind, all: names.into(), groups: None, scroll: 0.0, cleared: None }
 }
 
 const STEVE: &str = "entity/player/wide/steve";
@@ -195,7 +197,10 @@ pub(super) fn rows<'a>(picker: &'a Picker, text: &'a str, search: &'a str) -> Ve
     let lower = typed.to_lowercase();
     let found = |n: &str| lower.is_empty() || n.to_lowercase().contains(&lower) || readable(n).to_lowercase().contains(&lower);
     if let Some(groups) = picker.groups {
-        return groups.iter().filter(|g| found(g[0])).map(|g| (g[0], g.iter().all(|n| have.contains(n)))).collect();
+        // A to Z by the names shown, as any list one looks a name up in.
+        let mut rows: Vec<(&str, bool)> = groups.iter().filter(|g| found(g[0])).map(|g| (g[0], g.iter().all(|n| have.contains(n)))).collect();
+        rows.sort_by_key(|(name, _)| readable(name));
+        return rows;
     }
     // A player's name typed in the search can be added when no row is that name.
     let other = |n: &str| !n.eq_ignore_ascii_case(typed);
@@ -217,6 +222,8 @@ pub(super) const ROW: f32 = 12.0;
 pub(super) fn rect(w: f32, h: f32) -> [f32; 4] {
     let width = (w - 8.0).clamp(1.0, 300.0);
     let height = (h - 16.0).clamp(1.0, 280.0);
+    // As tall as whole rows take (list_area), so no dead band is left between the last row and the buttons.
+    let height = if height >= 64.0 + ROW { 64.0 + ((height - 64.0) / ROW).floor() * ROW } else { height };
     [(w - width) / 2.0, ((h - height) / 2.0).max(0.0), width, height]
 }
 
@@ -256,7 +263,7 @@ mod tests {
 
     #[test]
     fn chosen_first_then_what_the_search_finds() {
-        let picker = Picker { kind: ListKind::Blocks, all: ["coal_ore", "diamond_ore", "dirt"].map(Into::into).into(), groups: None, scroll: 0.0 };
+        let picker = Picker { kind: ListKind::Blocks, all: ["coal_ore", "diamond_ore", "dirt"].map(Into::into).into(), groups: None, scroll: 0.0, cleared: None };
         assert_eq!(rows(&picker, "dirt", "ore"), [("dirt", true), ("coal_ore", false), ("diamond_ore", false)]);
         assert_eq!(rows(&picker, "", "Diamond O"), [("diamond_ore", false)]);
     }
@@ -267,5 +274,18 @@ mod tests {
         assert_eq!(rows(&picker, "coal_ore,spawner", ""), [("coal_ore", false), ("spawner", true)]);
         assert_eq!(clicked(&picker, "coal_ore,spawner", "coal_ore"), "coal_ore,spawner,deepslate_coal_ore");
         assert_eq!(clicked(&picker, "coal_ore,deepslate_coal_ore,dirt", "coal_ore"), "dirt");
+        // The short list reads A to Z whatever order its groups are written in.
+        let unordered = short_list(&[&["spawner"], &["ancient_debris"], &["diamond_ore", "deepslate_diamond_ore"]]);
+        assert_eq!(rows(&unordered, "", "").iter().map(|r| r.0).collect::<Vec<_>>(), ["ancient_debris", "diamond_ore", "spawner"]);
+    }
+
+    #[test]
+    fn the_box_is_whole_rows_tall() {
+        for h in [120.0, 200.0, 270.0, 540.0] {
+            let r = rect(480.0, h);
+            let area = list_area(r);
+            assert!((r[3] - 64.0 - area[3]).abs() < 0.01, "{h}: {r:?} {area:?}");
+            assert!(r[1] >= 0.0 && r[1] + r[3] <= h);
+        }
     }
 }

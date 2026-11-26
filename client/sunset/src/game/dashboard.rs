@@ -117,8 +117,9 @@ const TAB_H: f32 = 20.0;
 const TAB_GAP: f32 = 2.0;
 const TABS_Y: f32 = HEADER_H + 8.0;
 // The chosen module's switch, at the right of its band.
-const TOGGLE_W: f32 = 18.0;
-const TOGGLE_H: f32 = 10.0;
+// The chosen module's switch: the size of a setting's, and its right edge on theirs.
+const TOGGLE_W: f32 = 14.0;
+const TOGGLE_H: f32 = 8.0;
 // The settings' sections: inset from the column's sides, apart from each other, the rows inside them, a title's height.
 const CARD_M: f32 = 8.0;
 const CARD_GAP: f32 = 6.0;
@@ -140,6 +141,11 @@ fn frame(s: &State) -> [f32; 4] {
     frame_in(menu.view_w, menu.view_h)
 }
 
+// The screen width, in the menu's units, that gives the window the width it wants (None in the Sidebar style).
+pub(super) fn wanted_width() -> Option<f32> {
+    (!sidebar()).then(|| WIDTH_BASE + wanted_panel_w() * WIDTH_PER_PANEL + 17.0)
+}
+
 fn frame_in(view_w: f32, view_h: f32) -> [f32; 4] {
     let wanted = WIDTH_BASE + wanted_panel_w() * WIDTH_PER_PANEL;
     let (w, h) = ((view_w - 16.0).clamp(0.0, wanted).floor(), (view_h - 16.0).clamp(0.0, HEIGHT).floor());
@@ -157,7 +163,7 @@ fn columns(s: &State) -> ([f32; 4], [f32; 4]) {
 // The chosen module's switch.
 fn toggle_rect(s: &State) -> [f32; 4] {
     let pane = columns(s).1;
-    [pane[0] + pane[2] - CARD_M - TOGGLE_W, pane[1] - BAND_H + (BAND_H - TOGGLE_H) / 2.0, TOGGLE_W, TOGGLE_H]
+    [pane[0] + pane[2] - CARD_M - CARD_IN - super::sunset::RIGHT_PAD - TOGGLE_W, pane[1] - BAND_H + (BAND_H - TOGGLE_H) / 2.0, TOGGLE_W, TOGGLE_H]
 }
 
 fn module_h() -> f32 {
@@ -537,7 +543,27 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     let r = [list[0] + CARD_M, f[1] + (HEADER_H - SEARCH_H) / 2.0, (list[2] + pane[2] - 2.0 * CARD_M).clamp(0.0, SEARCH_MAX), SEARCH_H];
     let selected = menu.select_all && !menu.search.is_empty();
     out.push(Shape::Round(r, radius, if selected { 0xFF30_60B0 } else { pal().dash_control }));
-    search_text(game, out, r, menu.search, menu.search.len(), "Search modules");
+    // No caret while a bind waits for its key or the Profiles menu is open: typing does not go to the box then.
+    let (binding, menu_open) = (menu.binding, menu.menu_open);
+    search_text(game, out, r, menu.search, if binding || menu_open { usize::MAX } else { menu.search.len() }, "Search modules");
+    // What the clicks and keys do: on a strip over the window as over the panels, where the screen has the room
+    // above it; else beside the search box, as many of the hints (the first matter most) as fit there whole.
+    let hint = super::sunset::gui_hint(binding, menu_open, !menu.search.trim().is_empty());
+    if f[1] >= 15.0 {
+        let hint = fit_to(game, hint, menu.view_w - 16.0);
+        let hw = game.sunset_text_width(&hint);
+        let strip = [((menu.view_w - hw) / 2.0 - 6.0).floor(), f[1] - 14.0, hw + 12.0, 12.0];
+        out.push(Shape::Round(strip, radius, pal().dash_surface));
+        out.push(Shape::Text(hint, [strip[0] + 6.0, strip[1] + text_y(12.0)], 0xB4B4B4));
+    } else {
+        let (from, to) = (r[0] + r[2] + 10.0, f[0] + f[2] - 12.0);
+        let parts: Vec<&str> = hint.split("   ").collect();
+        let shown = (1..=parts.len()).rev().map(|n| parts[..n].join("   ")).find(|text| game.sunset_text_width(text) <= to - from);
+        if let Some(text) = shown {
+            let tw = game.sunset_text_width(&text);
+            out.push(Shape::Text(text, [to - tw, f[1] + text_y(HEADER_H)], MUTED));
+        }
+    }
 
     // The categories: the one shown a capsule in the accent colour.
     for p in 1..=CATEGORIES.len() {
@@ -580,28 +606,52 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         let shown = visible(&v.list.rows, scroll, list[3]);
         out.push(Shape::ClipStart);
         for &(off, hit) in &v.list.rows[shown] {
-            if let Hit::Module(i) = hit
-                && v.chosen == Some(i)
-            {
-                // The chosen module: lit, with a bar in the accent colour, so a row only pointed at never looks the same.
-                out.push(Shape::Fill([list[0], list[1] + off - scroll, list[2], module_h()], 0x22FF_FFFF));
-                out.push(Shape::Fill([list[0], list[1] + off - scroll, 2.0, module_h()], solid));
+            let Hit::Module(i) = hit else { continue };
+            let y = list[1] + off - scroll;
+            if v.chosen == Some(i) {
+                // The chosen module: lit, with the light bar the panels put by a module whose settings are open (the
+                // accent colour is for what is on), so a row only pointed at never looks the same.
+                out.push(Shape::Fill([list[0], y, list[2], module_h()], 0x22FF_FFFF));
+                out.push(Shape::Fill([list[0], y, 2.0, module_h()], 0xFFE4_E4E4));
+            }
+            // A search lists modules of every category: each row says which, where its name leaves the room.
+            if page == 0 {
+                let m = &s.modules[i];
+                let (label, name_w) = (m.category.label(), game.sunset_text_width(m.name));
+                let lw = game.sunset_text_width(label);
+                let key_w = m.key.as_deref().map_or(0.0, |_| 34.0);
+                if super::sunset::indent().max(6.0) + name_w + 10.0 + lw + key_w + 10.0 <= list[2] {
+                    out.push(Shape::Text(label.to_owned(), [list[0] + list[2] - 10.0 - key_w - lw, y + text_y(module_h())], 0x6C6C74));
+                }
             }
         }
         out.push(Shape::ClipEnd([list[0], list[1], list[0] + list[2], list[1] + list[3]]));
         v.chosen
     });
 
-    // The chosen module's band: its name and what it does, and its switch.
+    // The chosen module's band: its name and what it does (two lines of it, the second cut where it is longer), and
+    // its switch.
     if let Some(i) = chosen {
         let m = &s.modules[i];
         let t = toggle_rect(s);
         let room = (t[0] - pane[0] - CARD_M - 8.0).max(0.0);
-        out.push(Shape::Head(fit_to(game, m.name, room), [pane[0] + CARD_M + 2.0, band_y + 5.0], 0xFFFFFF));
-        out.push(Shape::Text(fit_to(game, m.about, room), [pane[0] + CARD_M + 2.0, band_y + 18.0], MUTED));
+        let mut about = if room >= 40.0 { super::sunset::wrap(game, m.about, room) } else { Vec::new() };
+        if about.len() > 2 {
+            let rest = about.split_off(1).join(" ");
+            about.push(fit_to(game, &rest, room));
+        }
+        let two = about.len() > 1;
+        out.push(Shape::Head(fit_to(game, m.name, room), [pane[0] + CARD_M + 2.0, band_y + if two { 2.0 } else { 5.0 }], 0xFFFFFF));
+        for (n, line) in about.into_iter().enumerate() {
+            out.push(Shape::Text(line, [pane[0] + CARD_M + 2.0, band_y + if two { 13.0 } else { 18.0 } + n as f32 * 10.0], MUTED));
+        }
         let lit = glow(Hit::Dash(Part::Toggle));
-        // The same switch as a setting's, bigger.
+        // The same switch as a setting's.
         switch(out, t, m.on, lit);
+    } else if pane[2] > 60.0 {
+        // No module chosen (a new search, one that finds nothing): the pane says how one gets there.
+        let text = fit_to(game, "Right click a module to see its settings here", pane[2] - 2.0 * CARD_M - 4.0);
+        out.push(Shape::Text(text, [pane[0] + CARD_M + 2.0, pane[1] + 6.0], MUTED));
     }
 
     // Its sections: a card each, with its title.

@@ -354,6 +354,7 @@ impl State {
         self.see_presets();
         let snapshot = self.profile_text();
         self.selection.refresh(&snapshot);
+        self.selection.fresh = fresh_settings(&snapshot);
     }
     // One "module.field=value" line of a config or a profile, on `modules`.
     pub(super) fn set_field(modules: &mut [Module], k: &str, v: &str) {
@@ -801,6 +802,7 @@ pub(super) fn sync_flags(s: &mut State) {
     LOOK[3].store(g.map_or(35.0, |m| m.n("Background dim")) as u32, Ordering::Relaxed);
     LOOK[5].store(g.map_or(2.0, |m| m.n("Text indent") as f32).to_bits(), Ordering::Relaxed);
     LOOK[6].store(g.map_or(1.0, |m| m.n("GUI scale") as f32).to_bits(), Ordering::Relaxed);
+    FIT_SCREEN.store(g.is_none_or(|m| m.b("Fit to screen")), Ordering::Relaxed);
     LOOK[8].store(g.map_or(4.0, |m| m.n("Panel radius") as f32).to_bits(), Ordering::Relaxed);
     LOOK[9].store(g.map_or(3.0, |m| m.n("Control radius") as f32).to_bits(), Ordering::Relaxed);
     LOOK[10].store(u32::from(g.is_some_and(|m| m.p("Spacing") == "Compact")), Ordering::Relaxed);
@@ -917,6 +919,7 @@ pub(super) fn save(game: &Game<'_>) {
         sync_flags(s);
         let snapshot = s.profile_text();
         s.selection.refresh(&snapshot);
+        s.selection.fresh = fresh_settings(&snapshot);
         s.save_text()
     });
     // Unchanged since the last write: nothing to do (a click that changed nothing, the same value dragged back).
@@ -954,6 +957,13 @@ pub(super) fn save(game: &Game<'_>) {
             }
         }
     }
+}
+
+// Whether these settings (a profile's text of them) are a fresh install's: with no profile in use the HUD then names
+// them Default, as the Profiles menu's preset is named, not Custom. Never with a plugin's modules among them.
+fn fresh_settings(snapshot: &str) -> bool {
+    static FRESH: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    super::sunset_profiles::fingerprint(snapshot) == *FRESH.get_or_init(|| super::sunset_profiles::fingerprint(&State::new().profile_text()))
 }
 
 // What the config was last written as, so the same text isn't written again.

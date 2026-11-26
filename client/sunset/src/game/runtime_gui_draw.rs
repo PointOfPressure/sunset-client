@@ -127,6 +127,10 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
         // The block's, item's or mob's icon (only the rows on screen are drawn), then its name.
         let icon = pick::icon(game, picker, name, [area[0] + 13.0, ry + 1.0], pick::ROW - 2.0);
         let left = if icon.is_some() { 26.0 } else { 14.0 };
+        // A lighter tile behind it: obsidian, a spawner and the like are dark on a dark dialog.
+        if icon.is_some() {
+            out.push(Shape::Round([area[0] + 12.5, ry + 0.5, pick::ROW - 1.0, pick::ROW - 1.0], 2.0, 0x2EFF_FFFF));
+        }
         // An icon can't be cut, so it waits outside the cut part until its row is all in view.
         icons.extend(icon.filter(|_| ry >= area[1] && ry + pick::ROW <= area[1] + area[3]));
         let label = if picker.kind == pick::ListKind::Players { (*name).to_owned() } else { pick::readable(name) };
@@ -141,16 +145,19 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
     }
     scrollbar(out, area[0] + area[2] - 2.0, area[1], area[3], content, area[3], scroll);
     let chosen = rows.iter().filter(|(_, have)| *have).count();
-    let note = format!("{chosen} of {} chosen", rows.len());
-    // Clear unticks everything; it shows while anything is ticked.
+    // What the numbers count: with a search typed, what it found (the chosen ones always show).
+    let note = if search.trim().is_empty() { format!("{chosen} of {} chosen", rows.len()) } else { format!("{} shown, {chosen} chosen", rows.len()) };
+    // Clear unticks everything; it shows while anything is ticked, and is Undo right after, until something is ticked.
     let any = !pick::chosen(text).is_empty();
+    let undo = !any && picker.cleared.is_some();
     let clear = pick::clear_button(r);
     let done = pick::done_button(r);
-    out.push(Shape::Text(fit(&note, if any { clear[0] } else { done[0] } - x - 12.0), [x + 8.0, done[1] + text_y(done[3])], 0x909090));
-    if any {
-        out.push(Shape::Round(clear, panel_radius(), pal().button));
-        let tw = game.sunset_text_width("Clear");
-        out.push(Shape::Text("Clear".to_owned(), [clear[0] + (clear[2] - tw) / 2.0, clear[1] + text_y(clear[3])], 0xFFFFFF));
+    out.push(Shape::Text(fit(&note, if any || undo { clear[0] } else { done[0] } - x - 12.0), [x + 8.0, done[1] + text_y(done[3])], 0x909090));
+    if any || undo {
+        let label = if undo { "Undo" } else { "Clear" };
+        out.push(Shape::Round(clear, panel_radius(), if inside(clear, at) { pal().value_box } else { pal().button }));
+        let tw = game.sunset_text_width(label);
+        out.push(Shape::Text(label.to_owned(), [clear[0] + (clear[2] - tw) / 2.0, clear[1] + text_y(clear[3])], 0xFFFFFF));
     }
     out.push(Shape::Round(done, panel_radius(), solid(accent())));
     let tw = game.sunset_text_width("Done");
@@ -208,7 +215,8 @@ pub(super) fn fade(out: &mut Vec<Shape>, [x, y, w]: [f32; 3], colour: u32, px: f
 }
 
 // What a search box holds: what was typed, with a caret at byte `caret` of it (the end of a long one shows), or what
-// it searches, in grey. The box itself is the caller's.
+// it searches, in grey. A caret past the text's end is none: the box is not where typing goes just now (a bind waits
+// for its key, a menu is open over it). The box itself is the caller's.
 pub(super) fn search_text(game: &Game<'_>, out: &mut Vec<Shape>, r: [f32; 4], typed: &str, caret: usize, hint: &str) {
     let room = (r[2] - 16.0).max(0.0);
     let at = [r[0] + 8.0, r[1] + text_y(r[3])];
@@ -221,6 +229,9 @@ pub(super) fn search_text(game: &Game<'_>, out: &mut Vec<Shape>, r: [f32; 4], ty
         from += typed[from..].chars().next().map_or(1, char::len_utf8);
     }
     out.push(Shape::Text(typed[from..].to_owned(), at, 0xFFFFFF));
+    if caret > typed.len() {
+        return;
+    }
     let caret = caret.clamp(from, typed.len());
     let cx = game.sunset_text_width(&typed[from..caret]);
     out.push(Shape::Fill([at[0] + cx + 0.5, r[1] + 3.0, 1.0, r[3] - 6.0], 0xFF00_0000 | accent()));
@@ -274,6 +285,41 @@ pub(super) fn lay_out(gui: &mut Gui, asked: f32, width: f32, w: f32, h: f32, hea
     for p in &mut gui.panels {
         p.x = (2.0 + (p.home[0] - 2.0) * k).clamp(0.0, (w - width).max(0.0));
         p.y = p.home[1].clamp(0.0, (h - head).max(0.0));
+    }
+}
+
+// The width, in the menu's own units, at which nothing of it has to be narrowed: the panels in one row at the Panel
+// width asked for, or the Dashboard's window as wide as it wants to be. None for the Sidebar, which sizes itself.
+pub(super) fn wanted_row() -> Option<f32> {
+    if super::sunset_dashboard::on() {
+        return super::sunset_dashboard::wanted_width();
+    }
+    let n = CATEGORIES.len() as f32;
+    Some(4.0 + n * wanted_panel_w() + 3.0 * (n - 1.0) + 1.0)
+}
+
+// The panels' search box, in the middle over them, and the cross at its end that empties it.
+pub(super) fn search_field(w: f32) -> [f32; 4] {
+    let fw = 150.0_f32.min(w - 8.0);
+    [((w - fw) / 2.0).floor(), 15.0, fw, 14.0]
+}
+
+pub(super) fn search_clear(w: f32) -> [f32; 4] {
+    let [x, y, fw, fh] = search_field(w);
+    [x + fw - fh, y, fh, fh]
+}
+
+// What the keys and clicks do now, for the strip over the menu: while a bind waits for its key, with the Profiles
+// menu open, while searching, or else. The panels and the Dashboard say the same.
+pub(super) fn gui_hint(binding: bool, menu_open: bool, searching: bool) -> &'static str {
+    if binding {
+        "Press a key or a mouse button   Esc: cancel   Backspace: clear the bind"
+    } else if menu_open {
+        "Click a row to choose it   Left and Right: tabs   Esc: back"
+    } else if searching {
+        "Enter: toggle the first result   Left click: on or off   Right click: settings   Esc: close"
+    } else {
+        "Left click: on or off   Right click: settings   Type to search   Esc: close"
     }
 }
 
@@ -405,12 +451,19 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
             Hit::Bind(i) => {
                 let waiting = binding == Some(i);
                 if waiting {
-                    // The prompt takes the row, so it is never cut to "Press a...".
-                    let b = [setting_x, y + 2.0, x + rw - RIGHT_PAD - setting_x, row_hh() - 4.0];
+                    // The row keeps its name with the prompt beside it; where both do not fit, the prompt takes the
+                    // row, so it is never cut to "Press a...".
+                    let (prompt, lw) = ("Press a key", width_of(game, "Bind") + 6.0);
+                    let named = setting_x + lw + width_of(game, prompt) + 8.0 <= x + rw - RIGHT_PAD;
+                    let from = if named { setting_x + lw } else { setting_x };
+                    let b = [from, y + 2.0, x + rw - RIGHT_PAD - from, row_hh() - 4.0];
                     out.push(Shape::Round(b, control, pal().value_box));
-                    let text = fit("Press a key", b[2] - 6.0);
+                    let text = fit(prompt, b[2] - 6.0);
                     let tw = width_of(game, &text);
                     out.push(Shape::Text(text, [b[0] + (b[2] - tw) / 2.0, y + text_y(row_hh())], accent()));
+                    if named {
+                        out.push(Shape::Text("Bind".to_owned(), [setting_x, y + text_y(row_hh())], 0xB4B4B4));
+                    }
                     return None;
                 }
                 let key = key_label(modules[i].key.as_deref());
@@ -733,7 +786,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         }
     }
     // The saved profiles, when the Profiles module's row was clicked: over everything, the search box too.
-    let profiles = |out: &mut Vec<Shape>| with(|s| super::sunset_profile_menu::draw(game, w, h, at, s.selection.selected(), s.gui.profile_menu.as_ref(), out));
+    let profiles = |out: &mut Vec<Shape>| with(|s| super::sunset_profile_menu::draw(game, w, h, at, s.selection.selected(), &s.selection.label(), s.gui.profile_menu.as_ref(), out));
     // The Dashboard has its own search box.
     if dash {
         profiles(out);
@@ -743,10 +796,18 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     // pickers' are; and over it a reminder of the clicks, on a strip of its own so it reads on any sky.
     let search = with(|s| s.gui.search.clone());
     let selected = with(|s| s.gui.select_all) && !search.is_empty();
-    let fw = 150.0_f32.min(w - 8.0);
-    let field = [((w - fw) / 2.0).floor(), 15.0, fw, 14.0];
+    let menu_open = with(|s| s.gui.profile_menu.is_some());
+    let field = search_field(w);
     framed(out, field, panel_radius(), if selected { 0xFF30_60B0 } else { bg(pal().panel) }, px);
-    search_text(game, out, field, &search, search.len(), "Search modules");
+    // Typing goes to the box unless a bind waits for its key or the Profiles menu is open: no caret then.
+    let live = binding.is_none() && !menu_open;
+    let clear = search_clear(w);
+    let text_room = if search.is_empty() { field } else { [field[0], field[1], field[2] - clear[2] + 4.0, field[3]] };
+    search_text(game, out, text_room, &search, if live { search.len() } else { usize::MAX }, "Search modules");
+    // A cross at its end empties it.
+    if !search.is_empty() {
+        cross(out, clear, live && inside(clear, at));
+    }
     // A search that finds nothing says so (every panel is gone then).
     if searching && rows.is_empty() {
         let none = fit(&format!("Nothing matches \"{}\"", search.trim()), w - 16.0);
@@ -755,13 +816,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         out.push(Shape::Text(none, [((w - nw) / 2.0).floor(), 33.0 + text_y(14.0)], 0xB4B4B4));
     }
     // What the keys and clicks do now: while a bind waits, while searching, or else.
-    let hint = if binding.is_some() {
-        "Press a key or a mouse button   Esc: cancel   Backspace: no bind"
-    } else if searching {
-        "Enter: turn the first found on or off   Right click: settings   Esc: close"
-    } else {
-        "Left click: on or off   Right click: settings   Type to search   Esc: close"
-    };
+    let hint = gui_hint(binding.is_some(), menu_open, searching);
     let hint = fit(hint, w - 16.0);
     let hw = game.sunset_text_width(&hint);
     framed(out, [((w - hw) / 2.0 - 6.0).floor(), 1.0, hw + 12.0, 12.0], panel_radius(), bg(pal().panel), px);

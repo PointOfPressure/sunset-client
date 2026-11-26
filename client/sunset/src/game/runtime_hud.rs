@@ -62,7 +62,15 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     let monitor = game.window.as_deref().and_then(horizon_client::window::display).map(|d| [d.width as f32, d.height as f32]);
     super::sunset_hud_place::set_reference(monitor, batch.scale);
     // GUI scale, as far as a row of the narrowest panels still fits the window.
-    let scale = f32::from_bits(LOOK[6].load(Ordering::Relaxed)).min((w / MIN_ROW).max(1.0));
+    let mut scale = f32::from_bits(LOOK[6].load(Ordering::Relaxed)).min((w / MIN_ROW).max(1.0));
+    // Fit to screen: smaller still, when it has to be, until the panels keep the Panel width asked for in one row (the
+    // Dashboard's window: the width it wants), so names and settings are not cut short. Never under two screen
+    // pixels to a unit of the menu, where its text stops being readable.
+    if FIT_SCREEN.load(Ordering::Relaxed)
+        && let Some(row) = wanted_row()
+    {
+        scale = scale.min((w / row).max(2.0 / batch.scale.max(0.01)));
+    }
     LOOK[7].store(scale.to_bits(), Ordering::Relaxed);
     let lw = (1.5 / batch.scale).max(0.5);
     let mut shapes = std::mem::take(&mut *SHAPES.lock().unwrap_or_else(|e| e.into_inner()));

@@ -205,6 +205,9 @@ def clean():
         say(".t notifications")
     on.clear()
     touched.clear()
+    # ClickGUI's Fit to screen (on by default) draws the menu smaller on a small window; the tests' places for its
+    # rows are in the game's GUI pixels, so they run with it off ("ClickGUI Fit to screen" turns it on for itself).
+    say(".set clickgui fit to screen false")
     # Land first, in whatever game mode, so a fall a test left you in costs nothing.
     cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 0.5} 0 0")
     wait(3)
@@ -1930,9 +1933,7 @@ def _():
     names = saved.removeprefix("Profiles: ").split(". In use")[0].split(", ")
     if "picked" not in names:
         return False, f"not saved: {said} then {saved!r}"
-    w, h = gui_size()
-    ww, hh = min(w - 16, 300), min(min(max(len(names), 1), 10) * 18 + 47, h - 16)
-    x, y = (w - ww) / 2, (h - hh) / 2
+    x, y, _, _ = profiles_menu_frame(len(names))
     say(".menu profiles")
     wait(5)
     ctl("click-at", *map(str, menu_row(5, 1)))
@@ -2325,9 +2326,6 @@ def _():
     w, h = gui_size()
     ww = min(w - 16, 300)
 
-    def frame(count):
-        hh = min(min(max(count, 1), 10) * 18 + 47, h - 16)
-        return (w - ww) / 2, (h - hh) / 2, hh
 
     def names():
         line = one(".profile list")
@@ -2347,15 +2345,15 @@ def _():
         """The menu at its Import tab (a row for each file in the folder, earlier tests' too), the clicks in it, then
         shut by a click off it."""
         files = sorted(f[:-8] for f in os.listdir(found[0]) if f.endswith(".profile"))
-        x, y, _ = frame(len(names()))
+        # One frame for every tab: worked out before the menu opens (.profile list is typed in the chat).
+        x, y, _, hh = profiles_menu_frame(len(names()))
         say(".menu profiles")
         wait(5)
         ctl("click-at", *map(str, menu_row(5, 1)))
         wait(4)
         ctl("click-at", str(x + ww - 54), str(y + 11))
         wait(3)
-        x, y, hh = frame(max(len(files), 2))
-        spots = {"keep": (x + ww - 100, y + hh - 11.5), "replace": (x + ww - 36, y + hh - 11.5), "paste": (x + ww - 56, y + hh - 11.5)}
+        spots = {"keep": (x + ww - 100, y + hh - 11.5), "replace": (x + ww - 36, y + hh - 11.5), "paste": (x + ww - 63, y + hh - 11.5)}
         spots.update({name: (x + 40, y + 25 + 18 * n + 9) for n, name in enumerate(files)})
         for n, spot in enumerate(click):
             if n:
@@ -2388,6 +2386,42 @@ def _():
           and "Keep sprint: OFF" in sprint and "pasted" in pasted)
     return ok, (f"after a free name: {free}; taken, Keep both: {kept}; taken, Replace: {replaced} then {loaded[:24]!r}, {sprint!r}; "
                 f"Paste a profile: {pasted} (shot {SHOTS}/profiles_import_ask.png)")
+
+
+@test("ClickGUI Fit to screen (the panels keep their width)")
+def _():
+    # Fit to screen (on by default) draws the menu smaller, when it has to, until its six panels are their Panel width
+    # in one row, never under two screen pixels to a unit. On a window where that makes it smaller, the first Combat
+    # module's row is at the usual place times the scale: a click there turns a module on. With Fit to screen off the
+    # same click lands on a panel's header and turns nothing on.
+    w, h = gui_size()
+    game_scale = ctl("status")["display"]["width"] / w
+    scale = min(1.0, max(w / (4 + 6 * 120 + 5 * 3 + 1), 2 / game_scale))
+    if scale > 0.95:
+        return True, f"nothing to fit at this size (GUI {w:.0f} wide, scale {scale:.2f})"
+    # The row as the fitted menu lays it out: panels 120 wide, the first module under the header at y 48.
+    x, y = (2 + 30) * scale, (32 + 16 + 7) * scale
+
+    def click_turns_on(fit):
+        say(f".set clickgui fit to screen {'true' if fit else 'false'}")
+        before = set(modules_on())
+        say(".menu")
+        wait(6)
+        ctl("click-at", str(x), str(y))
+        wait(4)
+        ctl("click-at", "3", str(h - 3))
+        close_menu()
+        now = set(modules_on())
+        turned = sorted(now - before)
+        for name in turned:
+            say(f".t {name.lower().replace(' ', '')}")
+        return turned
+
+    fitted = click_turns_on(True)
+    unfitted = click_turns_on(False)
+    touched.add("clickgui")
+    ok = len(fitted) == 1 and not unfitted
+    return ok, f"scale {scale:.3f} (GUI {w:.0f} wide): the click at {x:.0f},{y:.0f} turned on {fitted} with Fit to screen, {unfitted} without"
 
 
 @test("Old profile converts")
@@ -2460,13 +2494,10 @@ def _():
     wait(5)
     ctl("click-at", *map(str, menu_row(5, 1)))
     wait(3)
-    count = len(next((l for l in listing if l.startswith("Presets:")), "Presets: x.").split(". ")[0].split(", "))
-    hh = min(count * 18 + 47, h - 16)
-    x, y = (w - ww) / 2, (h - hh) / 2
-    if saved and saved[0].startswith("Profiles:"):
-        names = saved[0].removeprefix("Profiles: ").split(". In use")[0].split(", ")
-        sh = min(min(max(len(names), 1), 10) * 18 + 47, h - 16)
-        ctl("click-at", str(x + ww - 110), str((h - sh) / 2 + 11))
+    names = saved[0].removeprefix("Profiles: ").split(". In use")[0].split(", ") if saved and saved[0].startswith("Profiles:") else []
+    x, y, _, _ = profiles_menu_frame(len(names))
+    if names:
+        ctl("click-at", str(x + ww - 110), str(y + 11))
         wait(3)
     ctl("screenshot", f"{SHOTS}/presets_list.png")
     time.sleep(2)
@@ -2508,6 +2539,18 @@ def gui_size():
     if scale <= 0:
         scale = max(1, min(w // 320, h // 240))
     return w / scale, h / scale
+
+
+def profiles_menu_frame(saved):
+    """The Profiles menu's frame (x, y, width, height) in GUI pixels with `saved` profiles: 300 wide where the screen
+    allows, and as tall as its longest tab (the saved profiles, the one preset, the imports folder's files: two lines
+    at least, ten rows at most), the same on every tab."""
+    w, h = gui_size()
+    ww = min(w - 16, 300)
+    found = [os.path.join(r, d) for r, ds, _ in os.walk(os.path.join(session_dir(), "home")) for d in ds if d == "imports"]
+    files = len([f for f in os.listdir(found[0]) if f.endswith(".profile")]) if found else 0
+    hh = min(min(max(saved, 1, files, 2), 10) * 18 + 47, h - 16)
+    return (w - ww) / 2, (h - hh) / 2, ww, hh
 
 
 def panel_width():
@@ -2975,6 +3018,7 @@ def _():
         got[font] = {"changed": differ(on, off), "redrawn": differ(on, again), "ink": round(ink(on) / max(ink(off), 1), 3)}
     say(".reset hud")
     say(".reset clickgui")
+    say(".set clickgui fit to screen false")
     ok = (all(got[f]["changed"] > 300 and got[f]["redrawn"] <= 20 and 0.85 <= got[f]["ink"] <= 1.15 for f in ("Sora", "Inter"))
           and got["Minecraft"]["changed"] <= 20)
     return ok, f"pixels changed by the switch, on a redraw, and bright pixels on/off: {got}"
@@ -3098,8 +3142,9 @@ def _():
 
 @test("Xray Simple list")
 def _():
-    # Simple: the short list of ores and valuables, a row standing for all its blocks. A click on Diamond (row 0, both
-    # chosen) takes both away, on Coal (row 9, half chosen) completes it, on Spawner (row 11) adds both spawners.
+    # Simple: the short list of ores and valuables, A to Z, a row standing for all its blocks. A click on Diamond Ore
+    # (row 5, both chosen) takes both away, on Coal Ore (row 3, half chosen) completes it, on Chest (row 2, none
+    # chosen) adds the chest, the trapped chest and the barrel.
     def blocks():
         mark = log_mark()
         say(".settings xray")
@@ -3113,15 +3158,15 @@ def _():
     # A right click on Xray opens or closes its settings in the panel: a second try if the first found them open.
     for _ in range(2):
         open_picker("", f"{SHOTS}/picker_simple.png")
-        for row in (0, 9, 11):
+        for row in (5, 3, 2):
             ctl("click-at", *map(str, picker_row(row)))
             wait(2)
         close_menu()
         got = blocks()
         if got != f"Blocks: {start}":
             break
-    ok = set(got.removeprefix("Blocks: ").split(",")) == {"coal_ore", "deepslate_coal_ore", "spawner", "trial_spawner"}
-    return ok, f"Diamond (all chosen), Coal (half) and Spawner (none) clicked: {got!r}"
+    ok = set(got.removeprefix("Blocks: ").split(",")) == {"coal_ore", "deepslate_coal_ore", "chest", "trapped_chest", "barrel"}
+    return ok, f"Diamond (all chosen), Coal (half) and Chest (none) clicked: {got!r}"
 
 
 @test("Xray water, lava and placed blocks")
@@ -18680,6 +18725,7 @@ def _():
     place = said("watermark position", "Custom") + said("watermark x", "0.25")
     say(".reset hud")
     say(".reset clickgui")
+    say(".set clickgui fit to screen false")
     ok = any("ON" in line for line in on) and any("OFF" in line for line in off) and len(place) == 2
     return ok, f"No auto pause on: {on}, off: {off}; Watermark position and x by command: {place}"
 

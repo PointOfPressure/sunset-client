@@ -9,10 +9,10 @@ use super::sunset::*;
 pub(super) fn open_profile_menu(game: &Game<'_>) {
     let store = super::sunset_profiles::Store::new(game.native_data_dir(ID));
     let result = store.as_ref().map_err(Clone::clone).and_then(|store| store.list());
-    let (imports, folder) = store.as_ref().map(|store| (store.import_names(), store.imports().display().to_string())).unwrap_or_default();
+    let imports = store.as_ref().map(|store| store.import_names()).unwrap_or_default();
     with(|s| {
         let names = result.as_ref().cloned().unwrap_or_default();
-        let mut menu = super::sunset_profile_menu::Menu::new(names, imports, folder, s.selection.selected(), s.gui.view_w, s.gui.view_h);
+        let mut menu = super::sunset_profile_menu::Menu::new(names, imports, s.selection.selected(), s.gui.view_w, s.gui.view_h);
         menu.error = result.err();
         s.gui.profile_menu = Some(menu);
         s.gui.drag = None;
@@ -185,6 +185,19 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
         }
         return;
     }
+    // The cross at the end of the panels' search box: the search emptied.
+    if button == MouseButton::Left
+        && with(|s| {
+            let on_cross = !super::sunset_dashboard::on() && s.gui.editor.is_none() && !s.gui.search.is_empty() && inside(search_clear(s.gui.view_w), at);
+            if on_cross {
+                dash_search_clear(s);
+                s.binding = None;
+            }
+            on_cross
+        })
+    {
+        return;
+    }
     // The Profiles module's row, either button: the list of saved profiles instead of a toggle or settings.
     if with(|s| {
         s.gui.editor.is_none()
@@ -222,11 +235,29 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             if !right && inside(pick::done_button(r), at) {
                 s.gui.editor = None;
             } else if !right && inside(pick::clear_button(r), at) {
-                // Clear (it shows while anything is ticked): the list emptied.
+                // Clear (it shows while anything is ticked): the list emptied, and kept for Undo, which the button
+                // is until something is ticked again.
                 let (i, j) = (*module, *setting);
-                if matches!(&s.modules[i].settings[j].value, Value::Text(t) if !pick::chosen(t).is_empty()) {
-                    s.modules[i].settings[j].value = Value::Text(String::new());
-                    changed = true;
+                let before = picker.cleared.clone();
+                let current = match &s.modules[i].settings[j].value {
+                    Value::Text(t) => Some(t.clone()),
+                    _ => None,
+                };
+                let kept = match current {
+                    Some(list) if !pick::chosen(&list).is_empty() => {
+                        s.modules[i].settings[j].value = Value::Text(String::new());
+                        changed = true;
+                        Some(list)
+                    }
+                    Some(_) if before.is_some() => {
+                        s.modules[i].settings[j].value = Value::Text(before.unwrap_or_default());
+                        changed = true;
+                        None
+                    }
+                    _ => before,
+                };
+                if let Some(p) = s.gui.editor.as_mut().and_then(|e| e.list.as_mut()) {
+                    p.cleared = kept;
                 }
             } else if !right && inside(area, at) {
                 let (i, j) = (*module, *setting);
@@ -237,6 +268,10 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     let list = pick::clicked(picker, t, name);
                     s.modules[i].settings[j].value = Value::Text(list);
                     changed = true;
+                    // Something ticked by hand: the cleared list is not offered back over it.
+                    if let Some(p) = s.gui.editor.as_mut().and_then(|e| e.list.as_mut()) {
+                        p.cleared = None;
+                    }
                 }
             }
             return;
@@ -311,6 +346,20 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     s.gui.expanded.remove(k);
                 } else {
                     s.gui.expanded.push(i);
+                    // Its settings come into view: the panel scrolls until they end at its foot (the module's own row
+                    // staying in), instead of opening under the screen's edge.
+                    if let Some(c) = CATEGORIES.iter().position(|c| *c == s.modules[i].category) {
+                        let (rows, content) = panel_body(s, c);
+                        if let Some(k) = rows.iter().position(|(_, hit)| *hit == Hit::Module(i)) {
+                            let top = rows[k].0;
+                            let end = rows[k + 1..].iter().find(|(_, hit)| matches!(hit, Hit::Module(_))).map_or(content, |(y, _)| *y);
+                            let room = body_room(s, c);
+                            let scroll = &mut s.gui.panels[c].scroll;
+                            if end - *scroll > room {
+                                *scroll = (end - room).min(top).max(*scroll);
+                            }
+                        }
+                    }
                 }
             }
             // Its own window, beside the row at first (the same module again closes it).

@@ -18,7 +18,13 @@ use std::sync::{Arc, Mutex};
 pub(super) struct Found {
     pub(super) score: u32,
     pub(super) settings: Vec<usize>,
+    // A word matched only its description, which a row does not show: such a module is listed only when the search
+    // finds nothing by a name or a setting (else "xray" lists Ore Sim with nothing to say why).
+    pub(super) about: bool,
 }
+
+// What a word that matched only the description scores.
+const ABOUT: u32 = 200;
 
 // The words of a name or text: lowercase letters and digits, split at anything else.
 fn words(text: &str) -> Vec<String> {
@@ -103,7 +109,9 @@ fn word_score(word: &str, m: &Module, name: &str, name_words: &[String], initial
     }
     if long {
         let before = settings.len();
-        for (j, s) in m.settings.iter().enumerate() {
+        // Modules' settings are the other modules' names (which of them the menus list): a search for a module finds
+        // the module, not a switch under Modules that reads as the module being on.
+        for (j, s) in m.settings.iter().enumerate().filter(|_| m.name != "Modules") {
             if words(s.name).iter().any(|w| w.starts_with(word)) || (word.len() >= 4 && norm(s.name).contains(word)) {
                 settings.push(j);
             }
@@ -112,7 +120,7 @@ fn word_score(word: &str, m: &Module, name: &str, name_words: &[String], initial
             return 300;
         }
         if words(m.about).iter().any(|w| w.starts_with(word)) {
-            return 200;
+            return ABOUT;
         }
     }
     if words(m.category.label()).iter().any(|w| w.starts_with(word)) {
@@ -133,11 +141,13 @@ pub(super) fn score(m: &Module, query: &str) -> Option<Found> {
     let alias = words(aliases(m.name));
     let mut settings = Vec::new();
     let mut total = 0;
+    let mut about = false;
     for word in &typed {
         let s = word_score(word, m, &name, &name_words, &initials, &alias, &mut settings);
         if s == 0 {
             return None;
         }
+        about |= s == ABOUT;
         total += s;
     }
     // The whole search, spaces left out, as the name or its start: "kill aura" and "killaura" alike.
@@ -151,7 +161,7 @@ pub(super) fn score(m: &Module, query: &str) -> Option<Found> {
     total = (total / typed.len() as u32) * 4 + 40u32.saturating_sub(name.len() as u32);
     settings.sort_unstable();
     settings.dedup();
-    Some(Found { score: total, settings })
+    Some(Found { score: total, settings, about })
 }
 
 // Every module's result for `query` (by index), worked out once per search.
@@ -164,7 +174,13 @@ pub(super) fn results(modules: &[Module], query: &str) -> Arc<Vec<Option<Found>>
     {
         return found.clone();
     }
-    let found = Arc::new(modules.iter().map(|m| score(m, query)).collect::<Vec<_>>());
+    let mut found: Vec<Option<Found>> = modules.iter().map(|m| score(m, query)).collect();
+    if found.iter().flatten().any(|f| !f.about) {
+        for f in &mut found {
+            *f = f.take().filter(|f| !f.about);
+        }
+    }
+    let found = Arc::new(found);
     *cache = Some((query.to_owned(), modules.len(), found.clone()));
     found
 }
@@ -210,7 +226,23 @@ mod tests {
         assert_eq!(best(&state, "vanish"), Some("Anti Vanish"));
         // Words of a description: Sound Detector "Tells what players nearby are doing".
         let sound = state.modules.iter().position(|m| m.name == "Sound Detector").unwrap();
-        assert!(results(&state.modules, "nearby")[sound].is_some());
+        assert!(score(&state.modules[sound], "nearby").is_some_and(|f| f.about));
+    }
+
+    // A description alone lists a module only when no name or setting matched; and Modules' switches, named after
+    // the other modules, are not what a search for a module finds.
+    #[test]
+    fn descriptions_step_aside_for_names_and_modules_switches_are_not_found() {
+        let state = State::new();
+        let at = |name: &str| state.modules.iter().position(|m| m.name == name).unwrap();
+        let found = results(&state.modules, "xray");
+        assert!(found[at("Xray")].as_ref().is_some_and(|f| !f.about));
+        assert!(found.iter().flatten().all(|f| !f.about));
+        assert!(found[at("Modules")].is_none());
+        let mut settings = Vec::new();
+        let modules = &state.modules[at("Modules")];
+        assert_eq!(word_score("xray", modules, "modules", &["modules".to_owned()], "m", &[], &mut settings), 0);
+        assert!(settings.is_empty());
     }
 
     #[test]
