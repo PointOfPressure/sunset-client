@@ -30,6 +30,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - Debug Report has a Trigger Bot section: of the ticks it ran since it was turned on, how many had something under the crosshair, how many of those hit, and what held each of the others (the cooldown, an item in use, Anti bot, Miss chance...), to compare two players' fights
 
 ### Changed
+- ClickGUI, first fixes from a fresh look at every screen: the Dashboard marks the chosen module with a bar in the accent colour and says what its number counts ("27 modules", "2 found"); list pickers have tick boxes and a plain "11 of 16 chosen" line; the settings window no longer puts a "Bind" heading over its Bind row; switches that are off have a knob you can see; text on orange buttons has no smudged shadow
 - Target HUD is a module of its own (Render) instead of a switch in HUD: its switch, mode and place carry over, and it shows with HUD off too
 - **Blink is now Fake Lag's Hold mode: your Blink key, switch and Max ticks carry over, and `.t blink` still works**
 - HUD's position, x and y settings are no longer rows in the menus: open the chat and drag an element (right click puts it back); saved layouts stay as they are

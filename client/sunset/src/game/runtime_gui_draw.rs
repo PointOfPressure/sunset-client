@@ -104,9 +104,16 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
         }
         let row = [area[0], ry, area[2], pick::ROW];
         if inside(row, at) {
-            out.push(Shape::Round(row, control, 0x40FF_FFFF));
+            out.push(Shape::Round(row, control, 0x1CFF_FFFF));
         }
-        out.push(Shape::Round([area[0] + 3.0, ry + 3.0, 6.0, 6.0], 3.0, if *have { solid(accent()) } else { pal().check_off }));
+        // A tick box: filled in the accent colour when chosen, an empty outline when not.
+        let mark = [area[0] + 3.0, ry + (pick::ROW - 7.0) / 2.0, 7.0, 7.0];
+        if *have {
+            out.push(Shape::Round(mark, 2.0, solid(accent())));
+        } else {
+            out.push(Shape::Round(mark, 2.0, 0x70FF_FFFF));
+            out.push(Shape::Round([mark[0] + 1.0, mark[1] + 1.0, mark[2] - 2.0, mark[3] - 2.0], 1.0, pal().dialog));
+        }
         // The block's, item's or mob's icon (only the rows on screen are drawn), then its name.
         let icon = pick::icon(game, picker, name, [area[0] + 13.0, ry + 1.0], pick::ROW - 2.0);
         let left = if icon.is_some() { 26.0 } else { 14.0 };
@@ -118,12 +125,12 @@ fn draw_picker(game: &Game<'_>, w: f32, h: f32, edit: &Editor, picker: &super::s
     out.push(Shape::ClipEnd([area[0], area[1], area[0] + area[2], area[1] + area[3]]));
     out.extend(icons);
     let chosen = rows.iter().filter(|(_, have)| *have).count();
-    let note = format!("{chosen} chosen, {} more. Click to add or take away; Esc closes.", rows.len() - chosen);
+    let note = format!("{chosen} of {} chosen. Click a row to add or remove it.", rows.len());
     let done = pick::done_button(r);
     out.push(Shape::Text(fit(&note, done[0] - x - 12.0), [x + 8.0, done[1] + text_y(done[3])], 0x909090));
     out.push(Shape::Round(done, panel_radius(), solid(accent())));
     let tw = game.sunset_text_width("Done");
-    out.push(Shape::Text("Done".to_owned(), [done[0] + (done[2] - tw) / 2.0, done[1] + text_y(done[3])], 0xFFFFFF));
+    out.push(Shape::Plain("Done".to_owned(), [done[0] + (done[2] - tw) / 2.0, done[1] + text_y(done[3])], 0xFFFFFF, false));
 }
 
 // The width the panels are drawn: the Panel width asked for, or less, so all of them sit in a row on a screen `w` wide.
@@ -292,7 +299,8 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                         out.push(Shape::Round([tx, ty, tw, th], control, if b { solid(accent()) } else { pal().toggle_off }));
                         let knob = th - 2.0;
                         let kx = if b { tx + tw - knob - 1.0 } else { tx + 1.0 };
-                        out.push(Shape::Round([kx, ty + 1.0, knob, knob], (control - 1.0).max(0.0), pal().knob));
+                        // Off, a lighter knob: the theme's dark one is lost on the grey pill (on OLED most of all).
+                        out.push(Shape::Round([kx, ty + 1.0, knob, knob], (control - 1.0).max(0.0), if b { pal().knob } else { 0xFF9A_9AA2 }));
                         tw
                     }
                     Value::Num { v, min, max, .. } => {
@@ -537,7 +545,8 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         for (b, label, colour) in [(apply, "Apply", solid(accent())), (cancel, "Cancel", pal().button)] {
             out.push(Shape::Round(b, panel_radius(), colour));
             let tw = game.sunset_text_width(label);
-            out.push(Shape::Text(label.to_owned(), [b[0] + (b[2] - tw) / 2.0, b[1] + text_y(b[3])], 0xFFFFFF));
+            let at = [b[0] + (b[2] - tw) / 2.0, b[1] + text_y(b[3])];
+            out.push(if label == "Apply" { Shape::Plain(label.to_owned(), at, 0xFFFFFF, false) } else { Shape::Text(label.to_owned(), at, 0xFFFFFF) });
         }
     }
     // The saved profiles, when the Profiles module's row was clicked.
@@ -557,7 +566,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     let lw_ = game.sunset_text_width(&text);
     framed(out, [(w - lw_) / 2.0 - 6.0, 14.0, lw_ + 12.0, 14.0], panel_radius(), if selected { 0xFF30_60B0 } else { bg(pal().panel) }, px);
     out.push(Shape::Text(text, [(w - lw_) / 2.0, 14.0 + text_y(14.0)], if selected { 0xFFFFFF } else { colour }));
-    let hint = "Right click: settings   Enter: toggle search result   Esc: close";
+    let hint = "Right click: settings   Enter: turn the found module on or off   Esc: close";
     let hw = game.sunset_text_width(hint);
     out.push(Shape::Text(hint.to_owned(), [(w - hw) / 2.0, 3.0], 0xA0A0A0));
 }

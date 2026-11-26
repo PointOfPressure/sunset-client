@@ -496,8 +496,11 @@ pub(super) fn win_body(s: &State, i: usize) -> (Vec<(f32, WinRow)>, f32) {
     let mut rows = Vec::new();
     let mut y = 0.0;
     for (name, hits) in groups.into_iter().filter(|(_, hits)| !hits.is_empty()) {
-        rows.push((y, WinRow::Group(name)));
-        y += row_hh();
+        // The Bind row alone says what it is: a "Bind" heading over it would only say it twice.
+        if !(name == "Bind" && hits.len() == 1) {
+            rows.push((y, WinRow::Group(name)));
+            y += row_hh();
+        }
         for hit in hits {
             rows.push((y, WinRow::Row(hit)));
             y += row_h(s, hit);

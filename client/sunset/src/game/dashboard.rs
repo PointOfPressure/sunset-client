@@ -541,15 +541,21 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
                 out.push(Shape::Round(r, TAB_H / 2.0, lit << 24 | 0x00FF_FFFF));
             }
         }
-        let colour = if p == page { 0xFFFFFF } else { 0xD4D4D8 };
-        out.push(Shape::Head(CATEGORIES[p - 1].label().to_owned(), [r[0] + 10.0, r[1] + text_y(r[3])], colour));
+        let (label, at) = (CATEGORIES[p - 1].label().to_owned(), [r[0] + 10.0, r[1] + text_y(r[3])]);
+        // On the accent capsule the menu's text shadow would show (it is lost on the dark surface everywhere else).
+        out.push(if p == page { Shape::Plain(label, at, 0xFFFFFF, true) } else { Shape::Head(label, at, 0xD4D4D8) });
     }
 
     // The module list's title: the category (or the search) and how many modules it lists.
     let (title, count) = view(|v| (if page == 0 { "Search" } else { CATEGORIES[page - 1].label() }, v.listed.ids.len()));
     let band_y = list[1] - BAND_H;
     out.push(Shape::Head(title.to_owned(), [list[0] + 10.0, band_y + text_y(BAND_H)], 0xFFFFFF));
-    let count = count.to_string();
+    // What the number counts: the category's modules, or the search's finds.
+    let count = match (page, count) {
+        (0, n) => format!("{n} found"),
+        (_, 1) => "1 module".to_owned(),
+        (_, n) => format!("{n} modules"),
+    };
     let tw = game.sunset_text_width(title) + 1.0;
     out.push(Shape::Text(count, [list[0] + 10.0 + tw + 6.0, band_y + text_y(BAND_H)], MUTED));
 
@@ -562,7 +568,9 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
             if let Hit::Module(i) = hit
                 && v.chosen == Some(i)
             {
+                // The chosen module: lit, with a bar in the accent colour, so a row only pointed at never looks the same.
                 out.push(Shape::Fill([list[0], list[1] + off - scroll, list[2], module_h()], 0x16FF_FFFF));
+                out.push(Shape::Fill([list[0], list[1] + off - scroll, 2.0, module_h()], solid));
             }
         }
         out.push(Shape::ClipEnd([list[0], list[1], list[0] + list[2], list[1] + list[3]]));

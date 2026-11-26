@@ -129,6 +129,9 @@ pub(super) enum Shape {
     // A slanted shape (a line): its four corners in order round it.
     Quad([[f32; 2]; 4], u32),
     Text(String, [f32; 2], u32),
+    // A line of text with no drop shadow whatever the caller draws with (true: the bolder weight): text on a filled
+    // control in the accent colour, where the menu's shadow shows as a smudge.
+    Plain(String, [f32; 2], u32, bool),
     // A line of text in the font's bolder weight: a panel's header.
     Head(String, [f32; 2], u32),
     // An item's icon as the game draws it in its own menus (by id), and its size.
@@ -297,6 +300,11 @@ pub(super) fn paint(game: &Game<'_>, batch: &mut HudBatch, shapes: &mut Vec<Shap
             }
             // A fading row keeps its alpha; drawn in Sunset's font like the rest.
             Shape::Text(t, at, argb) => crate::game::sunset_font::draw(game, batch, &t, at, argb, shadow),
+            Shape::Plain(t, at, argb, bold) => {
+                crate::game::sunset_font::BOLD.store(bold, Ordering::Relaxed);
+                crate::game::sunset_font::draw(game, batch, &t, at, argb, false);
+                crate::game::sunset_font::BOLD.store(false, Ordering::Relaxed);
+            }
             Shape::Head(t, at, rgb) => {
                 crate::game::sunset_font::BOLD.store(true, Ordering::Relaxed);
                 game.native_text(batch, &t, at, rgb, shadow);
