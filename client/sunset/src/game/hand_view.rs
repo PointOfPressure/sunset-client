@@ -11,6 +11,9 @@ pub static SWING: AtomicU32 = AtomicU32::new(0);
 pub static SLOW_SWING: AtomicBool = AtomicBool::new(false);
 // Kill Aura's Legacy AutoBlock has someone to hit: the sword in the main hand shows the block (Swing animation 3's).
 pub static SWORD_BLOCK: AtomicBool = AtomicBool::new(false);
+// A sword's block is Hand View's to show (Hand View is on, or Kill Aura's 1.8 AutoBlock is set): a sword in a real use
+// (a 1.8 server behind ViaVersion makes its swords blocking items) shows the same block as one that only looks it.
+pub static OWN_BLOCK: AtomicBool = AtomicBool::new(false);
 // A slow swing lasts this many ticks (the game's lasts 6).
 pub const SLOW_SWING_TICKS: i32 = 10;
 
@@ -126,6 +129,12 @@ fn game_swing(side: f32, attack: f32) -> Mat4 {
         * r(Vec3::Y, side * -45.0)
 }
 
+// The game's block of a sword in use (a `blocks_attacks` item that is no shield), after its place in the hand: turned
+// across the body, with no swing (Horizon's first_person ItemPose::Block, the game's `BLOCK` use animation).
+fn game_block(side: f32) -> Mat4 {
+    t(side * -0.141_421_36, 0.08, 0.141_421_36) * r(Vec3::X, -102.25) * r(Vec3::Y, side * 13.365) * r(Vec3::Z, side * 78.05)
+}
+
 // The 1.9+ swings in the game's swing's place (`style` indexes SWINGS; 0 is the game's own). 1: no slide across, half
 // the roll. 2: a short chop. 3: a sword in the right hand held across, blocking, swung with a roll (the Across block).
 fn styled_swing(style: u32, side: f32, s: f32, sword: bool) -> Mat4 {
@@ -179,10 +188,12 @@ fn across(side: f32, w: f32) -> Mat4 {
 
 // What turns a held item's pose from the game's swing (at `attack`) into Swing animation's at `s` (None with the game's
 // own): the game's swing undone, the chosen one after. `block`: a blocking sword, held Across whatever the style.
-pub fn swing_swap(left: bool, attack: f32, s: f32, sword: bool, block: bool) -> Option<Mat4> {
+// `used`: the sword is in a real use, which the game drew as its own block (game_block) and not as a swing.
+pub fn swing_swap(left: bool, attack: f32, s: f32, sword: bool, block: bool, used: bool) -> Option<Mat4> {
     let style = if block && sword { 3 } else { SWING.load(Ordering::Relaxed) };
     let side = if left { -1.0 } else { 1.0 };
-    (style != 0).then(|| game_swing(side, attack).inverse() * styled_swing(style, side, s, sword))
+    let drew = if used { game_block(side) } else { game_swing(side, attack) };
+    (style != 0).then(|| drew.inverse() * styled_swing(style, side, s, sword))
 }
 
 // Hand View's own swing for its animations, 0 to 1: each swing plays out in full (its length in ticks) before the next
@@ -347,11 +358,12 @@ fn block_anim_18(style: u32, s: f32, time: f32) -> Mat4 {
     }
 }
 
-// How the game drew a right hand's flat item before Hand View changes it: the 1.9+ pose, or Horizon's own 1.8.9 one
-// (Combat feel Legacy), blocking (a sword held up while use is held) or not.
+// How the game drew a right hand's flat item before Hand View changes it: the 1.9+ pose (its swing, or its block of a
+// sword in use), or Horizon's own 1.8.9 one (Combat feel Legacy), blocking (a sword held up while use is held) or not.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Drawn {
     Modern,
+    Block,
     Legacy { block: bool },
 }
 
@@ -359,6 +371,7 @@ pub enum Drawn {
 fn drawn(drawn: Drawn, attack: f32) -> Mat4 {
     match drawn {
         Drawn::Modern => game_swing(1.0, attack),
+        Drawn::Block => game_block(1.0),
         Drawn::Legacy { block: false } => used_18(attack) * hand_18(attack) * native_tail(),
         Drawn::Legacy { block: true } => hand_18(attack) * block_18() * native_tail(),
     }
@@ -482,7 +495,24 @@ mod animation_tests {
         assert!(legacy_pose(arm * game_swing(1.0, s), s, s, true, 0.0, Drawn::Modern, Mat4::IDENTITY).is_none());
         BLOCK.store(1, Ordering::Relaxed);
         assert!(legacy_pose(arm * game_swing(1.0, s), s, s, true, 0.0, Drawn::Modern, Mat4::IDENTITY).is_some());
+        // A sword in a real use (the game's own block, no swing) ends in the same block as one that only shows it:
+        // 1.8 style over the 1.9+ animations, with the 1.8 animations, and held Across.
+        let used = arm * game_block(1.0);
+        assert!(close(arm * drawn(Drawn::Block, s), horizon_client::first_person::item_pose(false, 0.3, s, horizon_client::first_person::ItemPose::Block)));
+        let shown = legacy_pose(arm * game_swing(1.0, s), s, s, true, 0.0, Drawn::Modern, Mat4::IDENTITY).unwrap();
+        assert!(close(legacy_pose(used, 0.0, s, true, 0.0, Drawn::Block, Mat4::IDENTITY).unwrap(), shown));
         BLOCK.store(0, Ordering::Relaxed);
+        assert!(legacy_pose(used, 0.0, s, true, 0.0, Drawn::Block, Mat4::IDENTITY).is_none());
+        LEGACY.store(true, Ordering::Relaxed);
+        let shown = legacy_pose(arm * game_swing(1.0, s), s, s, true, 0.0, Drawn::Modern, Mat4::IDENTITY).unwrap();
+        assert!(close(legacy_pose(used, 0.0, s, true, 0.0, Drawn::Block, Mat4::IDENTITY).unwrap(), shown));
+        LEGACY.store(false, Ordering::Relaxed);
+        for left in [false, true] {
+            let side = if left { -1.0 } else { 1.0 };
+            let shown = arm * game_swing(side, s) * swing_swap(left, s, s, true, true, false).unwrap();
+            let in_use = arm * game_block(side) * swing_swap(left, s, s, true, true, true).unwrap();
+            assert!(close(in_use, shown), "Across, left {left}");
+        }
         assert_eq!(index_of(BLOCKS_18, "Swank"), 4);
         assert_eq!(index_of(SWINGS, "3"), 3);
         assert_eq!(index_of(SWINGS, "nonsense"), 0);

@@ -599,10 +599,12 @@ fn engine_flags(game: &mut Game<'_>, mods: &[Module]) {
     // which holds through the tick a hit waits to go, so the block does not drop for a frame at each hit): the sword
     // shows the block (hand_item), as a 1.8 client's does, Hand View on or not.
     let speed = game.main_hand_attack_speed();
-    let blocking = on(mods, "Kill Aura").is_some_and(|m| {
+    let auto_block = on(mods, "Kill Aura").is_some_and(|m| {
         matches!(m.p("AutoBlock"), "Packet" | "Fake")
             && super::sunset_aura_timing::version(super::sunset_aura_timing::setting_of(m), speed).0 == super::sunset_aura_timing::Version::Legacy
-    }) && super::sunset_aura::engaged();
+    });
+    let blocking = auto_block && super::sunset_aura::engaged();
+    hv::OWN_BLOCK.store(hands.is_some() || auto_block, Ordering::Relaxed);
     // Block on right click: right click held with a sword in hand and nothing in use (Horizon has no sword block of
     // its own; a 1.8 server behind ViaVersion takes the click as one).
     let right_click = hands.is_some_and(|m| m.b("Block on right click"))

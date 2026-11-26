@@ -41,6 +41,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - Launcher: the Horizon import offer wraps and can be put off; pages follow a maximised or fullscreen window (by vs.)
 
 ### Fixed
+- Hand View: a blocking sword no longer jumps between two poses on a 1.8 server (the game's own block while the block is held, Hand View's before it and between hits): it is Hand View's block all the way, whatever the Block animation (reported by vs.)
 - No Render > Hide titles no longer lets a title flash for a moment when it arrives: it is not drawn at all (reported by pressure)
 - Auto Fish, Anti AFK, Spam, Auto Shearer, Auto Nametag, Auto Breed, Auto Mount, Flamethrower, Liquid Filler and Spawn Proofer keep working with chat or a server's Esc menu open; Base Finder, Spawner Alerts, Sign Historian and Use Tracker behind any screen
 - Packet Order (Client, on by default) is back: 2.0 had lost it, so actions made after the tick's move packet went out late (Grim's Post check). With it on, the look Sunset sends for a player standing still goes before the tick's end, not after it
