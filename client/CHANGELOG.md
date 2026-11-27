@@ -14,6 +14,9 @@ section of the version they build into the signed manifest, and the launcher sho
 - HUD layout editor: with the chat open, the wheel over an element's frame sets its size too (up grows it, down shrinks it); over anything else the chat scrolls as before
 - HUD layout editor: the server's scoreboard sidebar has a size too (the handle at its frame's corner, or the wheel)
 
+### Fixed
+- **Crystal Aura, Anchor Aura, Key Throw, Fast Use's Throwables and Anti Hunger's Ground no longer stand still for the rest of the session once you have dug at a block by hand**
+
 ## 2.1.0
 
 ### New

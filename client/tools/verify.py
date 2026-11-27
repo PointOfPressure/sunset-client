@@ -10582,6 +10582,83 @@ def _():
                 f"{fast['fps']:.0f} fps; holding {fast['held']} after")
 
 
+@test("Anchor Aura (after a dig by hand)")
+def _():
+    # The game keeps the block of its last dig after the dig is over, and Sunset took that for a dig still going: once
+    # you had dug at anything by hand, Anchor Aura and Crystal Aura (and Key Throw, Fast Use's Throwables, Anti Hunger's
+    # Ground) stood still until you joined again. Anchors used in 5 s after a dig that was let go, and after a block
+    # broken by hand; and none while a dig really is going on (the button held on obsidian).
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    reset()
+    blast_arena()
+    cmd("effect give @s minecraft:fire_resistance 300 0 true")
+    setting("anchoraura", "max self damage", "20")
+    items = [("respawn_anchor", 64), ("glowstone", 64)]
+    # A block beside you (west), away from Bot1 (south).
+    spot = (X0 - 2, Y + 1, Z0)
+
+    def dig(block, ticks):
+        """The block there after the button was held on it for `ticks` with an empty hand (1 still there, 0 broken)."""
+        cmd(f"setblock {spot[0]} {spot[1]} {spot[2]} minecraft:{block}")
+        ctl("key", "1", "tap")
+        wait(5)
+        ctl("look-at", str(spot[0] + 0.5), str(spot[1] + 0.5), str(spot[2] + 0.5))
+        ctl("mouse", "left", "down")
+        wait(ticks)
+        ctl("mouse", "left", "up")
+        wait(5)
+        left = count(*spot, *spot, block)
+        cmd(f"setblock {spot[0]} {spot[1]} {spot[2]} minecraft:air")
+        ctl("look", "0", "0")
+        return left
+
+    def anchors(ticks=100):
+        got = blast_run("anchoraura", items, ticks, health=200)["used"]["respawn_anchor"]
+        ensure_alive()
+        blast_bot()
+        cmd("effect give @s minecraft:fire_resistance 300 0 true")
+        return got
+
+    cmd("clear @s minecraft:respawn_anchor", "clear @s minecraft:glowstone")
+    let_go = dig("obsidian", 8)
+    after_let_go = anchors()
+    cmd("clear @s minecraft:respawn_anchor", "clear @s minecraft:glowstone", "clear @s minecraft:diamond_sword")
+    broken = dig("dirt", 40)
+    after_broken = anchors()
+    # A dig going on: the button stays down on obsidian while Anchor Aura is on. The game's own word on the dig is
+    # read all the way through (a command of the test's can let the button go): the anchors count against it only
+    # where the dig was seen going at every look.
+    for i, (item, n) in enumerate(items):
+        slot(i, item, n)
+    cmd(f"setblock {spot[0]} {spot[1]} {spot[2]} minecraft:obsidian")
+    ctl("key", "9", "tap")
+    wait(5)
+    # Anchor Aura is on before the button goes down (a typed toggle lets a held button go), and nothing is typed
+    # while it is held.
+    toggle("anchoraura", True)
+    wait(20)
+    ctl("look-at", str(spot[0] + 0.5), str(spot[1] + 0.5), str(spot[2] + 0.5))
+    ctl("mouse", "left", "down")
+    wait(6)
+    had = ctl("inventory").get("counts", {}).get("minecraft:respawn_anchor", 0)
+    looks = [state().get("mining") is not None for _ in range(12) if wait(5) is None]
+    during = had - ctl("inventory").get("counts", {}).get("minecraft:respawn_anchor", 0)
+    ctl("mouse", "left", "up")
+    toggle("anchoraura", False)
+    wait(5)
+    cmd(f"setblock {spot[0]} {spot[1]} {spot[2]} minecraft:air")
+    ensure_alive()
+    blast_done()
+    only()
+    held_through = all(looks)
+    ok = (let_go == 1 and broken == 0 and after_let_go > 0 and after_broken > 0 and (during == 0 or not held_through)
+          and sum(looks) >= 6)
+    return ok, (f"anchors used in 5 s after a dig that was let go ({let_go} block still there): {after_let_go}; after a "
+                f"block broken by hand ({broken} left): {after_broken}; in 3 s with the button held on obsidian: {during} "
+                f"(the dig seen going at {sum(looks)} of {len(looks)} looks)")
+
+
 @test("Crystal Aura (Grim)")
 def _():
     # (Here, beside the other crystal tests: after the Packet Mine tests' held-button breaks the game can still count a
