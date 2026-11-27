@@ -15422,6 +15422,241 @@ def _():
 
 
 
+# ---- .highway <width> [height] [length] [rails] [nofloor]: a straight tunnel on .goto's walker, a slice and a step
+# at a time (highway.rs)
+
+HIGHWAY_END = ("Highway done", "Stopped the highway", " is not a ", "No highway is being built", "Use .highway")
+
+
+def highway_run(line, limit=180):
+    """Types a .highway line and waits for the line that ends it (Highway done ..., Stopped the highway ..., a
+    refusal): Sunset's lines since."""
+    mark = log_mark()
+    say(line)
+    t0 = time.time()
+    while time.time() - t0 < limit:
+        time.sleep(1)
+        lines = sunset_said(mark)
+        if any(end in text for text in lines for end in HIGHWAY_END):
+            break
+    wait(5)
+    return sunset_said(mark)
+
+
+def highway_ground():
+    """The platform whole again and nothing on it."""
+    cmd(f"fill {X0-16} {Y+1} {Z0-16} {X0+16} {Y+6} {Z0+16} minecraft:air", f"fill {X0-16} {Y} {Z0-16} {X0+16} {Y} {Z0+16} minecraft:stone",
+        "kill @e[type=item]")
+    wait(5)
+
+
+def highway_blocks(x1, y1, z1, x2, y2, z2):
+    """The blocks in a box that are not air."""
+    counts = ctl("blocks", *map(str, (X0 + x1, y1, Z0 + z1, X0 + x2, y2, Z0 + z2))).get("counts", {})
+    return sum(n for name, n in counts.items() if name != "minecraft:air")
+
+
+def highway_end(lines):
+    return next((text.split("[Sunset] ")[-1].strip() for text in lines if "Highway done" in text or "Stopped the highway" in text), None)
+
+
+@test(".highway (a tunnel through stone, a gap floored)")
+def _():
+    # East from the arena's middle, 3 wide and 3 high for 8 blocks with a pickaxe in hand: through a stone block 6 deep
+    # that is wider and higher than the tunnel (only the tunnel's 54 blocks go), over a gap in the floor 2 long and 5
+    # wide (its 6 cells under the tunnel are floored with obsidian, taken before the cobblestone a slot earlier; the
+    # 4 beside the tunnel stay open). One move packet a tick.
+    highway_ground()
+    reset()
+    cmd("clear @s")
+    slot(0, "diamond_pickaxe")
+    slot(1, "cobblestone", 64)
+    slot(2, "obsidian", 64)
+    ctl("key", "1", "tap")
+    cmd(f"fill {X0+2} {Y+1} {Z0-3} {X0+7} {Y+4} {Z0+3} minecraft:stone", f"fill {X0+4} {Y} {Z0-2} {X0+5} {Y} {Z0+2} minecraft:air")
+    wait(5)
+    ctl("look", "-90", "0")
+    wire = probe_mark() if probe_path() and SERVER else None
+    lines = highway_run(".highway 3 3 8", 300)
+    stats = wire_stats(wire) if wire is not None else None
+    started = any("Building a highway east: 3 wide, 3 high, 8 long. .highway stop stops." in text for text in lines)
+    ended = highway_end(lines)
+    tunnel = highway_blocks(0, Y + 1, -1, 8, Y + 3, 1)
+    wall = count(X0 + 2, Y + 1, Z0 - 3, X0 + 7, Y + 4, Z0 + 3, "stone")
+    floored = count(X0 + 4, Y, Z0 - 1, X0 + 5, Y, Z0 + 1, "obsidian")
+    beside = highway_blocks(4, Y, -2, 5, Y, -2) + highway_blocks(4, Y, 2, 5, Y, 2)
+    here = pos()
+    at = [round(v - o, 1) for v, o in zip(here, (X0, Y, Z0))]
+    # In the highway's last cell: the walk's last step may carry you a little past the cell's middle.
+    cell = [math.floor(v) - o for v, o in zip(here, (X0, Y, Z0))]
+    health = hp()
+    highway_ground()
+    reset()
+    ok = (started and ended == "Highway done: 8 blocks east (dug 54, placed 6)." and tunnel == 0 and wall == 114 and floored == 6
+          and beside == 0 and cell == [8, 1, 0] and abs(at[2] - 0.5) < 0.35
+          and (stats is None or (stats[1] <= 1 and stats[2] == 0)) and health == 20)
+    return ok, (f"started said: {started}; ended: {ended!r}; blocks left in the tunnel {tunnel}, stone left round it {wall} (114), "
+                f"obsidian in the gap under it {floored} (6), blocks in the gap beside it {beside}; stands at {at} from the arena's "
+                f"corner (8.5, 1, 0.5); health {health}; "
+                + (f"{stats[0]} ticks, at most {stats[1]} move packets in one, {stats[2]} server teleports" if stats else "no probe"))
+
+
+@test(".highway (words, rails, out of blocks)")
+def _():
+    # What it refuses is said and starts nothing. South, 1 wide and 2 high for 4 with rails: two blocks in the lane
+    # and one over a rail go, a rail's place that already holds stone is left as it is, the other nine get obsidian.
+    # With nothing to build with (an empty hotbar, then only sand, which would fall) the first rail ends it.
+    said, got = {}, {}
+    highway_ground()
+    reset()
+    cmd("clear @s")
+    has = lambda lines, text: any(text in line for line in lines)
+    said["usage"] = has(highway_run(".highway", 10), "Use .highway <width 1-5> [height 2-5] [length] [rails] [nofloor] or .highway stop.")
+    said["width 9"] = has(highway_run(".highway 9", 10), "9 is not a width from 1 to 5.")
+    said["height 1"] = has(highway_run(".highway 3 1", 10), "1 is not a height from 2 to 5.")
+    said["length 0"] = has(highway_run(".highway 3 3 0", 10), "0 is not a length from 1 to 10000.")
+    said["rails before a width"] = has(highway_run(".highway rails", 10), "Use .highway <width 1-5>")
+    said["a fourth number"] = has(highway_run(".highway 3 3 5 2", 10), "Use .highway <width 1-5>")
+    said["no job"] = has(highway_run(".highway stop", 10), "No highway is being built.")
+    wait(20)
+    got["moved by the refusals"] = round(flat(pos(), (X0 + 0.5, 0, Z0 + 0.5)), 1)
+    slot(0, "diamond_pickaxe")
+    slot(1, "obsidian", 64)
+    ctl("key", "1", "tap")
+    cmd(f"fill {X0} {Y+1} {Z0+2} {X0} {Y+2} {Z0+2} minecraft:stone", f"setblock {X0+1} {Y+1} {Z0+3} minecraft:stone",
+        f"setblock {X0-1} {Y+2} {Z0+1} minecraft:stone")
+    wait(5)
+    lines = highway_run(".highway 1 2 4 rails")
+    said["rails start"] = has(lines, "Building a highway south: 1 wide, 2 high, 4 long, with rails. .highway stop stops.")
+    got["rails ended"] = highway_end(lines)
+    got["rails"] = (count(X0 + 1, Y + 1, Z0, X0 + 1, Y + 1, Z0 + 4, "obsidian"), count(X0 - 1, Y + 1, Z0, X0 - 1, Y + 1, Z0 + 4, "obsidian"))
+    got["the stone rail"] = count(X0 + 1, Y + 1, Z0 + 3, X0 + 1, Y + 1, Z0 + 3, "stone")
+    got["left in the lane and over the rails"] = highway_blocks(0, Y + 1, 0, 0, Y + 2, 4) + highway_blocks(-1, Y + 2, 0, 1, Y + 2, 4)
+    got["stands at z"] = round(pos()[2] - Z0, 1)
+    in_last = math.floor(pos()[2]) - Z0 == 4
+    for name, item in (("empty hotbar", None), ("only sand", "sand")):
+        highway_ground()
+        reset()
+        cmd("clear @s")
+        if item:
+            slot(1, item, 64)
+        lines = highway_run(".highway 1 2 3 rails", 30)
+        got[name] = highway_end(lines)
+        said[name] = got[name] == f"Stopped the highway after 0 blocks south (dug 0, placed 0): no whole block left in the hotbar for {X0 + 1} {Y + 1} {Z0}."
+    health = hp()
+    highway_ground()
+    reset()
+    ok = (all(said.values()) and got["moved by the refusals"] < 0.3 and got["rails ended"] == "Highway done: 4 blocks south (dug 3, placed 9)."
+          and got["rails"] == (4, 5) and got["the stone rail"] == 1 and got["left in the lane and over the rails"] == 0
+          and in_last and health == 20)
+    return ok, f"said: {said}; {got}; in the last cell: {in_last}; health {health}"
+
+
+@test(".highway (what stops it: water, a stop, a screen, no floor, the wrong tool, the platform's edge)")
+def _():
+    # South each time. Water in the lane ends it before the water; .highway stop and .goto stop end it with blocks
+    # left; an open inventory only holds it; nofloor ends at a hole (a floor is not put down); obsidian by hand is given
+    # up after 20 s; with no length and nothing to build with it walks to the platform's edge and ends there; a
+    # .goto takes over from it.
+    said, got = {}, {}
+    has = lambda lines, text: any(text in line for line in lines)
+    box = f"fill {X0-2} {Y+1} {Z0+2} {X0+2} {Y+4} {Z0+12} minecraft:stone"
+    stone = lambda: count(X0 - 2, Y + 1, Z0 + 2, X0 + 2, Y + 4, Z0 + 12, "stone")
+
+    def fresh(*blocks):
+        highway_ground()
+        reset()
+        cmd("clear @s")
+        slot(0, "diamond_pickaxe")
+        ctl("key", "1", "tap")
+        if blocks:
+            cmd(*blocks)
+            wait(5)
+
+    def until_dug(n, limit=60):
+        t0 = time.time()
+        while time.time() - t0 < limit and stone() > 220 - n:
+            time.sleep(0.5)
+
+    fresh(f"setblock {X0} {Y+1} {Z0+4} minecraft:water")
+    got["water"] = highway_end(highway_run(".highway 1 2 8", 60))
+    got["water: stands at z"] = round(pos()[2] - Z0, 1)
+    said["water"] = "water in the way at" in (got["water"] or "") and got["water: stands at z"] < 4
+    # .highway stop after the first blocks of an endless one: said, and nothing more goes.
+    fresh(box)
+    say(".highway 3")
+    until_dug(3)
+    said[".highway stop"] = has(highway_run(".highway stop", 10), "Stopped the highway after ")
+    before = stone()
+    time.sleep(8)
+    got["after .highway stop"] = (before, stone())
+    # .goto stop ends it too.
+    say(".highway 3")
+    until_dug(220 - before + 3)
+    lines = highway_run(".goto stop", 10)
+    said[".goto stop"] = has(lines, "Stopped the highway after ")
+    before = stone()
+    time.sleep(8)
+    got["after .goto stop"] = (before, stone())
+    # The inventory opened after the first blocks holds it; shut, it ends.
+    fresh(box)
+    mark = log_mark()
+    say(".highway 3 3 6")
+    until_dug(3)
+    ctl("key", "e", "tap")
+    wait(10)
+    before = stone()
+    time.sleep(8)
+    got["held behind the inventory"] = (before, stone())
+    ctl("key", "esc", "tap")
+    wait(3)
+    if state().get("screen") not in ("playing", None):
+        ctl("close")
+    t0 = time.time()
+    while time.time() - t0 < 240 and not highway_end(sunset_said(mark)):
+        time.sleep(1)
+    got["after the inventory"] = highway_end(sunset_said(mark))
+    got["tunnel after the inventory"] = highway_blocks(-1, Y + 1, 0, 1, Y + 3, 6)
+    said["after the inventory"] = (got["after the inventory"] or "").startswith("Highway done: 6 blocks south (dug 45, placed 0)")
+    # nofloor: a hole three wide two blocks on ends it at the hole, and nothing is put in it.
+    fresh(f"fill {X0-1} {Y} {Z0+2} {X0+1} {Y} {Z0+2} minecraft:air")
+    slot(1, "obsidian", 64)
+    got["nofloor"] = highway_end(highway_run(".highway 1 2 5 nofloor", 60))
+    said["nofloor"] = got["nofloor"] == "Stopped the highway after 1 block south (dug 0, placed 0): no way on to the next block (the floor is left as it is)."
+    got["nofloor: put in the hole"] = highway_blocks(-1, Y, 2, 1, Y, 2)
+    # Obsidian by hand: 20 s, then it says what did not break and where.
+    fresh(f"fill {X0} {Y+1} {Z0+2} {X0} {Y+2} {Z0+2} minecraft:obsidian")
+    cmd("clear @s")
+    got["wrong tool"] = highway_end(highway_run(".highway 1 2 4", 60))
+    said["wrong tool"] = "did not break in 20 s with what you hold" in (got["wrong tool"] or "") and "obsidian" in (got["wrong tool"] or "")
+    # No length, nothing to build with: to the platform's edge, 16 blocks on, and the first floor block it lacks.
+    fresh()
+    cmd("clear @s")
+    got["edge"] = highway_end(highway_run(".highway 1 2", 120))
+    said["edge"] = got["edge"] == f"Stopped the highway after 16 blocks south (dug 0, placed 0): no whole block left in the hotbar for {X0} {Y} {Z0 + 17}."
+    # A .goto while one is going: the highway says it stopped for it, and the walk is made.
+    fresh()
+    cmd("clear @s")
+    mark = log_mark()
+    say(".highway 1 2")
+    time.sleep(3)
+    say(f".goto {X0 - 6} {Y + 1} {Z0}")
+    t0 = time.time()
+    while time.time() - t0 < 40 and not has(sunset_said(mark), "Arrived."):
+        time.sleep(1)
+    lines = sunset_said(mark)
+    said["a .goto takes over"] = has(lines, "Stopped the highway after ") and has(lines, "a new walking goal started.") and has(lines, "Arrived.")
+    got["after the .goto"] = [round(v - o, 1) for v, o in zip(pos(), (X0, Y, Z0))]
+    health = hp()
+    highway_ground()
+    reset()
+    stop, goto_stop, held = got["after .highway stop"], got["after .goto stop"], got["held behind the inventory"]
+    ok = (all(said.values()) and stop[0] == stop[1] and 0 < stop[0] < 220 and goto_stop[0] == goto_stop[1] and goto_stop[0] < stop[0]
+          and held[0] == held[1] and 0 < held[0] < 220 and got["tunnel after the inventory"] == 0 and got["nofloor: put in the hole"] == 0
+          and abs(got["after the .goto"][0] + 5.5) < 0.8 and health == 20)
+    return ok, f"said: {said}; {got}; health {health}"
+
+
 # The Grim alerts of Sayer's two screenshots (3 Nov), the earlier one first: what the report's table must count.
 GRIM_LINES = [
     *[l for v in range(102, 108) for l in (f"Simulation (x{v}.0) .420000", f"GroundSpoof (x{v - 73}.0) claimed false")],

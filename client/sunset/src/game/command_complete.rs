@@ -153,6 +153,7 @@ const COMMANDS: &[Command] = &[
     Command { name: "goto", aliases: &[], usage: "<x> <y> <z>|stop", about: "walk there through loaded terrain, up to 128 blocks", args: goto },
     Command { name: "follow", aliases: &[], usage: "<player> [blocks]|stop", about: "walk after a player in sight, staying a few blocks from them", args: follow },
     Command { name: "mine", aliases: &[], usage: "<block> [count]|stop", about: "walk to the nearest uncovered blocks of a kind and break them", args: mine },
+    Command { name: "highway", aliases: &[], usage: "<width> [height] [length] [rails] [nofloor]|stop", about: "dig a straight tunnel the way you face and floor it", args: highway },
     Command { name: "baritone", aliases: &["b"], usage: "status|goto|mine|stop|off|targets|help", about: "Full Baritone and bounded visible/Ore Sim mining", args: baritone },
     Command { name: "vclip", aliases: &[], usage: "<blocks>", about: "move up or down", args: blocks },
     Command { name: "hclip", aliases: &[], usage: "<blocks>", about: "move forward", args: blocks },
@@ -553,6 +554,48 @@ fn mine(_: &dyn Source, before: &[&str], _: &str) -> Step {
         [_, count] => Step::Bad(format!("{count} is not a number of blocks from 1 to 1024")),
         _ => Step::Bad("Use .mine <block> [count] or .mine stop".into()),
     }
+}
+
+// .highway's words: up to three numbers in their order (width, height, length), rails and nofloor anywhere after
+// the width. The same reading as highway.rs's parse.
+fn highway(_: &dyn Source, before: &[&str], _: &str) -> Step {
+    let usage = "Use .highway <width> [height] [length] [rails] [nofloor] or .highway stop";
+    if before.is_empty() {
+        let list = words(&[("4", "blocks wide (1 to 5)"), ("stop", "stop building")]);
+        return Step::Free { list, usage: "<width> [height] [length] [rails] [nofloor]|stop".into(), back: 0 };
+    }
+    if before.len() == 1 && before[0].eq_ignore_ascii_case("stop") {
+        return Step::Done;
+    }
+    let (mut sizes, mut rails, mut nofloor) = (0, false, false);
+    for word in before {
+        match word.to_ascii_lowercase().as_str() {
+            "rails" if sizes > 0 => rails = true,
+            "nofloor" if sizes > 0 => nofloor = true,
+            number => {
+                let (Ok(n), Some((what, lo, hi))) = (number.parse::<u32>(), [("width", 1, 5), ("height", 2, 5), ("length", 1, 10_000)].get(sizes).copied()) else {
+                    return Step::Bad(usage.into());
+                };
+                if !(lo..=hi).contains(&n) {
+                    return Step::Bad(format!("{n} is not a {what} from {lo} to {hi}"));
+                }
+                sizes += 1;
+            }
+        }
+    }
+    let mut list = Vec::new();
+    match sizes {
+        1 => list.push(Suggestion::new("3", "blocks high (2 to 5)")),
+        2 => list.push(Suggestion::new("100", "blocks long (without it: until stopped)")),
+        _ => {}
+    }
+    if !rails {
+        list.push(Suggestion::new("rails", "a block along each edge"));
+    }
+    if !nofloor {
+        list.push(Suggestion::new("nofloor", "leave holes in the floor as they are"));
+    }
+    if list.is_empty() { Step::Done } else { Step::Free { list, usage: "[height] [length] [rails] [nofloor]".into(), back: 0 } }
 }
 
 fn goto(src: &dyn Source, before: &[&str], _: &str) -> Step {

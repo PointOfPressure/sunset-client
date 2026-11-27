@@ -2,6 +2,7 @@
 // runs, so it lives next to them in agent.rs. Movement keys, a screen, the menu, Panic or turning Sunset off stop it.
 // .follow <player> [blocks] aims the same walk at a player, and again each time they move on (Follow, below).
 // .mine <block> [count] (mine.rs, beside this file in agent.rs) walks to blocks and breaks them on the same lease.
+// .highway <width> ... (highway.rs) digs a straight tunnel on it, a slice and a step at a time.
 use crate::game::sunset_compat::SunsetGame as _;
 use super::{Game, Goto, MOVE_KEYS, Progress, TaskKind};
 use std::sync::Mutex;
@@ -73,7 +74,8 @@ pub(super) fn report(game: &mut Game<'_>, text: &str) {
 // Whatever stops the walk ends a follow or a .mine too, walking at that moment or not.
 pub(crate) fn cancel(game: &mut Game<'_>, why: &str) -> bool {
     let followed = follow().take();
-    let Some(why) = followed.map(|f| unfollowed(&f.name, why)).or_else(|| super::sunset_mine::stopped(game, why)) else {
+    let Some(why) = followed.map(|f| unfollowed(&f.name, why)).or_else(|| super::sunset_mine::stopped(game, why))
+        .or_else(|| super::sunset_highway::stopped(game, why)) else {
         return stop_walk(game, why);
     };
     if !stop_walk(game, &why) {
@@ -141,6 +143,9 @@ pub(crate) fn command(game: &mut Game<'_>, args: &[&str]) -> Result<String, Stri
             return Ok(format!("Stopped following {name}."));
         }
         if let Some(text) = super::sunset_mine::stop(game) {
+            return Ok(text);
+        }
+        if let Some(text) = super::sunset_highway::stop(game) {
             return Ok(text);
         }
         let stopped = cancel(game, "navigation stopped");
@@ -356,15 +361,15 @@ pub(crate) fn frame(game: &mut Game<'_>) {
     if !game.sunset_window() { return; }
     let walk_dim = WALK.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|(_, dim)| *dim);
     let follow_dim = follow().as_ref().map(|f| f.dim);
-    let Some(dim) = walk_dim.or(follow_dim).or_else(super::sunset_mine::dim) else {
+    let Some(dim) = walk_dim.or(follow_dim).or_else(super::sunset_mine::dim).or_else(super::sunset_highway::dim) else {
         return;
     };
     let screen = crate::game::sunset::gui_open() || game.require_playing_screen().is_err()
         || game.screen_over_playing() || game.sleeping.is_some();
     if dim != game.dim.id() || !game.native_on("sunset") {
         cancel(game, "stopped: you changed dimension or Sunset was turned off");
-    } else if screen && (follow_dim.is_some() || super::sunset_mine::hold(game)) {
-        // A follow or a .mine outlasts a screen (the chat, the inventory, the menu): it stands while one is up.
+    } else if screen && (follow_dim.is_some() || super::sunset_mine::hold(game) || super::sunset_highway::hold(game)) {
+        // A follow, a .mine or a .highway outlasts a screen (the chat, the inventory, the menu): it stands while one is up.
         drop_walk(game);
     } else if screen {
         cancel(game, "stopped: a screen opened or Sunset was turned off");
@@ -372,6 +377,7 @@ pub(crate) fn frame(game: &mut Game<'_>) {
     walk_answer(game);
     follow_frame(game, screen);
     super::sunset_mine::frame(game, screen);
+    super::sunset_highway::frame(game, screen);
 }
 
 // The walk's answer, once it has one: the lease goes back, and a walk of .goto's says how it ended.
@@ -398,7 +404,7 @@ fn walk_answer(game: &mut Game<'_>) {
         }
         return;
     }
-    if super::sunset_mine::answer(game, &v) || v.is_null() {
+    if super::sunset_mine::answer(game, &v) || super::sunset_highway::answer(game, &v) || v.is_null() {
         return;
     }
     let text = if arrived { "Arrived." } else { v["error"].as_str().unwrap_or("Stopped walking.") };
@@ -408,7 +414,7 @@ fn walk_answer(game: &mut Game<'_>) {
 // A movement key you press stops the walk; the game then takes the key as usual, so your movement wins at once.
 pub(crate) fn key(game: &mut Game<'_>, key: &str) {
     // Keys typed into a screen (the chat) are not movement: a follow or a .mine waits behind the screen.
-    if (follow().is_some() || super::sunset_mine::dim().is_some()) && (game.require_playing_screen().is_err() || game.screen_over_playing()) {
+    if (follow().is_some() || super::sunset_mine::dim().is_some() || super::sunset_highway::dim().is_some()) && (game.require_playing_screen().is_err() || game.screen_over_playing()) {
         return;
     }
     let moves = ["key.forward", "key.back", "key.left", "key.right", "key.jump", "key.sneak", "key.sprint"];
