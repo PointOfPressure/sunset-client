@@ -941,6 +941,11 @@ pub(super) fn order_hold(game: &Game<'_>, packet: &S) -> bool {
     true
 }
 
+// An action sent now waits for the next tick's start (so the server's answer to it comes a tick later).
+pub(super) fn order_waits() -> bool {
+    ORDER_ON.load(Ordering::Relaxed) && !ORDER_OPEN.load(Ordering::Relaxed)
+}
+
 fn order_counted(game: &Game<'_>, packet: &S) -> bool {
     match packet {
         S::Attack(_) | S::Interact(_) | S::UseItemOn(_) | S::UseItem(_) | S::PlayerAction(_) | S::Punch(_)

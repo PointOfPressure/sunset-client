@@ -9223,12 +9223,36 @@ def _():
     # Simple with attack held, a husk on the crosshair: the mouse pulls away 20 counts a tick for a second. The view
     # goes the way you pull, tick after tick, never back toward the husk while you pull (pulling against you, the
     # assist flickered the view back and forth); once you stop it may pull you back.
+    # With the probe the pull is one second of mouse motion in every frame, as a hand gives it, judged frame by frame
+    # over the middle half of the pull. Without it, a burst a tick: between two bursts the mouse is still and the
+    # assist may rightly pull back, which on a slow control channel (several frames a burst) undid the whole pull.
     eid = aim_setup()
     say(".reset aimassist")
     face(eid, 0)
     only("aimassist")
     ctl("mouse", "left", "down")
     wait(10)
+    if probe_path():
+        mark = probe_mark()
+        ctl("turn", "60", "0", "--over", "1")
+        wait(2)
+        frames = probe_frames(mark)
+        ctl("mouse", "left", "up")
+        only()
+        aim_done()
+        steps = [wrap(b.yaw - a.yaw) for a, b in zip(frames, frames[1:])]
+        moving = [i for i, d in enumerate(steps) if abs(d) > 1e-6]
+        if len(moving) < 8:
+            return False, f"the view moved in {len(moving)} of {len(steps)} frames"
+        # The pull is the second after the first frame that moved; what the view does after it (the assist may turn
+        # you back once the mouse is still) is not judged, so the pull is counted to where the view got to.
+        t0, yaw0 = frames[moving[0]].t, frames[moving[0]].yaw
+        middle = [d for i, d in enumerate(steps) if t0 + 0.25 <= frames[i].t <= t0 + 0.75]
+        back = sum(1 for d in middle if d < -0.01)
+        pulled = max(wrap(f.yaw - yaw0) for f in frames)
+        ok = back == 0 and pulled > 40.0 and len(middle) >= 4
+        return ok, (f"a 60 degree pull over a second: the view went {pulled:.1f} deg, {back} of the {len(middle)} frames in its "
+                    f"middle half back toward the husk (least {min(middle, default=0):.2f}, most {max(middle, default=0):.2f} deg a frame)")
     yaws = []
     for _ in range(20):
         ctl("mouse-move", "20", "0")
@@ -9825,10 +9849,15 @@ class Frame:
 
 def probe_frames(mark):
     with open(probe_path()) as f:
-        f.seek(mark)
-        lines = f.read().split("\n")[:-1]
+        f.seek(max(mark - 1, 0))
+        text = f.read()
+    # A mark taken while the game was part way through a line: what is left of that line is not a frame (its first
+    # field can still be a number, and a short one was an IndexError that failed the test).
+    lines = text.split("\n")[:-1]
+    if mark > 0:
+        lines = lines[1:]
     # The frame lines start with the time; the wire probe's "send" lines share the file.
-    return [Frame(line.split()) for line in lines if line[:1].isdigit()]
+    return [Frame(w) for w in (line.split() for line in lines if line[:1].isdigit()) if len(w) >= 8]
 
 
 def wrap(d):
@@ -10501,6 +10530,66 @@ def _():
     return ok, f"off then on ({not off_state}, {on_state}): " + "; ".join(
         f"{name}: {late} of {n} actions after the move packet, {moved} ticks moved, most {most} moves a tick, done {done}"
         for name, (late, n, moved, most, done) in runs.items())
+
+@test("BlockIn (each block placed once, Packet Order on and off)")
+def _():
+    # place_block does not click a spot again while the server's answer to its last click there is on its way (2 ticks
+    # plus the ping). The .hmod port lost that: with Packet Order on (the default: a place waits for the next tick's
+    # start, so its block shows a tick later) every place went out twice, and at one block a tick BlockIn took twice
+    # as long. Each case: the obsidian placed, the place packets sent, and the ticks from the first to the last of
+    # them. Then a side taken away with BlockIn still on is put back (a spot is only left alone for a moment).
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    ring = (X0 - 1, Y + 1, Z0 - 1, X0 + 1, Y + 2, Z0 + 1)
+
+    def run(order, per_tick, double=False, rotate=True):
+        only()
+        reset()
+        cmd(f"fill {' '.join(map(str, ring))} minecraft:air")
+        say(".reset blockin")
+        setting("blockin", "blocks per tick", per_tick)
+        setting("blockin", "double height", "true" if double else "false")
+        setting("blockin", "rotate", "true" if rotate else "false")
+        if is_on("Packet Order") != order:
+            say(".t packetorder")
+            wait(2)
+        slot(0, "diamond_sword")
+        slot(2, "obsidian", 64)
+        ctl("key", "1", "tap")
+        wait(5)
+        mark = probe_mark()
+        only("blockin")
+        wait(30)
+        placed = count(*ring, "obsidian")
+        ticks = probe_ticks(mark)
+        at = [i for i, t in enumerate(ticks) for line in t if line == f"pkt {USE_ITEM_ON}"]
+        return placed, len(at), (at[-1] - at[0] + 1) if at else 0
+
+    cases = {}
+    try:
+        cases["on, 1 a tick"] = (run(True, 1), 4, 5)
+        cases["on, 4 a tick"] = (run(True, 4), 4, 2)
+        cases["on, 1 a tick, no Rotate"] = (run(True, 1, rotate=False), 4, 5)
+        cases["on, 2 a tick, Double height"] = (run(True, 2, double=True), 8, 12)
+        # Still on, one side goes: it is placed again.
+        cmd(f"setblock {X0 + 1} {Y + 1} {Z0} minecraft:air")
+        wait(20)
+        back = count(*ring, "obsidian")
+        only()
+        cases["off, 1 a tick"] = (run(False, 1), 4, 5)
+        cases["off, 4 a tick"] = (run(False, 4), 4, 2)
+    finally:
+        only()
+        if not is_on("Packet Order"):
+            say(".t packetorder")
+            wait(2)
+        say(".reset blockin")
+        cmd(f"fill {' '.join(map(str, ring))} minecraft:air")
+    ok = back == 8 and is_on("Packet Order") and all(
+        placed == want and places == want and span <= most for (placed, places, span), want, most in cases.values())
+    return ok, ("(obsidian, place packets, ticks first to last): " + "; ".join(f"{k}: {v[0]}" for k, v in cases.items())
+                + f"; a side taken away: {back} of 8 after a second")
+
 
 # ---- sweeps: every mode of every module that talks to the server, through the same short stretch of play, and every
 # render mode once in single player. On a server each one counts, from the probe's wire log, the move packets in a

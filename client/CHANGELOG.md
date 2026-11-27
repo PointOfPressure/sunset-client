@@ -27,6 +27,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - Dashboard: a slimmer module list with more rows in it, so the settings get the room; the pointer on a description that was cut short shows all of it
 
 ### Fixed
+- **BlockIn, Self Trap, Auto Trap and the other modules that place blocks sent every place twice with Packet Order on (the default), and at one block a tick took twice as long to finish.** A spot is left alone again until the server has had time to answer (lost when Sunset moved to the .hmod format, so in 2.0.0 too)
 - **The Compass, Shield status, Armor HUD, Target HUD and Scaffold's block counter vanished while the chat was open, so the HUD layout editor (the chat's) could not move or size them.** They stay on screen with the chat open now and take a frame like the rest
 - **Entity Control's Anti fly kick could fail on a server that handled several of your ticks at once (a low frame rate, a jittery connection): the one-tick sink went unseen and the vehicle was kicked for floating.** The sink now lasts three ticks and the height is given back after it, so a hovering boat or mount also no longer drifts down
 - `.goto` says "Arrived." (or why it stopped) in the chat under its command: it was a toast, which Notifications off (the default) never showed
