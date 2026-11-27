@@ -10,6 +10,8 @@ section of the version they build into the signed manifest, and the launcher sho
 
 ## Unreleased
 
+## 2.1.0
+
 ### New
 - `.excavate <x1> <y1> <z1> <x2> <y2> <z2>`: digs out every block in a box (up to 64 a side) with what you hold, from the top down, walking up to what it can't reach and coming down into the pit; blocks over a drop, under sand or gravel outside the box or beside lava or water are left and counted. `.excavate stop` or a movement key stops it, an open screen only holds it
 - `.highway <width> [height] [length] [rails] [nofloor]`: digs a straight tunnel the way you face (1 to 5 wide, 2 to 5 high), fills holes in its floor with blocks from your hotbar and walks on, a block at a time; lava or water in the way ends it. `.highway stop` or a movement key stops it, an open screen only holds it
@@ -19,25 +21,6 @@ section of the version they build into the signed manifest, and the launcher sho
 - HUD layout editor: the server's scoreboard sidebar has a size too (the handle at its frame's corner, or the wheel)
 - **Entity Control drives and flies saddled mounts too** (horse, donkey, mule, camel, a pig or strider you steer with its rod, a harnessed happy ghast): Speed, Fly and Anti fly kick as for boats, with the mount's own step height. Two new switches, Boats and Mounts
 - Effects: Hide behind blocks covers Weather and Trails too (snow, rain, fireflies, embers and trail marks no longer show through walls), and trail marks fade with distance like the rest
-
-### Changed
-- **ClickGUI Dashboard: a click on a module now shows its settings, and the switch at the end of its row turns it on or off** (a left click used to toggle it and only a right click showed its settings). *Dashboard (Legacy)* keeps the old clicks
-- Dashboard: *Enabled*, over the categories, lists every module that is on, category by category; the number by each category is how many of its modules are on
-- Dashboard: the arrow keys move through the modules and the categories (Page Up, Page Down, Home and End too), Space and Enter turn the module shown on or off
-- Dashboard: a section of settings folds at a click on its title, which stays at the top while its settings scroll; *Fold all* shuts every section of a big module at once
-- Dashboard: a search lists modules only, those found by their name first, then those found by a setting, which each row names and whose settings open at it; Enter switches only a module found by its name
-- Dashboard: a slimmer module list with more rows in it, so the settings get the room; the pointer on a description that was cut short shows all of it
-
-### Fixed
-- **BlockIn, Self Trap, Auto Trap and the other modules that place blocks sent every place twice with Packet Order on (the default), and at one block a tick took twice as long to finish.** A spot is left alone again until the server has had time to answer (lost when Sunset moved to the .hmod format, so in 2.0.0 too)
-- **The Compass, Shield status, Armor HUD, Target HUD and Scaffold's block counter vanished while the chat was open, so the HUD layout editor (the chat's) could not move or size them.** They stay on screen with the chat open now and take a frame like the rest
-- **Entity Control's Anti fly kick could fail on a server that handled several of your ticks at once (a low frame rate, a jittery connection): the one-tick sink went unseen and the vehicle was kicked for floating.** The sink now lasts three ticks and the height is given back after it, so a hovering boat or mount also no longer drifts down
-- `.goto` says "Arrived." (or why it stopped) in the chat under its command: it was a toast, which Notifications off (the default) never showed
-- **Crystal Aura, Anchor Aura, Key Throw, Fast Use's Throwables and Anti Hunger's Ground no longer stand still for the rest of the session once you have dug at a block by hand**
-
-## 2.1.0
-
-### New
 - **The launcher updates itself: when a release has a newer launcher, it downloads it, checks its signature as it does Sunset's files, puts it in place and restarts. 2.1.0 is the last launcher you download by hand**
 - **Bed Breaker (World): breaks the nearest bed in reach that is not yours, mining through what covers it (or digging the bed through its cover); spares the bed beside you when it comes on**
 - Profiles: `.profile copy <name>` puts a profile's text on the clipboard and `.profile paste <name>` keeps the one on it (to pass a config through Discord); `.profile import` alone opens your system's file chooser, where you pick one .profile file or several (a name that is taken keeps both); with a name, a taken one asks whether to keep both or replace
@@ -50,8 +33,8 @@ section of the version they build into the signed manifest, and the launcher sho
 - Fast Place > Speed goes to 9: speeds 6 to 9 place 30, 40, 60 and 80 blocks a second, more than one a tick (Anticheat Grim stays at one a tick)
 - Fast Use > Uses per tick (1 to 4, with Cooldown 0)
 - HUD > No auto pause: the pause menu stays shut when the game window loses focus (asked by Martin)
-- **Typing `.` in the chat lists Sunset's commands, then each argument's choices as you type (modules, settings and their values, profiles, players...): Tab completes, Up/Down choose, Escape hides, as for / commands**
-- ClickGUI > Style has a third menu, Sidebar: tabs down the side, modules in groups, each module a card (by Ace)
+- **Typing `.` in the chat lists Sunset's commands, then each argument's choices as you type (modules, settings and their values, profiles, players...): Tab completes, Up/Down choose, Escape hides, as for / commands (by vs.)**
+- ClickGUI > Style has a third menu, Sidebar: tabs down the side, modules in groups, each module a card (PR #48 by Ace)
 - Villager Roller, Sign Historian and Use Tracker; Speed > Mode Grim collide; Base Finder > Reasons
 - Gooning (Client, off by default): a joke that times your session in chat, on your screen only
 - **HUD > Smooth text (on by default): Sunset's text is spaced as its font spaces it, each letter drawn at the nearest quarter of a pixel, instead of every letter snapped to a whole pixel with its width rounded; turn it off for the old, harder look. Minecraft's font is unchanged**
@@ -63,6 +46,12 @@ section of the version they build into the signed manifest, and the launcher sho
 - HUD > Facing axis: off, the facing reads "South" instead of "South +Z"
 
 ### Changed
+- **ClickGUI Dashboard: a click on a module now shows its settings, and the switch at the end of its row turns it on or off** (a left click used to toggle it and only a right click showed its settings). *Dashboard (Legacy)* keeps the old clicks
+- Dashboard: *Enabled*, over the categories, lists every module that is on, category by category; the number by each category is how many of its modules are on
+- Dashboard: the arrow keys move through the modules and the categories (Page Up, Page Down, Home and End too), Space and Enter turn the module shown on or off
+- Dashboard: a section of settings folds at a click on its title, which stays at the top while its settings scroll; *Fold all* shuts every section of a big module at once
+- Dashboard: a search lists modules only, those found by their name first, then those found by a setting, which each row names and whose settings open at it; Enter switches only a module found by its name
+- Dashboard: a slimmer module list with more rows in it, so the settings get the room; the pointer on a description that was cut short shows all of it
 - **ClickGUI > Fit to screen (on by default): the menu is drawn smaller, when it has to be, until the panels keep their Panel width in one row (the Dashboard: its full width), so module and setting names are no longer cut short at the default GUI scale. Never smaller than two screen pixels to a unit; off, the panels get narrower instead, as before**
 - The menu's search no longer lists Client > Modules for another module's name (its switch there read as that module being on), and a module found only by a word of its description is listed only when nothing is found by a name or a setting
 - The search box has a cross that empties it; the hint over the menu keeps the clicks while you search, and the Dashboard shows the same hints
@@ -77,7 +66,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - Target HUD is a module of its own (Render) instead of a switch in HUD: its switch, mode and place carry over, and it shows with HUD off too
 - **Blink is now Fake Lag's Hold mode: your Blink key, switch and Max ticks carry over, and `.t blink` still works**
 - HUD's position, x and y settings are no longer rows in the menus: open the chat and drag an element (right click puts it back); saved layouts stay as they are
-- **Sunset runs on Horizon main of 23 Nov 2026 (`2e7d2c6`, through Sunset's Horizon fork `9defaa0`) and horizon-launcher 0.2.108**
+- **Sunset runs on Horizon main of 23 Nov 2026 (`2e7d2c6`, through Sunset's Horizon fork `9defaa0`) and horizon-launcher 0.2.108 (by vs.)**
 - **Plugins must be pinned to Horizon `9defaa0`; plugins made for 2.0 need that pin (and new targets for their own hooks on split game functions)**
 - The launcher downloads the stock horizon-launcher from Sunset's own release, as Horizon's GitHub repository is gone
 - **Crystal Aura is rewritten: one sequence at a time on the nearest enemy (obsidian, crystal, hit, again), bases scored by damage, knockback direction, turn and distance, silent look turning up to 90 degrees a tick (by vs.)**
@@ -87,6 +76,11 @@ section of the version they build into the signed manifest, and the launcher sho
 - Launcher: the Horizon import offer wraps and can be put off; pages follow a maximised or fullscreen window (by vs.)
 
 ### Fixed
+- **BlockIn, Self Trap, Auto Trap and the other modules that place blocks sent every place twice with Packet Order on (the default), and at one block a tick took twice as long to finish.** A spot is left alone again until the server has had time to answer (lost when Sunset moved to the .hmod format, so in 2.0.0 too)
+- **The Compass, Shield status, Armor HUD, Target HUD and Scaffold's block counter vanished while the chat was open, so the HUD layout editor (the chat's) could not move or size them.** They stay on screen with the chat open now and take a frame like the rest
+- **Entity Control's Anti fly kick could fail on a server that handled several of your ticks at once (a low frame rate, a jittery connection): the one-tick sink went unseen and the vehicle was kicked for floating.** The sink now lasts three ticks and the height is given back after it, so a hovering boat or mount also no longer drifts down
+- `.goto` says "Arrived." (or why it stopped) in the chat under its command: it was a toast, which Notifications off (the default) never showed
+- **Crystal Aura, Anchor Aura, Key Throw, Fast Use's Throwables and Anti Hunger's Ground no longer stand still for the rest of the session once you have dug at a block by hand**
 - **Settings no longer come back reset at every launch: 2.0.0 never read its settings file when it started, so each launch began from the defaults (friends and binds too). The file itself was kept, so your last settings load again after the update (reported by pressure)**
 - Sunset Presence's first-launch notice is shown once, not at every launch, and Xray > Show placed blocks remembers a world's placed blocks between launches (neither was ever kept)
 - A settings save that can't replace the file safely is written in place, and says so once instead of at every change
@@ -94,8 +88,8 @@ section of the version they build into the signed manifest, and the launcher sho
 - No Render > Hide titles no longer lets a title flash for a moment when it arrives: it is not drawn at all (reported by pressure)
 - Auto Fish, Anti AFK, Spam, Auto Shearer, Auto Nametag, Auto Breed, Auto Mount, Flamethrower, Liquid Filler and Spawn Proofer keep working with chat or a server's Esc menu open; Base Finder, Spawner Alerts, Sign Historian and Use Tracker behind any screen
 - Packet Order (Client, on by default) is back: 2.0 had lost it, so actions made after the tick's move packet went out late (Grim's Post check). With it on, the look Sunset sends for a player standing still goes before the tick's end, not after it
-- The launcher's Plugins tab builds again on a Horizon base it set up from Sunset's package
-- Trajectories shows every loaded crossbow projectile at its Multishot angle, including all eleven arrows from Multishot V (by Rust)
+- The launcher's Plugins tab builds again on a Horizon base it set up from Sunset's package (by vs.)
+- Trajectories shows every loaded crossbow projectile at its Multishot angle, including all eleven arrows from Multishot V (PR #46 by Rust)
 - **New installs work again: the launcher sets up Horizon from Sunset's signed package, never from Horizon's releases (Horizon deleted them)**
 - Cancel stops Install while it prepares Minecraft's files, and the next Install prepares them again
 - Install and Repair prepare Minecraft's files again when an earlier prepare stopped half way ("is not prepared yet" at Play) (by vs.)

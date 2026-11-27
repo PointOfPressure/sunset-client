@@ -12,7 +12,7 @@ Sunset adds over 160 modules to Horizon: combat, movement, building, ESP and wor
 a click menu or chat commands, can be bound to a key, and can be saved as a profile. It is written in Rust and
 compiled into the game.
 
-**Current version:** Sunset 2.0.0, for Horizon Nightly 2026-11-18 (`0b14f8a`).
+**Current version:** Sunset 2.1.0, for Horizon main of 23 Nov 2026 (`2e7d2c6`, with Sunset's hook patches: fork `9defaa0`).
 
 ![Sunset's click menu with the Combat, Movement, Player, Render, World and Client panels](docs/images/gui-overview.png)
 
