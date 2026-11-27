@@ -63,6 +63,13 @@ pub(crate) fn foreign_input(game: &Game<'_>) -> (Vec<winit::keyboard::KeyCode>, 
     }
 }
 
+// What a walk, a follow or a .mine has to say once its command has long been answered: a line in the chat under it,
+// as the command's own reply was. Not a toast: Notifications is off unless you turn it on, and "Arrived." or why a
+// job stopped is not news to do without.
+pub(super) fn report(game: &mut Game<'_>, text: &str) {
+    crate::game::sunset::chat_line(game, text);
+}
+
 // Whatever stops the walk ends a follow or a .mine too, walking at that moment or not.
 pub(crate) fn cancel(game: &mut Game<'_>, why: &str) -> bool {
     let followed = follow().take();
@@ -70,7 +77,7 @@ pub(crate) fn cancel(game: &mut Game<'_>, why: &str) -> bool {
         return stop_walk(game, why);
     };
     if !stop_walk(game, &why) {
-        crate::game::sunset::say(game, &why);
+        report(game, &why);
     }
     true
 }
@@ -282,13 +289,13 @@ fn follow_frame(game: &mut Game<'_>, paused: bool) {
         if now.saturating_sub(f.seen_tick) > LOST_TICKS {
             let why = format!("Stopped following {}: out of sight for half a minute.", f.name);
             if !stop_walk(game, &why) {
-                crate::game::sunset::say(game, &why);
+                report(game, &why);
             }
             return;
         }
         if !f.lost && now.saturating_sub(f.seen_tick) > 40 {
             f.lost = true;
-            crate::game::sunset::say(game, &format!("{} is out of sight; waiting half a minute for them.", f.name));
+            report(game, &format!("{} is out of sight; waiting half a minute for them.", f.name));
         }
         *follow() = Some(f);
         return;
@@ -312,7 +319,7 @@ fn follow_frame(game: &mut Game<'_>, paused: bool) {
         f.misses = (f.misses + 1).min(5);
         f.plan_tick = now + 20 * (1u64 << (f.misses - 1)).min(10);
         if f.misses == 3 {
-            crate::game::sunset::say(game, &format!("No walking path to {} right now; still trying.", f.name));
+            report(game, &format!("No walking path to {} right now; still trying.", f.name));
         }
         *follow() = Some(f);
         return;
@@ -395,7 +402,7 @@ fn walk_answer(game: &mut Game<'_>) {
         return;
     }
     let text = if arrived { "Arrived." } else { v["error"].as_str().unwrap_or("Stopped walking.") };
-    crate::game::sunset::say(game, text);
+    report(game, text);
 }
 
 // A movement key you press stops the walk; the game then takes the key as usual, so your movement wins at once.

@@ -36,8 +36,8 @@ struct Mine {
     // What the last look found, farthest first; looked for again after each block mined (a vein opens up).
     found: Option<Vec<[i32; 3]>>,
     target: [i32; 3],
-    // The block just mined, and the walks made so far to what fell from it.
-    fell: Option<([i32; 3], u8)>,
+    // Blocks mined in the last moments: where, the tick each went, the walks made so far to what fell from it.
+    fell: Vec<([i32; 3], u64, u8)>,
     phase: Phase,
     wait_tick: u64,
 }
@@ -56,7 +56,7 @@ fn settle(game: &Game<'_>, m: &mut Mine) {
     if matches!(m.phase, Phase::Dig) && !is_wanted(game, &m.word, m.target) {
         m.mined += 1;
         m.left = m.left.saturating_sub(1);
-        m.fell = Some((m.target, 0));
+        m.fell.push((m.target, game.ticks, 0));
     }
 }
 
@@ -237,7 +237,7 @@ pub(crate) fn command(game: &mut Game<'_>, args: &[&str]) -> Result<String, Stri
         skip: HashSet::new(),
         found: Some(found),
         target: [0; 3],
-        fell: None,
+        fell: Vec::new(),
         phase: Phase::Seek,
         wait_tick: game.ticks,
     });
@@ -256,8 +256,8 @@ pub(super) fn frame(game: &mut Game<'_>, paused: bool) {
     }
     match seek(game, &mut m) {
         Ok(true) => *mine() = Some(m),
-        Ok(false) => crate::game::sunset::say(game, &done(&m)),
-        Err(e) => crate::game::sunset::say(game, &format!("Stopped mining {} after {}: {e}", m.word, m.mined)),
+        Ok(false) => walk::report(game, &done(&m)),
+        Err(e) => walk::report(game, &format!("Stopped mining {} after {}: {e}", m.word, m.mined)),
     }
 }
 
@@ -267,14 +267,14 @@ fn seek(game: &mut Game<'_>, m: &mut Mine) -> Result<bool, String> {
     if gather(game, m)? {
         return Ok(true);
     }
-    if m.left == 0 {
-        return Ok(false);
-    }
-    if m.found.is_none() {
+    if m.left > 0 && m.found.is_none() {
         m.found = Some(look(game, &m.word, &m.skip));
     }
-    let Some(pos) = m.found.as_mut().and_then(Vec::pop) else {
-        return Ok(false);
+    let left = m.left;
+    let Some(pos) = m.found.as_mut().filter(|_| left > 0).and_then(Vec::pop) else {
+        // Nothing more to mine: the job ends once the last blocks' drops have had their moment to show.
+        m.wait_tick = game.ticks + 4;
+        return Ok(!m.fell.is_empty());
     };
     if !is_wanted(game, &m.word, pos) {
         return Ok(true);
@@ -290,30 +290,42 @@ fn seek(game: &mut Game<'_>, m: &mut Mine) -> Result<bool, String> {
     Ok(true)
 }
 
-// What fell from the block just mined and still lies there (a server's drop shows up a few ticks after the block
-// goes, so this looks at the items themselves a moment later, not at the dig's own answer): a walk over to it, twice
-// at most. Ok(true): walking.
+// What fell from the blocks just mined and still lies there: a walk over to it, twice a block at most. A server's
+// drop shows up some ticks after its block goes (after the dig's own answer, later still on a slow connection), so
+// each block is watched for two seconds while the job goes on, and the job comes back for what turns up. Ok(true):
+// walking.
+const FELL_TICKS: u64 = 40;
 fn gather(game: &mut Game<'_>, m: &mut Mine) -> Result<bool, String> {
-    let Some((block, walks)) = m.fell else { return Ok(false) };
     let Some(p) = game.player.as_ref() else { return Ok(false) };
     let me = [p.position.x, p.position.y, p.position.z];
-    let from = [f64::from(block[0]) + 0.5, f64::from(block[1]) + 0.5, f64::from(block[2]) + 0.5];
+    let now = game.ticks;
     let far = |a: [f64; 3], b: [f64; 3]| (a[0] - b[0]).hypot(a[2] - b[2]).hypot(a[1] - b[1]);
-    let item = game.dropped.iter()
-        .map(|i| [i.position.x, i.position.y, i.position.z])
-        .filter(|at| far(*at, from) < 3.0)
-        .min_by(|a, b| far(*a, me).total_cmp(&far(*b, me)));
-    if let Some(at) = item
-        && walks < 2
-        && let Some(goto) = walk::plan(game, at, 0.6, false)
-        && goto.path.nodes.len() > 1
-    {
-        walk::run(game, TaskKind::Goto(Box::new(goto)), 6.0)?;
-        m.fell = Some((block, walks + 1));
-        m.phase = Phase::Collect;
-        return Ok(true);
+    let items: Vec<[f64; 3]> = game.dropped.iter().map(|i| [i.position.x, i.position.y, i.position.z]).collect();
+    let mut i = 0;
+    while i < m.fell.len() {
+        let (block, tick, walks) = m.fell[i];
+        let from = [f64::from(block[0]) + 0.5, f64::from(block[1]) + 0.5, f64::from(block[2]) + 0.5];
+        let item = items.iter().copied().filter(|at| far(*at, from) < 3.0).min_by(|a, b| far(*a, me).total_cmp(&far(*b, me)));
+        match item {
+            // Nothing lies there: picked up from where you stood, or not shown yet.
+            None if now.saturating_sub(tick) > FELL_TICKS => { m.fell.remove(i); }
+            None => i += 1,
+            Some(_) if walks >= 2 => { m.fell.remove(i); }
+            Some(at) => {
+                // Into the cell it lies in, not just near it: the walker calls two blocks above "arrived", and from
+                // the rim of the hole a dig left nothing in the hole is picked up. A path of one node: you stand
+                // in that cell, and it is yours in a tick or two.
+                let cell = [at[0].floor() + 0.5, (at[1] + 0.01).floor(), at[2].floor() + 0.5];
+                if let Some(goto) = walk::plan(game, cell, 0.3, false).filter(|g| g.path.nodes.len() > 1) {
+                    walk::run(game, TaskKind::Goto(Box::new(goto)), 6.0)?;
+                    m.fell[i].2 = walks + 1;
+                    m.phase = Phase::Collect;
+                    return Ok(true);
+                }
+                if now.saturating_sub(tick) > FELL_TICKS { m.fell.remove(i); } else { i += 1; }
+            }
+        }
     }
-    m.fell = None;
     Ok(false)
 }
 
@@ -322,7 +334,7 @@ pub(super) fn answer(game: &mut Game<'_>, v: &serde_json::Value) -> bool {
     let Some(mut m) = mine().take() else { return false };
     if v["cancelled"].as_bool() == Some(true) {
         // Horizon ended the task itself (its agent's stop, the window closing): the job goes with it.
-        crate::game::sunset::say(game, &format!("Stopped mining {} after {}.", m.word, m.mined));
+        walk::report(game, &format!("Stopped mining {} after {}.", m.word, m.mined));
         return true;
     }
     let next = match m.phase {
@@ -338,8 +350,8 @@ pub(super) fn answer(game: &mut Game<'_>, v: &serde_json::Value) -> bool {
     };
     match next {
         Ok(true) => *mine() = Some(m),
-        Ok(false) => crate::game::sunset::say(game, &done(&m)),
-        Err(e) => crate::game::sunset::say(game, &format!("Stopped mining {} after {}: {e}", m.word, m.mined)),
+        Ok(false) => walk::report(game, &done(&m)),
+        Err(e) => walk::report(game, &format!("Stopped mining {} after {}: {e}", m.word, m.mined)),
     }
     true
 }
@@ -378,8 +390,8 @@ fn dug(game: &mut Game<'_>, m: &mut Mine, v: &serde_json::Value) -> Result<bool,
     m.mined += 1;
     m.left = m.left.saturating_sub(1);
     m.found = None;
-    // What fell is looked for in a moment (gather), once a server has had time to show it.
-    m.fell = Some((m.target, 0));
-    m.wait_tick = game.ticks + 8;
+    // What fell is looked for from the next frames on (gather), as a server gets round to showing it.
+    m.fell.push((m.target, game.ticks, 0));
+    m.wait_tick = game.ticks + 4;
     Ok(true)
 }

@@ -14966,6 +14966,8 @@ def _():
     seen = any("Mining diamond: 5 in sight" in text for text in lines)
     ended = next((text.split("[Sunset] ")[-1].strip() for text in lines if "Mined " in text), None)
     all_left, diamonds = mine_count("diamond_ore"), items_of("diamond")
+    lying = [[round(v - o, 1) for v, o in zip(e.get("pos") or [0, 0, 0], (X0, Y, Z0))] for e in ctl("entities").get("entities", [])
+             if "diamond" in str(e) and "item" in str(e.get("kind", "")) + str(e.get("type", ""))]
     cmd(f"setblock {X0 + 5} {Y} {Z0 - 2} {floor}", f"setblock {X0 + 5} {Y - 1} {Z0 - 2} {under}")
     reset()
     mine_place("diamond_ore", (3, Y + 1, 2), (6, Y + 1, -2), (9, Y + 1, 2), (12, Y + 1, -2))
@@ -14977,7 +14979,8 @@ def _():
     reset()
     ok = (seen and ended == "Mined 4 diamond; 1 more in sight could not be reached." and all_left == 1 and diamonds == 4
           and two and two_left == 3 and (stats is None or (stats[1] <= 1 and stats[2] == 0)) and health == 20)
-    return ok, (f"5 in sight said: {seen}; ended: {ended!r}; ores left {all_left} (the high one), diamonds picked up {diamonds}; "
+    return ok, (f"5 in sight said: {seen}; ended: {ended!r}; ores left {all_left} (the high one), diamonds picked up {diamonds}"
+                + (f" (left lying at x, y, z from the arena's corner: {lying})" if lying else "") + "; "
                 f"'2' of four more: {two}, ores left {two_left} (2 and the high one); health {health}; "
                 + (f"{stats[0]} ticks, at most {stats[1]} move packets in one, {stats[2]} server teleports" if stats else "no probe"))
 
