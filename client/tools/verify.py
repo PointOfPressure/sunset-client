@@ -12547,15 +12547,18 @@ def ridden_speed(ticks=20, warm=0):
 def _():
     # An oak boat on the platform, ridden with a right click, driven with W for 1 s: blocks a second without Entity
     # Control, with Speed 10 and 20 (where you look, east; each from the middle so it stays on the platform). Fly: Jump for 1 s lifts it (Vertical speed 6 = 0.3 a
-    # tick), then 6 s with no key holds the height (Anti fly kick sinks 0.0313 every 40 ticks; vanilla kicks a vehicle
+    # tick), then 6 s with no key holds the height (Anti fly kick sinks 0.0313 for three ticks every 40 and gives it back; vanilla kicks a vehicle
     # floating for 80), Sprint brings it down,
     # and landing costs no health. A rubber band (the server putting the boat back) shows as lost distance or height.
     # The probe: one MoveVehicle a tick at most; no kick.
     kicked = len(kicks)
     mark = probe_mark()
 
-    def boat():
+    # Settings go in before each ride, on the platform: a ride that ended over its edge must not eat them.
+    def boat(*settings):
         reset("survival")
+        for key, value in settings:
+            setting("entitycontrol", key, value)
         cmd("gamerule naturalRegeneration false", f"summon oak_boat {X0+0.5} {Y+1} {Z0+0.5}")
         wait(10)
         b = next(o for o in ctl("status")["objects"] if o["kind"].endswith("boat"))
@@ -12580,17 +12583,14 @@ def _():
     rode = boat()
     plain = speed()
     leave()
-    setting("entitycontrol", "horizontal speed", "10")
+    rode = boat(("horizontal speed", "10")) and rode
     toggle("entity control", True)
-    rode = boat() and rode
-    ten = speed()
+    ten = speed(12)
     leave()
-    setting("entitycontrol", "horizontal speed", "20")
-    rode = boat() and rode
-    twenty = speed()
+    rode = boat(("horizontal speed", "20")) and rode
+    twenty = speed(8)
     leave()
-    setting("entitycontrol", "fly", "true")
-    rode = boat() and rode
+    rode = boat(("fly", "true")) and rode
     y0 = pos()[1]
     held_keys(["space"], 20)
     y1 = pos()[1]
@@ -12617,7 +12617,7 @@ def _():
     # A saddled horse (speed attribute 0.1: about 4.3 blocks a second at its own gallop), ridden with /ride and driven
     # with W looking east: as a horse without Entity Control, at Speed 10 and 20 with it, as a horse again with
     # Mounts off, and at Speed 10 over a block one high (the horse's own step). Fly: Jump for 1 s lifts it (Vertical
-    # speed 6 = 0.3 a tick), 6 s with no key holds the height (Anti fly kick sinks 0.0313 every 40 ticks), Sprint
+    # speed 6 = 0.3 a tick), 6 s with no key holds the height (Anti fly kick sinks three ticks every 40 and gives the height back), Sprint
     # brings it down, and landing from there costs you no health. The probe: one MoveVehicle a tick at most; no kick.
     # Settings go in before each ride, on the platform: a ride that ended over its edge must not eat them.
     kicked = len(kicks)
