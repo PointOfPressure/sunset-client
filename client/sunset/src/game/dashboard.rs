@@ -140,8 +140,11 @@ const BAND_H: f32 = 34.0;
 // The reworked style's band: the module's name keeps its place whether its description takes one line or two.
 const BAND_TALL: f32 = 46.0;
 
+// Whether the module shown has a two-line description, as the last frame wrapped it (the band is then taller).
+static TWO_LINES: AtomicBool = AtomicBool::new(false);
+
 fn band_h() -> f32 {
-    if legacy() { BAND_H } else { BAND_TALL }
+    if legacy() || !TWO_LINES.load(Ordering::Relaxed) { BAND_H } else { BAND_TALL }
 }
 const TAB_H: f32 = 20.0;
 const TAB_GAP: f32 = 2.0;
@@ -820,7 +823,9 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     let tw = game.sunset_text_width(title) + 1.0;
     // A search that found nothing says so below, without a count. The reworked style: the count under the title (as
     // the module's description is under its name), and a line under the band as in the settings.
-    if legacy() || page != 0 || view(|v| !v.listed.ids.is_empty()) {
+    // (The reworked style says "No results" there.)
+    let count = if !legacy() && page == 0 && view(|v| v.listed.ids.is_empty()) { "No results".to_owned() } else { count };
+    if !legacy() || page != 0 || view(|v| !v.listed.ids.is_empty()) {
         if legacy() {
             out.push(Shape::Text(fit_to(game, &count, (list[2] - 20.0 - tw - 6.0).max(0.0)), [title_x + tw + 6.0, title_y], MUTED));
         } else {
@@ -842,7 +847,8 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
             if v.chosen == Some(i) {
                 // The chosen module: lit, with the light bar the panels put by a module whose settings are open (the
                 // accent colour is for what is on), so a row only pointed at never looks the same.
-                let (fill, bar) = if legacy() { (0x22FF_FFFF, 2.0) } else { (0x46FF_FFFF, 3.0) };
+                // (The reworked style: a light an off switch still shows on; its name is in bold, draw_row.)
+                let (fill, bar) = if legacy() { (0x22FF_FFFF, 2.0) } else { (0x2CFF_FFFF, 3.0) };
                 out.push(Shape::Fill([list[0], y, list[2] - if legacy() { 0.0 } else { 4.0 }, module_h()], fill));
                 out.push(Shape::Fill([list[0], y, bar, module_h()], 0xFFE4_E4E4));
             }
@@ -854,7 +860,8 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
                 // Clear of the bound key, and of the row's switch in the reworked style.
                 let key_w = m.key.as_deref().map_or(0.0, |_| 34.0) + if legacy() { 0.0 } else { super::sunset::MODULE_SWITCH + 8.0 };
                 if super::sunset::indent().max(6.0) + name_w + 10.0 + lw + key_w + 10.0 <= list[2] {
-                    out.push(Shape::Text(label.to_owned(), [list[0] + list[2] - 10.0 - key_w - lw, y + text_y(module_h())], 0x6C6C74));
+                    let colour = if v.chosen == Some(i) { 0xA4A4AC } else { 0x6C6C74 };
+                    out.push(Shape::Text(label.to_owned(), [list[0] + list[2] - 10.0 - key_w - lw, y + text_y(module_h())], colour));
                 }
             }
         }
@@ -874,6 +881,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
             about.push(fit_to(game, &rest, room));
         }
         let two = about.len() > 1;
+        TWO_LINES.store(two, Ordering::Relaxed);
         // The reworked style's band is tall enough for two lines: the name stays put.
         let (name_y, about_y) = match (legacy(), two) {
             (false, _) => (TITLE_Y, ABOUT_Y),
@@ -893,7 +901,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         // No module chosen (a new search, one that finds nothing): the pane says how one gets there.
         // A search with no finds (and no module shown before it) says what brings the modules back.
         let nothing = !legacy() && page == 0 && view(|v| v.listed.ids.is_empty());
-        let text = if nothing { "Esc clears the search and brings the modules back" } else { "Right click a module to see its settings here" };
+        let text = if nothing { "Nothing to show" } else { "Right click a module to see its settings here" };
         let text = fit_to(game, text, pane[2] - 2.0 * CARD_M - 4.0);
         out.push(Shape::Text(text, [pane[0] + CARD_M + 2.0, pane[1] + 6.0], MUTED));
     }

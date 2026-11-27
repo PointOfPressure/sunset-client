@@ -453,7 +453,15 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                 if !tag.is_empty() {
                     out.push(Shape::Text(tag, [x + rw - RIGHT_PAD - sw - tag_w, y + text_y(rh)], 0x707070));
                 }
-                (label(out, m.name, r, name_x, tag_w + sw, if m.on { accent() } else { 0xE4E4E4 }) && hovered).then_some(m.name)
+                let cut = label(out, m.name, r, name_x, tag_w + sw, if m.on { accent() } else { 0xE4E4E4 });
+                // The module the Dashboard shows: its name in bold.
+                if sw > 0.0
+                    && super::sunset_dashboard::chosen() == Some(i)
+                    && let Some(Shape::Text(text, at, colour)) = out.pop()
+                {
+                    out.push(Shape::Head(text, at, colour));
+                }
+                (cut && hovered).then_some(m.name)
             }
             Hit::Bind(i) => {
                 let waiting = binding == Some(i);

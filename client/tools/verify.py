@@ -2839,17 +2839,17 @@ def _():
     wait(8)
     k, fx, fy, fw, fh, lw = dash_geometry()
     click(fx + 38, fy + 36 + 10, k)
-    # The rows start under the header (28) and the band (46; 34 in the Legacy style). The pane's rows: inset 10 from
+    # The rows start under the header (28) and the band (34; 46 for a module whose description takes two lines). The pane's rows: inset 10 from
     # its sides; the bind's card (20), a gap (6), the first card's top (3).
     rx, rw = fx + 104 + lw + 10, fw - 104 - lw - 20
     control, end = math.floor(rx + rw * 0.46), rx + rw - 7
     track = end - 36 - control
-    click(control + track * 0.25, fy + 74 + 29 + 14 * 2 + 7, k)
+    click(control + track * 0.25, fy + 62 + 29 + 14 * 2 + 7, k)
     # Range shape (Sphere, Column), 15 rows under Mode: a click on Sphere (the one picked), then one on Column, leave
     # Column, where two clicks that step would come back to Sphere.
     share = math.floor((end - control) / 2)
-    click(end - share * 1.5, fy + 74 + 29 + 14 * 15 + 7, k)
-    click(end - 3, fy + 74 + 29 + 14 * 15 + 7, k)
+    click(end - share * 1.5, fy + 62 + 29 + 14 * 15 + 7, k)
+    click(end - 3, fy + 62 + 29 + 14 * 15 + 7, k)
     now = values()
     got["slider"], got["pick"] = num("x:" + now.get("Horizontal speed", "")), now.get("Range shape", "")
     close_menu()
@@ -2860,7 +2860,7 @@ def _():
     # marker), in the middle of a module's 18.
     lx, lrw = fx + 104 + 10, lw - 18
     lcontrol, lend = math.floor(lx + lrw * 0.46), lx + lrw - 7
-    click(lcontrol + (lend - 36 - lcontrol) * 0.75, fy + 74 + 18 + 9, k)
+    click(lcontrol + (lend - 36 - lcontrol) * 0.75, fy + 62 + 18 + 9, k)
     got["search"] = num("x:" + values().get("Stickiness", ""))
     close_menu()
     say(".reset aimassist")
