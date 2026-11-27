@@ -113,7 +113,10 @@ changed in Options > Mods > Sunset. Changes are saved as you make them.
 - **Dropdown**: one panel per category, as in the picture above. Settings open inside the panel, or in their own
   window with *Settings: Window*.
 - **Dashboard**: one window with the categories on the left, the module list in the middle and the chosen module's
-  settings on the right.
+  settings on the right. A click on a module shows its settings; the switch at the end of its row turns it on or off.
+  *Enabled*, over the categories, lists every module that is on. The arrow keys move through the modules and the
+  categories, <kbd>Space</kbd> and <kbd>Enter</kbd> switch the module shown, and a click on a section's title folds
+  that section. *Dashboard (Legacy)* keeps the older layout and the Dropdown's clicks.
 - **Sidebar**: one window with tabs down its left (Rage, Legit, ESP, Visuals...), each tab's modules split into groups,
   and each module a card showing its main settings while it is on, with a link to a page of all of them.
 

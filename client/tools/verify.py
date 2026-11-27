@@ -2874,12 +2874,13 @@ def sidebar_shots(gw):
 
 
 
-def dash_geometry(fit=True):
+def dash_geometry(fit=True, legacy=False):
     """The Dashboard's window in GUI pixels as dashboard.rs lays it out at the defaults (Panel width 120, Fit to screen
     on): (k, fx, fy, fw, fh, lw), where k is the menu's units to GUI pixels (Fit to screen makes the menu smaller until
     its window's 627 units fit, never under two screen pixels a unit; 1 with fit=False, for Fit to screen off), the
     frame and the module list's width in the menu's units. Since the rework the window grows past 610 x 420 to 80% x 82%
-    of a roomy screen, a third more at most."""
+    of a roomy screen, a third more at most; its categories' column is 96 wide (DASH_SIDE; Legacy's 104) and its module
+    list 32% of the rest, 132 to 184 (Legacy's 42%, 150 to 270)."""
     w, h = gui_size()
     d = ctl("status")["display"]
     scale = w and d["width"] / w
@@ -2889,9 +2890,37 @@ def dash_geometry(fit=True):
     most_w, most_h = max(wanted, min(vw * 0.8, wanted * 1.33)), max(tall, min(vh * 0.82, tall * 1.33))
     fw, fh = math.floor(min(max(vw - 16, 0), most_w)), math.floor(min(max(vh - 16, 0), most_h))
     fx, fy = math.floor((vw - fw) / 2), math.floor((vh - fh) / 2)
-    rest = fw - 104
-    lw = math.floor(min(min(max(rest * 0.42, 150), 270), rest))
+    rest = fw - (104 if legacy else DASH_SIDE)
+    lw = math.floor(min(min(max(rest * 0.42, 150), 270), rest)) if legacy else math.floor(min(min(max(rest * 0.32, 132), 184), rest))
     return k, fx, fy, fw, fh, lw
+
+
+# The reworked Dashboard: its categories' column, and from the window's top to its rows (the header's 28 and the band's
+# 46, the same for every module).
+DASH_SIDE, DASH_TOP = 96, 74
+
+
+def dash_tab(page, fx, fy, fh):
+    """The middle of a view's tab down the reworked Dashboard's left: Enabled 0, then Combat 1 to Client 6 (a little
+    apart from it, and all of them shorter where the window has no room for 20 each over the profile)."""
+    h = min(max(math.floor((fh - 81) / 7) - 2, 11), 20)
+    return fx + 38, fy + 36 + page * (h + 2) + (5 if page else 0) + h / 2
+
+
+def modules_changed(base=None):
+    """The modules that are on, from .modules (ClickGUI left out: it is on while its menu is open), each with its
+    category; with `base` (an earlier answer), only those that differ from it (switched on since, or off)."""
+    mark = log_mark()
+    say(".modules")
+    wait(4)
+    now = {}
+    for line in sunset_said(mark):
+        if ":" in line:
+            category, names = line.split(":", 1)
+            now.update({n.strip()[:-1]: category.strip() for n in names.split(",") if n.strip().endswith("*") and n.strip() != "ClickGUI*"})
+    if base is None:
+        return now
+    return {n: c for n, c in {**base, **now}.items() if (n in base) != (n in now)}
 
 
 @test("ClickGUI Dashboard (one-line settings, picks side by side, a search's settings, Legacy)")
@@ -2900,8 +2929,9 @@ def _():
     # settings one to a line: a click a quarter along Horizontal speed's track (beside its name, its number at the row's
     # end) sets about 3.2 of 1-10; Range shape's two options side by side are picked by a click on one (Mode's three
     # can be too wide for their share with some fonts, and then a click steps them as in the Legacy style, where a
-    # click on Mode steps it to the next, Duelkit). A search for "stickiness" lists Aim Assist with that setting under
-    # it, and a click three quarters along it there sets about 0.67 of 0-0.9.
+    # click on Mode steps it to the next, Duelkit). A search for "stickiness" lists Aim Assist (modules only) and
+    # shows its settings from that setting on: a click three quarters along the first row there sets about 0.67 of
+    # 0-0.9.
     import re
     def num(line):
         found = re.findall(r"[-0-9.]+", line.split(":", 1)[1]) if ":" in line else []
@@ -2923,36 +2953,34 @@ def _():
     say(".menu")
     wait(8)
     k, fx, fy, fw, fh, lw = dash_geometry()
-    click(fx + 38, fy + 36 + 10, k)
-    # The rows start under the header (28) and the band (34; 46 for a module whose description takes two lines). The pane's rows: inset 10 from
-    # its sides; the bind's card (20), a gap (6), the first card's top (3).
-    rx, rw = fx + 104 + lw + 10, fw - 104 - lw - 20
+    click(*dash_tab(1, fx, fy, fh), k)
+    # The rows start under the header (28) and the band (46). The pane's rows: inset 10 from its sides; the bind's card
+    # (20), a gap (6), the first card's top (3).
+    top = fy + DASH_TOP
+    rx, rw = fx + DASH_SIDE + lw + 10, fw - DASH_SIDE - lw - 20
     control, end = math.floor(rx + rw * 0.46), rx + rw - 7
     track = end - 36 - control
-    click(control + track * 0.25, fy + 62 + 29 + 14 * 2 + 7, k)
+    click(control + track * 0.25, top + 29 + 14 * 2 + 7, k)
     # Range shape (Sphere, Column), 15 rows under Mode: a click on Sphere (the one picked), then one on Column, leave
     # Column, where two clicks that step would come back to Sphere.
     share = math.floor((end - control) / 2)
-    click(end - share * 1.5, fy + 62 + 29 + 14 * 15 + 7, k)
-    click(end - 3, fy + 62 + 29 + 14 * 15 + 7, k)
+    click(end - share * 1.5, top + 29 + 14 * 15 + 7, k)
+    click(end - 3, top + 29 + 14 * 15 + 7, k)
     now = values()
     got["slider"], got["pick"] = num("x:" + now.get("Horizontal speed", "")), now.get("Range shape", "")
     close_menu()
     say(".reset aimassist")
     say(".menu stickiness")
     wait(8)
-    # The setting's row under its module: set in 10, its right edge on the module rows' (8 in, clear of the scroll
-    # marker), in the middle of a module's 18.
-    lx, lrw = fx + 104 + 10, lw - 18
-    lcontrol, lend = math.floor(lx + lrw * 0.46), lx + lrw - 7
-    click(lcontrol + (lend - 36 - lcontrol) * 0.75, fy + 62 + 18 + 9, k)
+    # Aim Assist is the find, shown at once; its settings (none in a section) start at Stickiness.
+    click(control + track * 0.75, top + 7, k)
     got["search"] = num("x:" + values().get("Stickiness", ""))
     close_menu()
     say(".reset aimassist")
     setting("clickgui", "style", "Dashboard (Legacy)")
     say(".menu")
     wait(8)
-    k, fx, fy, fw, fh, lw = dash_geometry()
+    k, fx, fy, fw, fh, lw = dash_geometry(legacy=True)
     click(fx + 38, fy + 36 + 10, k)
     rx, rw = fx + 104 + lw + 10, fw - 104 - lw - 20
     click(rx + rw - 10, fy + 62 + 29 + 7, k)
@@ -2964,6 +2992,139 @@ def _():
     ok = (got["slider"] is not None and 2.9 <= got["slider"] <= 3.6 and got["pick"].startswith("Column")
           and got["search"] is not None and 0.6 <= got["search"] <= 0.75 and got["legacy pick"].startswith("Duelkit"))
     return ok, f"{got}"
+
+
+@test("ClickGUI Dashboard (a click shows, a row's switch toggles, Enabled, sections fold)")
+def _():
+    # The reworked Dashboard's clicks. In Combat: a click on the second module's name turns nothing on and shows it (the
+    # switch over its settings then turns that one on: A); the switch at the third row's end turns that module on (B)
+    # and leaves A showing (the switch over the settings turns A off again). With a fourth on by its switch (C),
+    # Enabled (over the categories) lists them: B switched off there keeps its row (C's, under it, still switches C
+    # off; B's switches B on again). Kill Aura's settings: a click on General's title shuts it (a click where Version's
+    # 1.8 was changes nothing), another opens it (Auto disable's switch is back in its place); scrolled into
+    # Targeting, that title is held at the settings' top, and a click on it there shuts Targeting and brings Rotations
+    # up under it (a click on Rotate, its first setting, takes it off Always).
+    def click(x, y):
+        ctl("click-at", str(round(x, 1)), str(round(y, 1)))
+        wait(4)
+
+    def values():
+        return {c.split(":", 1)[0]: c.split(":", 1)[1].strip() for c in said_after(".settings killaura") if ":" in c}
+
+    def menu():
+        # (A chat command shuts the menu: opened again after each, it shows the view and the module it showed.)
+        say(".menu")
+        wait(8)
+
+    say(".reset killaura")
+    setting("clickgui", "style", "Dashboard")
+    k, fx, fy, fw, fh, lw = dash_geometry(fit=False)
+    top = fy + DASH_TOP
+    name_x, switch_x = fx + DASH_SIDE + 30, fx + DASH_SIDE + lw - 22
+    band, spare = (fx + fw - 24, fy + 37.5), (fx + 30, fy + 14)
+    row = lambda n: top + 18 * n + 9
+    base = modules_changed()
+    got = {}
+    menu()
+    click(*dash_tab(1, fx, fy, fh))
+    click(name_x, row(1))
+    click(*band)
+    got["shown"] = modules_changed(base)
+    menu()
+    click(switch_x, row(2))
+    click(*band)
+    got["switch"] = modules_changed(base)
+    menu()
+    click(switch_x, row(3))
+    both = modules_changed(base)
+    # Enabled's rows: everything on, category by category (each one's name, 13 tall, over its modules A to Z); Combat
+    # is the first.
+    rows = sorted((n for n, c in {**base, **both}.items() if c == "Combat"), key=str.lower)
+    first = sorted(both, key=str.lower)
+    menu()
+    click(*dash_tab(0, fx, fy, fh))
+    if len(first) == 2:
+        b, c = (rows.index(n) for n in first)
+        click(switch_x, row(b) + 13)
+        click(switch_x, row(c) + 13)
+        click(switch_x, row(b) + 13)
+    ctl("screenshot", f"{SHOTS}/nav_enabled.png")
+    time.sleep(2)
+    got["enabled"] = modules_changed(base)
+    close_menu()
+    for name in got["enabled"]:
+        say(f".t {name.lower().replace(' ', '')}")
+    say(".menu kill aura")
+    wait(8)
+    rx, rw = fx + DASH_SIDE + lw + 10, fw - DASH_SIDE - lw - 20
+    end = rx + rw - 7
+    # Kill Aura's settings: the bind's card (20), a gap (6), General's title (13) and its six rows of 14.
+    click(*spare)
+    click(rx + 30, top + 26 + 6)
+    click(end - 3, top + 39 + 4)
+    click(rx + 30, top + 26 + 6)
+    click(end - 7, top + 39 + 14 * 5 + 7)
+    for _ in range(5):
+        ctl("scroll-at", str(round(rx + 60)), str(round(top + 80)), "-1")
+        wait(3)
+    wait(10)
+    ctl("screenshot", f"{SHOTS}/nav_pinned.png")
+    time.sleep(2)
+    # Targeting's title, held at the top: shut from there, Targeting is 14 tall at the top and Rotations starts 6 under.
+    click(rx + 30, top + 6)
+    wait(6)
+    ctl("screenshot", f"{SHOTS}/nav_folded.png")
+    time.sleep(2)
+    click(end - 3, top + 14 + 6 + 13 + 7)
+    # (Open again for the tests after this one: a shut section stays shut while the game runs.)
+    click(rx + 30, top + 6)
+    now = values()
+    got["version"], got["auto disable"], got["rotate"] = now.get("Version", ""), now.get("Auto disable", ""), now.get("Rotate", "")
+    close_menu()
+    say(".reset killaura")
+    say(".reset clickgui")
+    one = lambda found: next(iter(found)) if len(found) == 1 else None
+    a, b2, left = one(got["shown"]), one(got["switch"]), one(got["enabled"])
+    ok = (a is not None and a != "Aim Assist" and got["shown"][a] == "Combat" and b2 is not None and b2 != a and len(both) == 2
+          and left == first[0] and got["version"].startswith("1.9+") and got["auto disable"].upper().startswith("ON")
+          and got["rotate"] != "" and not got["rotate"].startswith("Always"))
+    return ok, f"{got}; before Enabled: {sorted(both)}"
+
+
+@test("ClickGUI Dashboard (keys: arrows, Space, Enter)")
+def _():
+    # The reworked Dashboard's keys, real ones (xdotool; a mapped window, OFFSCREEN=0). In Combat: Down then Space
+    # turns the second module on, Up then Space the first (Aim Assist); Right turns to Movement, where Space turns its
+    # first module on; "criticals" typed and Enter turns Criticals on. Those four are on at the end, and no other.
+    window = x_window()
+    if not window:
+        return None, REAL_KEYS
+    setting("clickgui", "style", "Dashboard")
+    k, fx, fy, fw, fh, lw = dash_geometry(fit=False)
+    base = modules_changed()
+    say(".menu")
+    wait(8)
+    d = ctl("status")["display"]
+    scale = d["width"] / gui_size()[0]
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+    # As menu_enter: raised over Bot1's window, focused, the pointer in it and a click first (on the header, which does
+    # nothing), a key that does nothing to warm the keyboard up.
+    for args in (("windowraise", window), ("windowfocus", "--sync", window),
+                 ("mousemove", "--window", window, str(round((fx + 30) * scale)), str(round((fy + 14) * scale))), ("click", "1"), ("key", "shift")):
+        subprocess.run(["xdotool", *args], env=env, capture_output=True)
+        time.sleep(0.5)
+        wait(6)
+    ctl("click-at", *(str(round(v, 1)) for v in dash_tab(1, fx, fy, fh)))
+    wait(4)
+    x_keys(window, "Down", "space", "Up", "space", "Right", "space", "type:criticals", "Return")
+    found = modules_changed(base)
+    close_menu()
+    for name in found:
+        say(f".t {name.lower().replace(' ', '')}")
+    say(".reset clickgui")
+    combat = sorted(n for n, c in found.items() if c == "Combat")
+    ok = len(found) == 4 and "Aim Assist" in combat and "Criticals" in combat and len(combat) == 3 and "Movement" in found.values()
+    return ok, f"on after the keys: {sorted(found)}"
 
 @test("ClickGUI Sidebar (style, theme, accent, width, opacity)")
 def _():

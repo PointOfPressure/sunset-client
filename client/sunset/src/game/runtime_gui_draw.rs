@@ -191,6 +191,14 @@ pub(super) fn cross(out: &mut Vec<Shape>, r: [f32; 4], lit: bool) {
     }
 }
 
+// The mark at the end of a title that folds, round `at`: an arrow head pointing down, or sideways for one shut.
+pub(super) fn chevron(out: &mut Vec<Shape>, [cx, cy]: [f32; 2], shut: bool, argb: u32) {
+    let d = 2.0;
+    let [a, b, c] = if shut { [[cx - d / 2.0, cy - d], [cx + d / 2.0, cy], [cx - d / 2.0, cy + d]] } else { [[cx - d, cy - d / 2.0], [cx, cy + d / 2.0], [cx + d, cy - d / 2.0]] };
+    line(out, a, b, argb, 1.0);
+    line(out, b, c, argb, 1.0);
+}
+
 // A scroll marker on its track, `len` long from `y` down: how much of a list shows (`room` of `content`), and where.
 pub(super) fn scrollbar(out: &mut Vec<Shape>, x: f32, y: f32, len: f32, content: f32, room: f32, at: f32) {
     if content <= room + 0.01 || len <= 0.0 {

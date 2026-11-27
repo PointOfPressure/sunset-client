@@ -438,6 +438,8 @@ pub(super) fn in_view([x, y, w, h]: [f32; 4], [top, bottom]: [f32; 2]) -> Option
 // The rows the pointer can hit: only what shows of each.
 fn panel_hits(s: &State) -> Vec<([f32; 4], Hit)> {
     let mut body = super::sunset_dashboard::list_y(s).unwrap_or([f32::MIN, f32::MAX]);
+    // The Dashboard's settings under a section's title held at their top: hit only below it.
+    let pin = super::sunset_dashboard::pin_bottom(s);
     panel_rows(s)
         .into_iter()
         .filter_map(|(r, hit)| {
@@ -445,7 +447,11 @@ fn panel_hits(s: &State) -> Vec<([f32; 4], Hit)> {
                 body = [r[1] + r[3], r[1] + r[3] + body_room(s, c)];
                 return Some((r, hit));
             }
-            in_view(r, body).map(|r| (r, hit))
+            let r = in_view(r, body)?;
+            match (pin, hit) {
+                (Some(y), Hit::Setting(..) | Hit::Bind(_)) => in_view(r, [y, f32::MAX]).map(|r| (r, hit)),
+                _ => Some((r, hit)),
+            }
         })
         .collect()
 }
