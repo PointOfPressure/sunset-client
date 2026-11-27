@@ -191,10 +191,15 @@ pub(super) fn cross(out: &mut Vec<Shape>, r: [f32; 4], lit: bool) {
     }
 }
 
-// The mark at the end of a title that folds, round `at`: an arrow head pointing down, or sideways for one shut.
-pub(super) fn chevron(out: &mut Vec<Shape>, [cx, cy]: [f32; 2], shut: bool, argb: u32) {
+// A small arrow head round a point: pointing down (0: a title that folds, open), right (1: one shut, or a title that
+// leads somewhere) or up (2).
+pub(super) fn chevron(out: &mut Vec<Shape>, [cx, cy]: [f32; 2], dir: u8, argb: u32) {
     let d = 2.0;
-    let [a, b, c] = if shut { [[cx - d / 2.0, cy - d], [cx + d / 2.0, cy], [cx - d / 2.0, cy + d]] } else { [[cx - d, cy - d / 2.0], [cx, cy + d / 2.0], [cx + d, cy - d / 2.0]] };
+    let [a, b, c] = match dir {
+        1 => [[cx - d / 2.0, cy - d], [cx + d / 2.0, cy], [cx - d / 2.0, cy + d]],
+        2 => [[cx - d, cy + d / 2.0], [cx, cy - d / 2.0], [cx + d, cy + d / 2.0]],
+        _ => [[cx - d, cy - d / 2.0], [cx, cy + d / 2.0], [cx + d, cy - d / 2.0]],
+    };
     line(out, a, b, argb, 1.0);
     line(out, b, c, argb, 1.0);
 }
@@ -627,8 +632,13 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     let mut fades: Vec<[f32; 3]> = Vec::new();
     // The list the rows scroll in, top and bottom: a row part way out of it is cut.
     let mut body = with(|s| super::sunset_dashboard::list_y(s)).unwrap_or([f32::MIN, f32::MAX]);
+    // (The Dashboard's module list and its settings each have their own.)
+    let dash_bodies = with(|s| super::sunset_dashboard::bodies(s));
     for (k, (r, hit)) in rows.iter().enumerate() {
         let [x, y, rw, rh] = *r;
+        if let Some(b) = dash_bodies {
+            body = if matches!(hit, Hit::Module(_)) { b[0] } else { b[1] };
+        }
         let hovered = hover == Some(*hit);
         let cut = !matches!(hit, Hit::Header(_)) && (y < body[0] || y + rh > body[1]);
         if cut {
@@ -700,7 +710,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         }
     }
     if dash {
-        with(|s| super::sunset_dashboard::front(s, px, out));
+        with(|s| super::sunset_dashboard::front(s, game, px, out));
     }
     for at in fades {
         fade(out, at, pal().panel, px, true);
@@ -771,6 +781,10 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     let floor = if dash { body[1] } else { h - 2.0 };
     let open_window = window.as_ref().map(|(_, frame, ..)| *frame);
     let tip_at = |row: [f32; 4], tw: f32, th: f32| -> [f32; 2] {
+        if super::sunset_dashboard::one_line() {
+            // Beside the list, over the settings' edge: the rows round the pointer stay readable.
+            return [(row[0] + row[2] + 4.0).min(w - tw - 2.0).max(0.0), row[1].min(floor - th - 1.0).max(0.0)];
+        }
         if dash {
             let under = row[1] + row[3] + 1.0;
             let y = if under + th <= floor { under } else { row[1] - th - 1.0 };

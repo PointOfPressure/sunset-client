@@ -438,8 +438,8 @@ pub(super) fn in_view([x, y, w, h]: [f32; 4], [top, bottom]: [f32; 2]) -> Option
 // The rows the pointer can hit: only what shows of each.
 fn panel_hits(s: &State) -> Vec<([f32; 4], Hit)> {
     let mut body = super::sunset_dashboard::list_y(s).unwrap_or([f32::MIN, f32::MAX]);
-    // The Dashboard's settings under a section's title held at their top: hit only below it.
-    let pin = super::sunset_dashboard::pin_bottom(s);
+    // The Dashboard's module list and settings: each in its own column's height, clear of what is held over the rows.
+    let dash = super::sunset_dashboard::bodies(s);
     panel_rows(s)
         .into_iter()
         .filter_map(|(r, hit)| {
@@ -447,11 +447,12 @@ fn panel_hits(s: &State) -> Vec<([f32; 4], Hit)> {
                 body = [r[1] + r[3], r[1] + r[3] + body_room(s, c)];
                 return Some((r, hit));
             }
-            let r = in_view(r, body)?;
-            match (pin, hit) {
-                (Some(y), Hit::Setting(..) | Hit::Bind(_)) => in_view(r, [y, f32::MAX]).map(|r| (r, hit)),
-                _ => Some((r, hit)),
-            }
+            let body = match (dash, hit) {
+                (Some(b), Hit::Module(_)) => b[2],
+                (Some(b), _) => b[3],
+                _ => body,
+            };
+            in_view(r, body).map(|r| (r, hit))
         })
         .collect()
 }
@@ -746,7 +747,8 @@ pub(super) fn number_band(r: [f32; 4]) -> f32 {
 // One-line settings (the Dashboard): the name takes the row's left part, the slider or a pick's options start here, and a
 // slider's number gets this much at the row's end, so the tracks of a column line up whatever their numbers.
 fn control_x(r: [f32; 4]) -> f32 {
-    (r[0] + r[2] * 0.46).floor()
+    // (A narrow row gives its name more of it: a small window's settings are read by their names.)
+    (r[0] + r[2] * if r[2] < 200.0 { 0.56 } else { 0.46 }).floor()
 }
 const NUMBER_W: f32 = 30.0;
 

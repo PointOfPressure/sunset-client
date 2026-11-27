@@ -27,6 +27,12 @@ pub(super) enum Part {
     Profile,
     // A section's title over the chosen module's settings (by its card): a click folds it or opens it again.
     Section(usize),
+    // Under the bind: every section shut, or open again.
+    FoldAll,
+    // The shown module's name and description (the pointer on a description cut short shows all of it), and the mark at
+    // the list's edge for a shown module scrolled out of it (a click brings its row back).
+    About,
+    Reveal,
     // The Sidebar style's parts (sidebar.rs): the calls here go there while it is the style.
     Side(super::sunset_sidebar::Part),
 }
@@ -39,8 +45,10 @@ struct Listed {
     // The modules switched off in Modules.
     hidden: Vec<&'static str>,
     ids: Vec<usize>,
-    // Beside each, the settings a search matched in it (listed under it, except in the Legacy style).
+    // Beside each, the settings a search matched in it (named on its row; its settings open at the first).
     settings: Vec<Vec<usize>>,
+    // The search found its modules only by their descriptions.
+    about: bool,
 }
 
 // One scrolling column: where the wheel put it, its rows' offsets, where the wheel stops (the rows, and a section's top so
@@ -83,14 +91,19 @@ struct View {
     opened: Option<Instant>,
     // The sections shut, by module and title, until the game closes.
     folded: Vec<(&'static str, &'static str)>,
-    // Enabled's list is in the categories' order: each one's name over its modules, by its offset in the list.
-    heads: Vec<(f32, &'static str)>,
+    // Titles in the list, by their offset in it: Enabled's categories, each over its modules (a click turns to that
+    // category: its page), and a search's "In settings" over the modules found by a setting, not by their name.
+    heads: Vec<(f32, &'static str, Option<usize>)>,
+    // Where "Fold all" is in the settings (a module with two sections or more), and whether the description over
+    // them was cut short as last drawn.
+    fold_at: Option<f32>,
+    cut: bool,
 }
 
 static VIEW: Mutex<View> = Mutex::new(View {
     page: 1,
     chosen: None,
-    listed: Listed { page: usize::MAX, query: String::new(), count: 0, hidden: Vec::new(), ids: Vec::new(), settings: Vec::new() },
+    listed: Listed { page: usize::MAX, query: String::new(), count: 0, hidden: Vec::new(), ids: Vec::new(), settings: Vec::new(), about: false },
     list: Column { scroll: 0.0, rows: Vec::new(), stops: Vec::new(), content: 0.0 },
     pane: Column { scroll: 0.0, rows: Vec::new(), stops: Vec::new(), content: 0.0 },
     cards: Vec::new(),
@@ -103,6 +116,8 @@ static VIEW: Mutex<View> = Mutex::new(View {
     opened: None,
     folded: Vec::new(),
     heads: Vec::new(),
+    fold_at: None,
+    cut: false,
 });
 
 fn view<R>(f: impl FnOnce(&mut View) -> R) -> R {
@@ -154,6 +169,11 @@ const SLIM_MAX: f32 = 184.0;
 const ENABLED: usize = CATEGORIES.len() + 1;
 // Between Enabled and the categories under it.
 const ENABLED_GAP: f32 = 5.0;
+// The reworked style's module list starts under one line (its title and count), higher than the settings do.
+const LIST_HEAD: f32 = 22.0;
+// The room kept for the key hints beside the search box, and the line "Fold all" takes over a module's sections.
+const HINTS_W: f32 = 176.0;
+const FOLD_H: f32 = 12.0;
 // Above and below the columns, so a lit row stays clear of the panel's corners.
 const PAD: f32 = 8.0;
 const LIST_MIN: f32 = 150.0;
@@ -190,13 +210,13 @@ const ABOUT_Y: f32 = 17.0;
 
 const MUTED: u32 = 0x8C8C94;
 // A lit row or category at its brightest.
-const LIT: u32 = 0x10;
+const LIT: u32 = 0x1C;
 const FADE: f32 = 0.08;
 const TIP_AFTER: f32 = 0.5;
 // The menu coming in.
 const OPEN_TIME: f32 = 0.12;
 // How long a search's matched setting stays lit.
-const FLASH_TIME: f32 = 1.6;
+const FLASH_TIME: f32 = 2.4;
 const OPEN_RISE: f32 = 6.0;
 
 fn frame(s: &State) -> [f32; 4] {
@@ -227,7 +247,8 @@ fn columns(s: &State) -> ([f32; 4], [f32; 4]) {
     let (top, room, rest) = (y + HEADER_H + band_h(), (h - HEADER_H - band_h() - PAD).max(0.0), (w - side()).max(0.0));
     let list = if legacy() { (rest * 0.42).clamp(LIST_MIN, LIST_MAX) } else { (rest * 0.32).clamp(SLIM_MIN, SLIM_MAX) };
     let list = list.min(rest).floor();
-    ([x + side(), top, list, room], [x + side() + list, top, rest - list, room])
+    let rise = if legacy() { 0.0 } else { band_h() - LIST_HEAD };
+    ([x + side(), top - rise, list, room + rise], [x + side() + list, top, rest - list, room])
 }
 
 fn side() -> f32 {
@@ -246,7 +267,9 @@ fn page_label(page: usize) -> &'static str {
 // The search box in the header: in the reworked style the same share of it at every scale.
 fn search_rect(s: &State) -> [f32; 4] {
     let (f, (list, pane)) = (frame(s), columns(s));
-    let w = if legacy() { (list[2] + pane[2] - 2.0 * CARD_M).clamp(0.0, SEARCH_MAX) } else { ((list[2] + pane[2]) * 0.5).floor() };
+    // (The reworked style: half the columns' width, less where the key hints beside it need the room.)
+    let both = list[2] + pane[2];
+    let w = if legacy() { (both - 2.0 * CARD_M).clamp(0.0, SEARCH_MAX) } else { (both * 0.5).floor().min((both - 30.0 - HINTS_W).max(110.0)) };
     [list[0] + CARD_M, f[1] + (HEADER_H - SEARCH_H) / 2.0, w, SEARCH_H]
 }
 
@@ -262,6 +285,13 @@ fn profile_rect(s: &State) -> [f32; 4] {
     [f[0] + 8.0, f[1] + f[3] - 34.0, side() - 16.0, 26.0]
 }
 
+// The chosen module's name and description, left of its switch.
+fn about_rect(s: &State) -> [f32; 4] {
+    let (pane, t) = (columns(s).1, toggle_rect(s));
+    [pane[0] + CARD_M, pane[1] - band_h(), (t[0] - 8.0 - pane[0] - CARD_M).max(0.0), band_h()]
+}
+const FOLD_W: f32 = 70.0;
+
 // The chosen module's switch.
 fn toggle_rect(s: &State) -> [f32; 4] {
     let pane = columns(s).1;
@@ -271,7 +301,7 @@ fn toggle_rect(s: &State) -> [f32; 4] {
 }
 
 fn module_h() -> f32 {
-    row_hh() + 4.0
+    row_hh() + if legacy() { 4.0 } else { 2.0 }
 }
 
 fn height(s: &State, hit: Hit) -> f32 {
@@ -297,7 +327,7 @@ fn tab_rect(s: &State, page: usize) -> [f32; 4] {
 
 // Where a module's name and bound key go in its row.
 pub(super) fn module_text([x, y, w, h]: [f32; 4]) -> [f32; 4] {
-    [x, y + 2.0, w - 4.0, h - 4.0]
+    [x, y + ((h - row_hh()) / 2.0).floor(), w - 4.0, row_hh()]
 }
 
 // Whether a row has a line above it: only the settings after the first of a section.
@@ -334,6 +364,7 @@ pub(super) fn prepare(s: &State) {
         // Enabled lists what is on, and what was while it has been showing: a module switched off there keeps its row
         // until the view is left, so a slip is one click to undo. One switched on meanwhile joins the list.
         let was = if page == ENABLED && !stale { v.listed.ids.clone() } else { Vec::new() };
+        let mut relisted = false;
         let joined = page == ENABLED && !stale && s.modules.iter().enumerate().any(|(i, m)| m.on && m.in_gui && !hidden.contains(&m.name) && !was.contains(&i));
         if stale || joined {
             // Searching: what it finds, best first (search.rs); else the page's modules A to Z.
@@ -352,6 +383,12 @@ pub(super) fn prepare(s: &State) {
             if page == ENABLED {
                 ids.sort_by_key(|&i| CATEGORIES.iter().position(|c| *c == s.modules[i].category));
             }
+            // A search: the modules found by their name first, then those found by a setting, each as ranked.
+            if let Some(found) = &found {
+                ids.sort_by_key(|&i| found[i].as_ref().is_some_and(|f| !f.settings.is_empty()));
+            }
+            v.listed.about = found.as_ref().is_some_and(|f| f.iter().flatten().next().is_some_and(|f| f.about));
+            relisted = true;
             v.listed.settings = ids.iter().map(|&i| found.as_ref().and_then(|f| f[i].as_ref()).map_or_else(Vec::new, |hit| hit.settings.clone())).collect();
             // A new search shows its best find.
             if v.listed.query != menu.search && !menu.search.trim().is_empty() {
@@ -379,7 +416,7 @@ pub(super) fn prepare(s: &State) {
             v.focus = true;
             smooth::jump(smooth::PANE);
         }
-        let View { listed, list, pane, chosen, cards, lined, focus, flash, folded, heads, .. } = v;
+        let View { listed, list, pane, chosen, cards, lined, focus, flash, folded, heads, fold_at, .. } = v;
         // The list is modules only: one a search found by a setting names it on its row (back), and its settings
         // open at that setting. Enabled's have their category's name over them (the wheel stops with it in view).
         list.rows.clear();
@@ -387,18 +424,40 @@ pub(super) fn prepare(s: &State) {
         heads.clear();
         let mut y = 0.0;
         let mut group = None;
-        for &i in &listed.ids {
+        let mut loose = false;
+        for (k, &i) in listed.ids.iter().enumerate() {
             let category = s.modules[i].category;
             list.stops.push((y, Hit::Module(i)));
             if page == ENABLED && group != Some(category) {
-                heads.push((y, category.label()));
+                heads.push((y, category.label(), CATEGORIES.iter().position(|c| *c == category).map(|p| p + 1)));
                 y += TITLE_H;
                 group = Some(category);
+            }
+            // A search says why the modules under its best finds are there: found by a setting (named on each row),
+            // or, with nothing found by a name or a setting, by their descriptions.
+            let by_setting = listed.settings.get(k).is_some_and(|f| !f.is_empty());
+            if page == 0 && !legacy() && !loose && (by_setting || listed.about) {
+                heads.push((y, if by_setting { "In settings" } else { "In descriptions" }, None));
+                y += TITLE_H;
+                loose = true;
             }
             list.rows.push((y, Hit::Module(i)));
             y += module_h();
         }
         list.content = y;
+        // A list just made: the module shown, if it is in it, is in view.
+        if relisted
+            && let Some(i) = *chosen
+        {
+            let at = |rows: &[(f32, Hit)]| rows.iter().find(|(_, hit)| *hit == Hit::Module(i)).map(|row| row.0);
+            if let (Some(stop), Some(off)) = (at(&list.stops), at(&list.rows)) {
+                if stop < list.scroll {
+                    list.scroll = stop;
+                } else if off + module_h() > list.scroll + room {
+                    list.scroll = off + module_h() - room;
+                }
+            }
+        }
         // Picked during a search: the setting the search matched in it, which its settings start at (below).
         let target = (std::mem::take(focus) && !legacy() && !menu.search.trim().is_empty())
             .then(|| {
@@ -419,6 +478,7 @@ pub(super) fn prepare(s: &State) {
         cards.clear();
         lined.clear();
         let mut y = 0.0;
+        *fold_at = None;
         if let Some(i) = *chosen {
             let m = &s.modules[i];
             let (bind, settings): (Vec<usize>, Vec<usize>) =
@@ -434,6 +494,14 @@ pub(super) fn prepare(s: &State) {
             }
             y += CARD_PAD;
             cards.push(Card { top: 0.0, bottom: y, title: None, folded: false, count: 0 });
+            // Two sections or more: a line under the bind that shuts them all (what is left is a list of the sections,
+            // each a click from open), or opens them again.
+            let mut titles: Vec<&'static str> = settings.iter().filter_map(|&j| m.group_of(j)).collect();
+            titles.dedup();
+            *fold_at = (!legacy() && titles.len() >= 2).then_some(y);
+            if fold_at.is_some() {
+                y += FOLD_H;
+            }
             let mut section: Option<Option<&'static str>> = None;
             // A card ends: a shut one just under its title.
             let end = |card: &mut Card, y: &mut f32| {
@@ -520,9 +588,46 @@ pub(super) fn list_y(s: &State) -> Option<[f32; 2]> {
         return Some(super::sunset_sidebar::list_y(s));
     }
     on().then(|| {
-        let [_, y, _, room] = columns(s).0;
+        let [_, y, _, room] = columns(s).1;
         [y, y + room]
     })
+}
+
+// Top and bottom of where a row shows and of where it can be hit, in this style (not Sidebar's): the module list's
+// rows, the settings' rows, and the same two again for the pointer, clear of what is held over the rows (a section's
+// title at the settings' top, the mark at the list's edge for a shown module scrolled out of it).
+pub(super) fn bodies(s: &State) -> Option<[[f32; 2]; 4]> {
+    if sidebar() || !on() {
+        return None;
+    }
+    let (list, pane) = columns(s);
+    let (seen, set) = ([list[1], list[1] + list[3]], [pane[1], pane[1] + pane[3]]);
+    let hit = match stray(s) {
+        Some((true, r, _)) => [r[1] + r[3], seen[1]],
+        Some((false, r, _)) => [seen[0], r[1]],
+        None => seen,
+    };
+    Some([seen, set, hit, [pinned(s).map_or(set[0], |(_, r)| r[1] + r[3]), set[1]]])
+}
+
+// The shown module's row scrolled out of the list: whether it is above what shows, the strip at that edge of the list
+// that says so, and the module.
+fn stray(s: &State) -> Option<(bool, [f32; 4], usize)> {
+    if legacy() || sidebar() || !on() {
+        return None;
+    }
+    let list = columns(s).0;
+    let at = smooth::shown(smooth::DASHBOARD, list_scroll());
+    let (i, off) = view(|v| {
+        let i = v.chosen?;
+        v.list.rows.iter().find(|(_, hit)| *hit == Hit::Module(i)).map(|row| (i, row.0))
+    })?;
+    let above = off + module_h() <= at + 0.5;
+    if !above && off < at + list[3] - 0.5 {
+        return None;
+    }
+    let y = if above { list[1] } else { list[1] + list[3] - TITLE_H };
+    Some((above, [list[0], y, list[2] - 4.0, TITLE_H], i))
 }
 
 // The rows from the one the column's top is in, up to its bottom.
@@ -557,17 +662,12 @@ fn pinned(s: &State) -> Option<(usize, [f32; 4])> {
     Some((card, [pane[0] + CARD_M, pane[1], (pane[2] - 2.0 * CARD_M).max(0.0), TITLE_H]))
 }
 
-// Where the settings' rows can be hit from, while a section's title is held over their top.
-pub(super) fn pin_bottom(s: &State) -> Option<f32> {
-    pinned(s).map(|(_, r)| r[1] + r[3])
-}
-
 // A section's title in its strip `r`, in capitals so it does not read as a setting, and the mark at its end that
 // says it folds: down while it is open, sideways once shut.
 fn section_head(out: &mut Vec<Shape>, r: [f32; 4], title: &str, folded: bool, lit: u32) {
     let colour = if lit > 0 { 0xD4D4D8 } else { MUTED };
     out.push(Shape::Text(title.to_uppercase(), [r[0] + CARD_IN + super::sunset::indent() + 4.0, r[1] + 3.0], colour));
-    super::sunset::chevron(out, [r[0] + r[2] - CARD_IN - super::sunset::RIGHT_PAD - 3.0, r[1] + 7.0], folded, 0xFF00_0000 | colour);
+    super::sunset::chevron(out, [r[0] + r[2] - CARD_IN - super::sunset::RIGHT_PAD - 3.0, r[1] + 7.0], if folded { 1 } else { 0 }, 0xFF00_0000 | colour);
 }
 
 // The rows in view, and where. One part way in view is drawn cut. The settings sit inside their cards.
@@ -616,6 +716,26 @@ pub(super) fn hits(s: &State) -> Vec<([f32; 4], Hit)> {
             }
         });
         out.extend(pinned(s).map(|(k, r)| (r, Hit::Dash(Part::Section(k)))));
+        // Enabled's categories over their modules (a click turns to one), "Fold all" over a module's sections, the
+        // shown module's name and description, and the mark for its row scrolled out of the list.
+        let list = columns(s).0;
+        let list_at = smooth::shown(smooth::DASHBOARD, list_scroll());
+        view(|v| {
+            for &(off, _, page) in &v.heads {
+                if let Some(page) = page {
+                    let r = [list[0], list[1] + off - list_at, list[2] - 4.0, TITLE_H];
+                    out.extend(super::sunset::in_view(r, [list[1], list[1] + list[3]]).map(|r| (r, Hit::Dash(Part::Page(page)))));
+                }
+            }
+            if let Some(y) = v.fold_at {
+                let r = [pane[0] + pane[2] - CARD_M - FOLD_W, pane[1] + y - at, FOLD_W, FOLD_H];
+                out.extend(super::sunset::in_view(r, [pane[1], pane[1] + pane[3]]).map(|r| (r, Hit::Dash(Part::FoldAll))));
+            }
+        });
+        if view(|v| v.chosen.is_some()) {
+            out.push((about_rect(s), Hit::Dash(Part::About)));
+        }
+        out.extend(stray(s).map(|(_, r, _)| (r, Hit::Dash(Part::Reveal))));
         if !dash_menu(s).search.is_empty() {
             out.push((clear_rect(s), Hit::Dash(Part::Clear)));
         }
@@ -654,13 +774,43 @@ pub(super) fn press(s: &mut State, part: Part, right: bool) {
             }
         });
     }
+    // "Fold all": every section of the module shut (or, with all of them shut, open again), from the top.
+    if let (Part::FoldAll, false) = (part, right) {
+        view(|v| {
+            let Some(i) = v.chosen else {
+                return;
+            };
+            let name = s.modules[i].name;
+            let titles: Vec<&'static str> = v.cards.iter().filter_map(|c| c.title).collect();
+            let all = v.cards.iter().filter(|c| c.title.is_some()).all(|c| c.folded);
+            v.folded.retain(|f| f.0 != name);
+            if !all {
+                v.folded.extend(titles.into_iter().map(|t| (name, t)));
+            }
+            v.pane.scroll = 0.0;
+            smooth::jump(smooth::PANE);
+        });
+    }
+    // The mark for the shown module's row, scrolled out of the list: its row comes back, rows to both its sides.
+    if let (Part::Reveal, false) = (part, right) {
+        let room = columns(s).0[3];
+        view(|v| {
+            let stop = v.chosen.and_then(|i| v.list.stops.iter().find(|(_, hit)| *hit == Hit::Module(i))).map(|row| row.0);
+            if let Some(stop) = stop {
+                v.list.scroll = (stop - (room / 2.0 - module_h()).max(0.0)).max(0.0);
+            }
+        });
+    }
 }
 
-// Another view: a category's modules, or Enabled's. A search ends.
+// Another view: a category's modules, or Enabled's, from its top (its first module shown). A search ends.
 fn turn(s: &mut State, page: usize) {
     view(|v| {
         v.page = page;
         v.list.scroll = 0.0;
+        if !legacy() {
+            v.chosen = None;
+        }
     });
     smooth::jump(smooth::DASHBOARD);
     dash_search_clear(s);
@@ -685,9 +835,16 @@ pub(super) fn key(s: &mut State, name: &str) -> bool {
     if !one_line() {
         return false;
     }
+    // (Page Up and Page Down: a list's height at a time; Home and End: its first and last.)
+    let room = columns(s).0[3];
+    let page = ((room / module_h()) as i32 - 1).max(1);
     let step: i32 = match name {
         "key.keyboard.up" => -1,
         "key.keyboard.down" => 1,
+        "key.keyboard.page.up" => -page,
+        "key.keyboard.page.down" => page,
+        "key.keyboard.home" => i32::MIN,
+        "key.keyboard.end" => i32::MAX,
         "key.keyboard.left" | "key.keyboard.right" => 0,
         _ => return false,
     };
@@ -702,13 +859,12 @@ pub(super) fn key(s: &mut State, name: &str) -> bool {
         }
         return true;
     }
-    let room = columns(s).0[3];
     view(|v| {
         if v.listed.ids.is_empty() {
             return;
         }
         let at = v.chosen.and_then(|i| v.listed.ids.iter().position(|&x| x == i));
-        let to = at.map_or(0, |k| (k as i32 + step).clamp(0, v.listed.ids.len() as i32 - 1) as usize);
+        let to = at.map_or(0, |k| (k as i32).saturating_add(step).clamp(0, v.listed.ids.len() as i32 - 1) as usize);
         let i = v.listed.ids[to];
         if v.chosen != Some(i) {
             v.chosen = Some(i);
@@ -728,10 +884,17 @@ pub(super) fn key(s: &mut State, name: &str) -> bool {
     true
 }
 
-// The module Enter (and Space, with nothing typed) turns on or off in the reworked style: the one shown, which the
-// header names beside the key, if it is in the list (not one kept from before a search that found nothing).
-pub(super) fn enter_target() -> Option<usize> {
-    view(|v| v.chosen.filter(|i| v.listed.ids.contains(i)))
+// The module Enter (and Space, with nothing typed) turns on or off in the reworked style: the one shown, if it is in
+// the list (not one kept from before a search that found nothing). Not one a search found by a setting: whoever
+// typed "range" is after the setting its settings have opened at, not after switching the module; the header offers
+// Enter only where it does something.
+pub(super) fn enter_target(s: &State) -> Option<usize> {
+    let searching = !dash_menu(s).search.trim().is_empty();
+    view(|v| {
+        let i = v.chosen?;
+        let k = v.listed.ids.iter().position(|&x| x == i)?;
+        (!searching || v.listed.settings.get(k).is_none_or(|found| found.is_empty())).then_some(i)
+    })
 }
 
 pub(super) fn wheel(s: &State, steps: f32, at: (f32, f32)) {
@@ -803,7 +966,9 @@ pub(super) fn follow_hover(hover: Option<Hit>) {
 
 // Whether a module's description shows under the pointer: in the panels always, here after a moment on it.
 pub(super) fn wants_tip(i: usize) -> bool {
-    !on() || view(|v| v.hover.is_some_and(|(h, since)| h == Hit::Module(i) && since.elapsed().as_secs_f32() >= TIP_AFTER))
+    // (Not for the module shown in the reworked style: its description is over its settings.)
+    let shown = one_line();
+    !on() || view(|v| !(shown && v.chosen == Some(i)) && v.hover.is_some_and(|(h, since)| h == Hit::Module(i) && since.elapsed().as_secs_f32() >= TIP_AFTER))
 }
 
 // The profile in use, as the HUD's watermark names it.
@@ -908,7 +1073,11 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     out.push(Shape::Round(r, radius, if selected { 0xFF30_60B0 } else { pal().dash_control }));
     // No caret while a bind waits for its key or the Profiles menu is open: typing does not go to the box then.
     let (binding, menu_open) = (menu.binding, menu.menu_open);
-    let empty = if legacy() { "Search modules" } else { "Search modules and settings" };
+    let empty = match legacy() {
+        true => "Search modules",
+        false if game.sunset_text_width("Search modules and settings") + 16.0 <= r[2] => "Search modules and settings",
+        false => "Search",
+    };
     // The reworked style: a cross at its end while it holds a search (a click empties it).
     let text_r = if legacy() || menu.search.is_empty() { r } else { [r[0], r[1], r[2] - SEARCH_H + 4.0, r[3]] };
     search_text(game, out, text_r, menu.search, if binding || menu_open { usize::MAX } else { menu.search.len() }, empty);
@@ -927,20 +1096,18 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         (true, _) => hint.to_owned(),
         (false, true) => "Esc: clear the search".to_owned(),
         (false, false) if binding || menu_open => hint.strip_prefix("Press a key or a mouse button   ").unwrap_or(hint).to_owned(),
-        // The keys only (a click on a row and its switch say what they do themselves); Enter and Space name what
-        // they will switch; while searching, Esc empties the search first.
+        // The keys only (a click on a row and its switch say what they do themselves); while searching, Esc empties
+        // the search first.
         (false, false) => {
-            let turns = enter_target().map(|i| format!("turn {} {}", s.modules[i].name, if s.modules[i].on { "off" } else { "on" }));
-            let mut parts: Vec<String> = Vec::new();
+            // Short, so that all of them show at every scale (the search box says that typing searches).
+            let turns = enter_target(s).is_some();
+            let mut parts = vec!["Arrows: move"];
             if searching {
-                parts.extend(turns.map(|t| format!("Enter: {t}")));
-                parts.push("Up and Down: move".to_owned());
-                parts.push("Esc: clear the search".to_owned());
+                parts.extend(turns.then_some("Enter: on/off"));
+                parts.push("Esc: clear");
             } else {
-                parts.push("Type to search".to_owned());
-                parts.push("Arrows: move".to_owned());
-                parts.extend(turns.map(|t| format!("Space: {t}")));
-                parts.push("Esc: close".to_owned());
+                parts.extend(turns.then_some("Space: on/off"));
+                parts.push("Esc: close");
             }
             parts.join("   ")
         }
@@ -1023,9 +1190,9 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     // The module list's title: the view (or the search) and how many modules it lists.
     let mixed = page == 0 || page == ENABLED;
     let (title, count) = view(|v| (if page == 0 { "Search" } else { page_label(page) }, v.listed.ids.len()));
-    let band_y = list[1] - band_h();
-    // The reworked style: on the module title's line, at the rows' names' inset.
-    let (title_x, title_y) = if legacy() { (list[0] + 10.0, band_y + text_y(BAND_H)) } else { (list[0] + super::sunset::indent().max(6.0), band_y + TITLE_Y) };
+    let band_y = pane[1] - band_h();
+    // The reworked style: one line over the list (the title, then the count), at the rows' names' inset.
+    let (title_x, title_y) = if legacy() { (list[0] + 10.0, band_y + text_y(BAND_H)) } else { (list[0] + super::sunset::indent().max(6.0), list[1] - LIST_HEAD + text_y(LIST_HEAD)) };
     out.push(Shape::Head(title.to_owned(), [title_x, title_y], 0xFFFFFF));
     // What the number counts: the category's modules, or the search's finds.
     let on = view(|v| v.listed.ids.iter().filter(|&&i| s.modules[i].on).count());
@@ -1042,6 +1209,12 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         let none = format!("Nothing matches \"{}\"", menu.search.trim());
         let x = if legacy() { list[0] + 10.0 } else { list[0] + super::sunset::indent().max(6.0) };
         out.push(Shape::Text(fit_to(game, &none, list[2] + pane[2] - 24.0), [x, list[1] + 6.0], MUTED));
+        // (And what a search looks at, and how to get the modules back.)
+        if !legacy() {
+            for (n, line) in ["A search looks at modules' names, their", "settings and their descriptions.", "Esc clears it."].into_iter().enumerate() {
+                out.push(Shape::Text(fit_to(game, line, list[2] + pane[2] - 24.0), [x, list[1] + 22.0 + n as f32 * 10.0], 0x6C6C74));
+            }
+        }
     }
     // So does Enabled with nothing on.
     if page == ENABLED && view(|v| v.listed.ids.is_empty()) {
@@ -1055,7 +1228,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         if legacy() {
             out.push(Shape::Text(fit_to(game, &count, (list[2] - 20.0 - tw - 6.0).max(0.0)), [title_x + tw + 6.0, title_y], MUTED));
         } else {
-            out.push(Shape::Text(fit_to(game, &count, (list[2] - 16.0).max(0.0)), [title_x, band_y + ABOUT_Y], MUTED));
+            out.push(Shape::Text(fit_to(game, &count, (list[2] - 16.0 - tw - 6.0).max(0.0)), [title_x + tw + 6.0, title_y], MUTED));
         }
     }
     if !legacy() {
@@ -1082,22 +1255,33 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
             // the room. The reworked style says that over the settings; a row names the setting a search found its
             // module by (its settings open at it).
             let m = &s.modules[i];
-            let found = v.listed.settings.get(k).and_then(|f| f.iter().find(|&&j| m.setting_visible(j))).map(|&j| m.settings[j].name);
-            if let Some(label) = if legacy() { (page == 0).then(|| m.category.label()) } else { found } {
-                let name_w = game.sunset_text_width(m.name);
-                let lw = game.sunset_text_width(label);
+            // (A setting its module's other settings hide is named all the same: it is why the row is here. A module
+            // found by its name says its category, where that fits whole.)
+            let found = v.listed.settings.get(k).and_then(|f| f.iter().find(|&&j| m.setting_visible(j)).or(f.first())).map(|&j| m.settings[j].name);
+            let found = found.filter(|_| !legacy());
+            if let Some(label) = found.or_else(|| (page == 0 && (legacy() || !v.listed.about)).then(|| m.category.label())) {
                 // Clear of the bound key, and of the row's switch in the reworked style.
                 let key_w = m.key.as_deref().map_or(0.0, |_| 34.0) + if legacy() { 0.0 } else { super::sunset::MODULE_SWITCH + 8.0 };
-                if super::sunset::indent().max(6.0) + name_w + 10.0 + lw + key_w + 10.0 <= list[2] {
+                let room = list[2] - super::sunset::indent().max(6.0) - game.sunset_text_width(m.name) - 10.0 - key_w - 10.0;
+                // The reason a search found it is cut to the room it has, never left out.
+                let label = if found.is_some() && room >= 20.0 { fit_to(game, label, room) } else { label.to_owned() };
+                let lw = game.sunset_text_width(&label);
+                if lw <= room {
                     let colour = if v.chosen == Some(i) { 0xA4A4AC } else { 0x6C6C74 };
-                    out.push(Shape::Text(label.to_owned(), [list[0] + list[2] - 10.0 - key_w - lw, y + text_y(module_h())], colour));
+                    out.push(Shape::Text(label, [list[0] + list[2] - 10.0 - key_w - lw, y + text_y(module_h())], colour));
                 }
             }
         }
-        for &(off, label) in &v.heads {
+        for &(off, label, turns) in &v.heads {
             let y = list[1] + off - scroll;
             if y + TITLE_H > list[1] && y < list[1] + list[3] {
-                out.push(Shape::Text(label.to_uppercase(), [list[0] + super::sunset::indent().max(6.0), y + 4.0], MUTED));
+                // One that turns to its category at a click lights under the pointer and has the mark that says so.
+                let lit = turns.map_or(0, |p| glow_in(v, Hit::Dash(Part::Page(p))));
+                let colour = if lit > 0 { 0xD4D4D8 } else { MUTED };
+                out.push(Shape::Text(label.to_uppercase(), [list[0] + super::sunset::indent().max(6.0), y + 4.0], colour));
+                if turns.is_some() {
+                    super::sunset::chevron(out, [list[0] + list[2] - 8.0 - super::sunset::RIGHT_PAD - 3.0, y + 8.0], 1, 0xFF00_0000 | colour);
+                }
             }
         }
         out.push(Shape::ClipEnd([list[0], list[1], list[0] + list[2], list[1] + list[3]]));
@@ -1111,6 +1295,9 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         let t = toggle_rect(s);
         let room = (t[0] - pane[0] - CARD_M - 8.0).max(0.0);
         let mut about = if room >= 40.0 { super::sunset::wrap(game, m.about, room) } else { Vec::new() };
+        // (Cut short: the pointer on it shows all of it, front.)
+        let cut = about.len() > 2;
+        view(|v| v.cut = cut);
         if about.len() > 2 {
             let rest = about.split_off(1).join(" ");
             about.push(fit_to(game, &rest, room));
@@ -1178,12 +1365,32 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
             let t = since.elapsed().as_secs_f32() / FLASH_TIME;
             match v.pane.rows.iter().find(|(_, h)| *h == hit) {
                 Some(&(off, _)) if t < 1.0 => {
-                    let alpha = (0x40 as f32 * (1.0 - t * t)) as u32;
+                    let alpha = (0x60 as f32 * (1.0 - t * t)) as u32;
                     let y = pane[1] + off - pane_at;
                     out.push(Shape::Fill([pane[0] + CARD_M, y, pane[2] - 2.0 * CARD_M, row_hh()], alpha << 24 | (accent() & 0x00FF_FFFF)));
                 }
                 _ => v.flash = None,
             }
+        }
+        // While a search shows the module, the settings it matched keep a mark at their left.
+        if page == 0
+            && !legacy()
+            && let Some(i) = v.chosen
+            && let Some(k) = v.listed.ids.iter().position(|&x| x == i)
+        {
+            for &j in v.listed.settings.get(k).into_iter().flatten() {
+                if let Some(&(off, _)) = v.pane.rows.iter().find(|(_, h)| *h == Hit::Setting(i, j)) {
+                    out.push(Shape::Fill([pane[0] + CARD_M, pane[1] + off - pane_at + 2.0, 2.0, row_hh() - 4.0], 0xFF00_0000 | accent()));
+                }
+            }
+        }
+        // "Fold all" over a module's sections ("Open all" once they are all shut).
+        if let Some(y) = v.fold_at {
+            let all = v.cards.iter().filter(|c| c.title.is_some()).all(|c| c.folded);
+            let text = if all { "Open all" } else { "Fold all" };
+            let colour = if glow_in(v, Hit::Dash(Part::FoldAll)) > 0 { 0xD4D4D8 } else { MUTED };
+            let x = pane[0] + pane[2] - CARD_M - CARD_IN - super::sunset::RIGHT_PAD - game.sunset_text_width(text);
+            out.push(Shape::Text(text.to_owned(), [x, pane[1] + y - pane_at + 3.0], colour));
         }
         // A module with nothing but its bind says so under it.
         if !legacy() && v.chosen.is_some() && v.cards.len() == 1 {
@@ -1196,7 +1403,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
 
 // Over the rows: where a column has more past its top or bottom edge the rows fade into the surface there (a row the
 // edge cuts reads as "more this way", not as a broken row), and each column's scroll marker on its track.
-pub(super) fn front(s: &State, px: f32, out: &mut Vec<Shape>) {
+pub(super) fn front(s: &State, game: &Game<'_>, px: f32, out: &mut Vec<Shape>) {
     if sidebar() || !on() {
         return;
     }
@@ -1229,6 +1436,26 @@ pub(super) fn front(s: &State, px: f32, out: &mut Vec<Shape>) {
         // In the reworked style the settings' marker sits in the margin beside the cards, off the window's edge.
         let inset = if legacy() || c[0] == list[0] { 4.0 } else { 6.0 };
         scrollbar(out, c[0] + c[2] - inset, c[1] + 1.0, room - 2.0, content, room, at);
+    }
+    // The shown module's row scrolled out of the list: its name at that edge of the list, and which way it is (a
+    // click brings the row back), so the settings on the right are never without their module.
+    if let Some((above, r, i)) = stray(s) {
+        let colour = if glow(Hit::Dash(Part::Reveal)) > 0 { 0xFFFFFF } else { 0xB4B4BC };
+        out.push(Shape::Fill([r[0] + px, r[1], list[2] - px, r[3]], 0xFF00_0000 | pal().dash_surface));
+        out.push(Shape::Fill([r[0] + px, if above { r[1] + r[3] - px } else { r[1] }, list[2] - px, px], pal().dash_hairline));
+        out.push(Shape::Text(fit_to(game, s.modules[i].name, r[2] - 30.0), [r[0] + super::sunset::indent().max(6.0), r[1] + 3.0], colour));
+        super::sunset::chevron(out, [r[0] + r[2] - 4.0 - super::sunset::RIGHT_PAD - 3.0, r[1] + 6.5], if above { 2 } else { 0 }, 0xFF00_0000 | colour);
+    }
+    // The pointer on a description that was cut short: all of it, in its place and down over the settings' top.
+    let shown = view(|v| (v.cut && v.hover.is_some_and(|(h, since)| h == Hit::Dash(Part::About) && since.elapsed().as_secs_f32() >= 0.3)).then_some(v.chosen).flatten());
+    if let Some(i) = shown {
+        let w = (pane[2] - 2.0 * CARD_M).max(60.0);
+        let lines = super::sunset::wrap(game, s.modules[i].about, w - 12.0);
+        let r = [pane[0] + CARD_M, pane[1] - band_h() + ABOUT_Y - 3.0, w, lines.len() as f32 * 10.0 + 6.0];
+        super::sunset::framed(out, r, control_radius().max(4.0), pal().tooltip, px);
+        for (n, line) in lines.into_iter().enumerate() {
+            out.push(Shape::Text(line, [r[0] + 6.0, r[1] + 3.0 + n as f32 * 10.0], 0xE4E4E4));
+        }
     }
 }
 

@@ -18,6 +18,14 @@ section of the version they build into the signed manifest, and the launcher sho
 - **Entity Control drives and flies saddled mounts too** (horse, donkey, mule, camel, a pig or strider you steer with its rod, a harnessed happy ghast): Speed, Fly and Anti fly kick as for boats, with the mount's own step height. Two new switches, Boats and Mounts
 - Effects: Hide behind blocks covers Weather and Trails too (snow, rain, fireflies, embers and trail marks no longer show through walls), and trail marks fade with distance like the rest
 
+### Changed
+- **ClickGUI Dashboard: a click on a module now shows its settings, and the switch at the end of its row turns it on or off** (a left click used to toggle it and only a right click showed its settings). *Dashboard (Legacy)* keeps the old clicks
+- Dashboard: *Enabled*, over the categories, lists every module that is on, category by category; the number by each category is how many of its modules are on
+- Dashboard: the arrow keys move through the modules and the categories (Page Up, Page Down, Home and End too), Space and Enter turn the module shown on or off
+- Dashboard: a section of settings folds at a click on its title, which stays at the top while its settings scroll; *Fold all* shuts every section of a big module at once
+- Dashboard: a search lists modules only, those found by their name first, then those found by a setting, which each row names and whose settings open at it; Enter switches only a module found by its name
+- Dashboard: a slimmer module list with more rows in it, so the settings get the room; the pointer on a description that was cut short shows all of it
+
 ### Fixed
 - **The Compass, Shield status, Armor HUD, Target HUD and Scaffold's block counter vanished while the chat was open, so the HUD layout editor (the chat's) could not move or size them.** They stay on screen with the chat open now and take a frame like the rest
 - **Entity Control's Anti fly kick could fail on a server that handled several of your ticks at once (a low frame rate, a jittery connection): the one-tick sink went unseen and the vehicle was kicked for floating.** The sink now lasts three ticks and the height is given back after it, so a hovering boat or mount also no longer drifts down

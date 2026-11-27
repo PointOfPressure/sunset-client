@@ -2895,9 +2895,10 @@ def dash_geometry(fit=True, legacy=False):
     return k, fx, fy, fw, fh, lw
 
 
-# The reworked Dashboard: its categories' column, and from the window's top to its rows (the header's 28 and the band's
-# 46, the same for every module).
-DASH_SIDE, DASH_TOP = 96, 74
+# The reworked Dashboard: its categories' column, from the window's top to the settings' rows (the header's 28 and the
+# band's 46, the same for every module) and to the module list's (the header and the list's one line of 22), and a
+# module's row in the list.
+DASH_SIDE, DASH_TOP, DASH_LIST, DASH_ROW = 96, 74, 50, 16
 
 
 def dash_tab(page, fx, fy, fh):
@@ -3003,7 +3004,8 @@ def _():
     # off; B's switches B on again). Kill Aura's settings: a click on General's title shuts it (a click where Version's
     # 1.8 was changes nothing), another opens it (Auto disable's switch is back in its place); scrolled into
     # Targeting, that title is held at the settings' top, and a click on it there shuts Targeting and brings Rotations
-    # up under it (a click on Rotate, its first setting, takes it off Always).
+    # up under it (a click on Rotate, its first setting, takes it off Always). "Fold all" under the bind then shuts
+    # every section (a click where General's first setting was changes nothing) and, as "Open all", opens them.
     def click(x, y):
         ctl("click-at", str(round(x, 1)), str(round(y, 1)))
         wait(4)
@@ -3022,7 +3024,7 @@ def _():
     top = fy + DASH_TOP
     name_x, switch_x = fx + DASH_SIDE + 30, fx + DASH_SIDE + lw - 22
     band, spare = (fx + fw - 24, fy + 37.5), (fx + 30, fy + 14)
-    row = lambda n: top + 18 * n + 9
+    row = lambda n: fy + DASH_LIST + DASH_ROW * n + DASH_ROW / 2
     base = modules_changed()
     got = {}
     menu()
@@ -3058,12 +3060,12 @@ def _():
     wait(8)
     rx, rw = fx + DASH_SIDE + lw + 10, fw - DASH_SIDE - lw - 20
     end = rx + rw - 7
-    # Kill Aura's settings: the bind's card (20), a gap (6), General's title (13) and its six rows of 14.
+    # Kill Aura's settings: the bind's card (20), "Fold all" (12), a gap (6), General's title (13) and its six rows of 14.
     click(*spare)
-    click(rx + 30, top + 26 + 6)
-    click(end - 3, top + 39 + 4)
-    click(rx + 30, top + 26 + 6)
-    click(end - 7, top + 39 + 14 * 5 + 7)
+    click(rx + 30, top + 38 + 6)
+    click(end - 3, top + 51 + 4)
+    click(rx + 30, top + 38 + 6)
+    click(end - 7, top + 51 + 14 * 5 + 7)
     for _ in range(5):
         ctl("scroll-at", str(round(rx + 60)), str(round(top + 80)), "-1")
         wait(3)
@@ -3078,8 +3080,19 @@ def _():
     click(end - 3, top + 14 + 6 + 13 + 7)
     # (Open again for the tests after this one: a shut section stays shut while the game runs.)
     click(rx + 30, top + 6)
+    # "Fold all" (the pane wheeled back to its top): with every section shut, where Preset's row was is General's shut
+    # card or the gap under it, and a click there changes nothing; "Open all" then opens them all for the next tests.
+    for _ in range(6):
+        ctl("scroll-at", str(round(rx + 60)), str(round(top + 80)), "1")
+        wait(3)
+    wait(10)
+    click(end - 10, top + 20 + 6)
+    wait(6)
+    click(end - 3, top + 51 + 14 + 10)
+    click(end - 10, top + 20 + 6)
     now = values()
     got["version"], got["auto disable"], got["rotate"] = now.get("Version", ""), now.get("Auto disable", ""), now.get("Rotate", "")
+    got["preset"] = now.get("Preset", "")
     close_menu()
     say(".reset killaura")
     say(".reset clickgui")
@@ -3087,7 +3100,7 @@ def _():
     a, b2, left = one(got["shown"]), one(got["switch"]), one(got["enabled"])
     ok = (a is not None and a != "Aim Assist" and got["shown"][a] == "Combat" and b2 is not None and b2 != a and len(both) == 2
           and left == first[0] and got["version"].startswith("1.9+") and got["auto disable"].upper().startswith("ON")
-          and got["rotate"] != "" and not got["rotate"].startswith("Always"))
+          and got["rotate"] != "" and not got["rotate"].startswith("Always") and got["preset"].startswith("Custom"))
     return ok, f"{got}; before Enabled: {sorted(both)}"
 
 

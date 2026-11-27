@@ -116,12 +116,12 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
     let dash = super::sunset_dashboard::one_line();
     if name.ends_with("enter") {
         // Enter in the search turns on (or off) the module it found; in the reworked Dashboard, the module shown.
-        if let Some(i) = if dash { super::sunset_dashboard::enter_target() } else { with(|s| first_match(s)) } {
+        if let Some(i) = with(|s| if dash { super::sunset_dashboard::enter_target(s) } else { first_match(s) }) {
             toggle(game, i, true);
         }
     } else if dash && name == "key.keyboard.space" && with(|s| s.gui.search.is_empty()) {
         // Space with nothing typed (a search does not start with one): the module shown, on or off.
-        if let Some(i) = super::sunset_dashboard::enter_target() {
+        if let Some(i) = with(|s| super::sunset_dashboard::enter_target(s)) {
             toggle(game, i, true);
         }
     } else if control && name == "key.keyboard.a" {
