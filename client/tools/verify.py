@@ -8872,15 +8872,17 @@ def _():
 def _():
     if not CTL2:
         return None, "needs a second player"
-    bot_respawned()
-    cmd("gamemode survival Bot1")
+    # bot_ready(): survival and the teleport in one go (Bot1 put in survival where spectator left him, 30 blocks up,
+    # fell to his death before the next command moved him), 100 health and Resistance IV.
+    bot_ready(2.0, 180)
 
     def bot_hurt(seconds):
         # Resistance IV takes 80% off, so Bot1 lives through 3 s of sword hits and its health says what they did.
-        cmd("effect give Bot1 minecraft:instant_health 1 10 true", "effect give Bot1 minecraft:resistance 10 3 true",
-            f"tp Bot1 {X0+0.5} {Y+1} {Z0+2.0}")
+        cmd("effect give Bot1 minecraft:instant_health 1 28 true", f"tp Bot1 {X0+0.5} {Y+1} {Z0+2.0}")
+        wait(5)
+        before = bot_health()
         wait(seconds * 20)
-        return 20 - ctl2("state")["player"]["health"]
+        return round(before - bot_health(), 1)
 
     slot(0, "diamond_sword")
     ctl("key", "1", "tap")
@@ -8903,7 +8905,8 @@ def _():
     setting("killaura", "ignore teams", "false")
     hit = bot_hurt(3)
     only()
-    cmd("team remove sunsettest", "gamemode spectator Bot1", "gamerule natural_health_regeneration true")
+    cmd("team remove sunsettest")
+    bot_done()
     return real > 0 and friend == 0 and spared == 0 and hit > 0, f"player in the list hurt {real}, as a friend {friend}, as a teammate {spared}, teammate without Ignore teams {hit}"
 
 
@@ -10297,9 +10300,13 @@ def blast_done():
 def bot_respawned():
     """Bot1 back from the death screen (a server keeps a player who died in an earlier run dead when they join), with
     PvP on (a single player world opened to LAN may have it off)."""
-    if CTL2 and ctl2("state").get("screen") == "dead":
-        ctl2("click-button", "Respawn")
-        wait(20)
+    # As ensure_alive() does for you: the death screen, or no health left (an earlier test's crystals).
+    for _ in range(3 if CTL2 else 0):
+        st = ctl2("state")
+        if st.get("screen") != "dead" and (st.get("player") or {}).get("health", 0) > 0:
+            break
+        ctl2("click", "respawn")
+        wait(30)
     cmd("gamerule pvp true", "gamerule natural_health_regeneration false")
 
 
