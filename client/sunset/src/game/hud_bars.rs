@@ -237,6 +237,16 @@ pub(super) fn dragged_size(pointer_x: f32, left: f32, width: f32) -> f32 {
     (((pointer_x - left) / width.max(1.0) * 20.0).round() / 20.0).clamp(SIZES.0, SIZES.1)
 }
 
+// The size an element has after the wheel turned `notches` over its frame (up grows it): a twentieth a notch, at most
+// four a turn, kept inside SIZES.
+pub(super) fn wheeled_size(size: f32, notches: f32) -> f32 {
+    if notches == 0.0 || !notches.is_finite() {
+        return size;
+    }
+    let steps = if notches.abs() < 1.0 { notches.signum() } else { notches.round().clamp(-4.0, 4.0) };
+    (((size + steps * 0.05) * 20.0).round() / 20.0).clamp(SIZES.0, SIZES.1)
+}
+
 // The layout editor with the chat open: a frame round each element, a press on one takes it, its release ends the drag;
 // a right click on one sends it back.
 pub(super) fn chat_layout(game: &Game<'_>, dragging: Option<&'static str>, sized: &dyn Fn(&str) -> Option<f32>, out: &mut Vec<Shape>) -> Option<ChatDrag> {
@@ -713,6 +723,19 @@ fn shield(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_wheel_sizes_an_element_a_twentieth_a_notch_inside_the_sizes() {
+        assert_eq!(wheeled_size(1.0, 1.0), 1.05);
+        assert_eq!(wheeled_size(1.0, -1.0), 0.95);
+        // A smooth wheel's part of a notch is a notch; a spun wheel is four at most.
+        assert_eq!(wheeled_size(1.0, 0.25), 1.05);
+        assert_eq!(wheeled_size(1.0, -30.0), 0.8);
+        assert_eq!(wheeled_size(SIZES.1, 3.0), SIZES.1);
+        assert_eq!(wheeled_size(SIZES.0, -1.0), SIZES.0);
+        assert_eq!(wheeled_size(1.3, 0.0), 1.3);
+        assert_eq!(wheeled_size(1.3, f32::NAN), 1.3);
+    }
 
     #[test]
     fn the_compass_reads_north_at_the_games_yaw_180() {

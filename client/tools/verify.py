@@ -16371,6 +16371,53 @@ def _():
                 + (f"at {handle}: dragged to (size, position) {dragged}, after a right click {righted}" if window else "needs real presses (OFFSCREEN=0)"))
 
 
+@test("HUD layout editor (the wheel over a frame)")
+def _():
+    # With the chat open the wheel over the Coordinates' frame sets its size, a twentieth a notch: four notches up 1.2
+    # at a place of its own (Custom) and saved once the chat is shut; the wheel beside it (over no frame) and the wheel
+    # with the chat shut leave it alone; forty notches down stop at the smallest (0.5), eighty up at the largest (3).
+    reset()
+    for key, value in (("watermark", "false"), ("module list", "false"), ("fps", "false"), ("speed", "false"), ("facing", "false"),
+                       ("totems", "false"), ("coordinates", "true"), ("coordinates position", "Top left"), ("coordinates size", "1")):
+        setting("hud", key, value)
+    w, h = hud_size()
+
+    def coordinates():
+        rows = said_after(".settings hud", 6)
+        got = [r.split(": ", 1)[1] for key in ("Coordinates size", "Coordinates position") for r in rows if r.startswith(key + ":")]
+        return (float(got[0]), got[1]) if len(got) == 2 else (None, None)
+
+    def wheel(x, y, notches, chat=True, shot=None):
+        if chat:
+            ctl("key", "t", "tap")
+            wait(6)
+        # One notch a turn: a turn of several is cut to four.
+        for _ in range(abs(notches)):
+            ctl("scroll-at", str(x), str(y), "1" if notches > 0 else "-1")
+            wait(1)
+        wait(4)
+        if shot:
+            colour_frame(shot)
+        if chat:
+            ctl("key", "esc", "tap")
+            wait(4)
+        return coordinates()
+
+    start = coordinates()
+    beside = wheel(w / 2, h / 2, 4)
+    shut = wheel(8, 6, 4, chat=False)
+    up = wheel(8, 6, 4, shot="hud-wheel-up")
+    wait(12)
+    saved = next((v for k, v in saved_config().items() if k.lower().replace(" ", "").replace("_", "").endswith("coordinatessize")), None)
+    least = wheel(8, 6, -40)
+    most = wheel(8, 6, 80)
+    say(".reset hud")
+    ok = (start == (1.0, "Top left") and beside == start and shut == start and up[0] is not None and abs(up[0] - 1.2) < 0.001
+          and up[1] == "Custom" and saved is not None and abs(float(saved) - 1.2) < 0.001 and least[0] == 0.5 and most[0] == 3.0)
+    return ok, (f"(size, position) at first {start}, the wheel beside it {beside}, with the chat shut {shut}, four notches up "
+                f"{up} (saved {saved}), forty down {least}, eighty up {most}")
+
+
 @test("Effects (kill, crit sparks, break bursts, target aura)")
 def _():
     # Each new effect in a colour the scene has none of (Custom, Purple), in front of a wall, counted as purple pixels

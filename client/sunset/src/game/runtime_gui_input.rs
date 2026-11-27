@@ -547,10 +547,56 @@ pub(super) fn drag_widgets(game: &mut Game<'_>) {
     }
 }
 
+// When the wheel last set an element's size in the layout editor, until that is saved.
+static WHEELED: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+// The wheel over an element's frame in the chat's layout editor (the chat's scroll hook): an element with a size of its
+// own grows a twentieth a notch up and shrinks a notch down, at the place it has (as one resized by its corner).
+// True when it took the wheel, so the chat does not scroll under it; over anything else the chat scrolls as ever.
+// Saved once the wheel has rested (chat_layout), not at every notch.
+pub(crate) fn chat_layout_wheel(game: &Game<'_>, amount: f32) -> bool {
+    if amount == 0.0 || game.screen != Screen::Chat {
+        return false;
+    }
+    let Some((name, dx, dy)) = super::sunset_hud_bars::grab(game.cursor) else {
+        return false;
+    };
+    with(|s| {
+        if s.gui.open || s.gui.drag.is_some() {
+            return false;
+        }
+        let key = format!("{name} size");
+        let Some(size) = s.modules.iter().find(|m| m.settings.iter().any(|st| st.name == key)).map(|m| super::sunset_hud_bars::size_of(m, name)) else {
+            return false;
+        };
+        let next = super::sunset_hud_bars::wheeled_size(size, amount);
+        if next != size {
+            move_hud(s, game, name, dx, dy);
+            set_size(s, name, next);
+            *WHEELED.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+        }
+        true
+    })
+}
+
+// Whether a size the wheel set is due its save: the wheel at rest for 400 ms, or `now` (the chat shut).
+fn wheel_rested(now: bool) -> bool {
+    let mut wheeled = WHEELED.lock().unwrap_or_else(|e| e.into_inner());
+    let due = wheeled.is_some_and(|at| now || at.elapsed() >= std::time::Duration::from_millis(400));
+    if due {
+        *wheeled = None;
+    }
+    due
+}
+
 // HUD's layout editor with the chat open: every element is framed, a press on one drags it until the button comes up
-// (saved then), and a right click sends it back to its place. The chat closed, a drag still going ends there.
+// (saved then), and a right click sends it back to its place. The chat closed, a drag still going ends there. The wheel
+// over a frame sets its size (chat_layout_wheel).
 pub(super) fn chat_layout(game: &mut Game<'_>, out: &mut Vec<Shape>) {
     use super::sunset_hud_bars::ChatDrag;
+    if wheel_rested(game.screen != Screen::Chat) {
+        save(game);
+    }
     let dragging = with(|s| match s.gui.drag {
         Some(Drag::Hud(name, dx, dy)) => Some((name, dx, dy)),
         _ => None,

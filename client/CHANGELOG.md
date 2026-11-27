@@ -6,6 +6,12 @@ section of the version they build into the signed manifest, and the launcher sho
 - Sections: `### New`, `### Changed`, `### Fixed`, `### Removed`.
 - One short line per change (`- ...`); the GitHub release notes keep the long form.
 - An important change is written in bold (`- **...**`): the launcher highlights it.
+- `## Unreleased` holds what reached main after the last release was built; it becomes the next version's section.
+
+## Unreleased
+
+### New
+- HUD layout editor: with the chat open, the wheel over an element's frame sets its size too (up grows it, down shrinks it); over anything else the chat scrolls as before
 
 ## 2.1.0
 
