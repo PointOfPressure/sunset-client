@@ -15721,6 +15721,203 @@ def _():
     return ok, f"said: {said}; {got}; health {health}"
 
 
+# ---- .excavate <x1> <y1> <z1> <x2> <y2> <z2>: a box emptied with .mine's dig on .goto's walker (excavate.rs)
+
+EXCAVATE_END = ("Excavated ", "Stopped excavating", "Nothing to dig", "Use .excavate", "Not excavating", "on a side.",
+                "blocks away;", "is not loaded", "outside the world", ".excavate takes up to")
+
+
+def excavate_run(line, limit=240):
+    """Types an .excavate line and waits for the line that ends it: Sunset's lines since."""
+    mark = log_mark()
+    say(line)
+    t0 = time.time()
+    while time.time() - t0 < limit:
+        time.sleep(1)
+        lines = sunset_said(mark)
+        if any(end in text for text in lines for end in EXCAVATE_END):
+            break
+    wait(5)
+    return sunset_said(mark)
+
+
+def excavate_end(lines):
+    return next((text.split("[Sunset] ")[-1].strip() for text in lines if "Excavated " in text or "Stopped excavating" in text), None)
+
+
+def excavate_box(x1, y1, z1, x2, y2, z2):
+    """The command's corners for a box given from the arena's corner."""
+    return f"{X0 + x1} {y1} {Z0 + z1} {X0 + x2} {y2} {Z0 + z2}"
+
+
+@test(".excavate (a box beside you, a pit under you)")
+def _():
+    # A diamond pickaxe in hand. Beside: 4x3x3 of stone east of you, inside a stone block 6x4x5 that it is part of;
+    # only its 36 go, from the top, walking in as it opens. Under: 3x3x3 west of you down from the platform's own
+    # layer, on a stone base; its 27 go and you come down into the pit (falls of one block, no harm), the base
+    # under it stays. One move packet a tick.
+    got = {}
+    highway_ground()
+    reset()
+    cmd("clear @s")
+    slot(0, "diamond_pickaxe")
+    ctl("key", "1", "tap")
+    cmd(f"fill {X0+2} {Y+1} {Z0-2} {X0+7} {Y+4} {Z0+2} minecraft:stone")
+    wait(5)
+    wire = probe_mark() if probe_path() and SERVER else None
+    lines = excavate_run(".excavate " + excavate_box(2, Y + 1, -1, 5, Y + 3, 1), 300)
+    stats = wire_stats(wire) if wire is not None else None
+    got["beside: started"] = any(f"Excavating 4x3x3 from {X0 + 2} {Y + 1} {Z0 - 1} to {X0 + 5} {Y + 3} {Z0 + 1}: 36 blocks to dig." in t for t in lines)
+    got["beside: ended"] = excavate_end(lines)
+    got["beside: left in the box"] = highway_blocks(2, Y + 1, -1, 5, Y + 3, 1)
+    got["beside: stone round it"] = count(X0 + 2, Y + 1, Z0 - 2, X0 + 7, Y + 4, Z0 + 2, "stone")
+    got["beside: health"] = hp()
+    highway_ground()
+    reset()
+    cmd("clear @s")
+    slot(0, "diamond_pickaxe")
+    ctl("key", "1", "tap")
+    cmd(f"fill {X0-6} {Y-3} {Z0-3} {X0-1} {Y-1} {Z0+3} minecraft:stone")
+    wait(5)
+    lines = excavate_run(".excavate " + excavate_box(-4, Y - 2, -1, -2, Y, 1), 300)
+    got["pit: started"] = any("3x3x3" in t and "27 blocks to dig." in t for t in lines)
+    got["pit: ended"] = excavate_end(lines)
+    got["pit: left in the box"] = highway_blocks(-4, Y - 2, -1, -2, Y, 1)
+    got["pit: base under it"] = count(X0 - 4, Y - 3, Z0 - 1, X0 - 2, Y - 3, Z0 + 1, "stone")
+    got["pit: feet at"] = round(pos()[1] - Y, 1)
+    got["pit: health"] = hp()
+    cmd(f"fill {X0-6} {Y-3} {Z0-3} {X0-1} {Y-1} {Z0+3} minecraft:air")
+    highway_ground()
+    reset()
+    ok = (got["beside: started"] and got["beside: ended"] == "Excavated 36 blocks." and got["beside: left in the box"] == 0
+          and got["beside: stone round it"] == 84 and got["beside: health"] == 20
+          and got["pit: started"] and got["pit: ended"] == "Excavated 27 blocks." and got["pit: left in the box"] == 0
+          and got["pit: base under it"] == 9 and got["pit: feet at"] == -2 and got["pit: health"] == 20
+          and (stats is None or (stats[1] <= 1 and stats[2] == 0)))
+    return ok, f"{got}; " + (f"{stats[0]} ticks, at most {stats[1]} move packets in one, {stats[2]} server teleports" if stats else "no probe")
+
+
+@test(".excavate (words, what is left)")
+def _():
+    # What it refuses is said and starts nothing. Then 3x2x3 of stone east with bedrock in it (not counted, not
+    # dug), a water source shut in glass against one of its blocks and gravel on top of another: those two are left
+    # and counted, the other 15 go, and the water and the gravel stay where they are.
+    said, got = {}, {}
+    highway_ground()
+    reset()
+    cmd("clear @s")
+    has = lambda lines, text: any(text in line for line in lines)
+    before = pos()
+    said["usage"] = has(excavate_run(".excavate", 10), "Use .excavate <x1> <y1> <z1> <x2> <y2> <z2> or .excavate stop.")
+    said["three numbers"] = has(excavate_run(".excavate 1 2 3", 10), "Use .excavate <x1> <y1> <z1> <x2> <y2> <z2> (two corners")
+    said["a word"] = has(excavate_run(f".excavate {X0} {Y} {Z0} {X0 + 2} {Y} here", 10), "Use .excavate <x1> <y1> <z1> <x2> <y2> <z2> (two corners")
+    said["too long"] = has(excavate_run(".excavate " + excavate_box(0, Y + 1, 0, 64, Y + 1, 0), 10), "A box is at most 64 blocks on a side.")
+    said["too big"] = has(excavate_run(".excavate " + excavate_box(0, Y + 1, 0, 40, Y + 40, 40), 10), "takes up to 32768.")
+    said["out of the world"] = has(excavate_run(".excavate " + excavate_box(0, 318, 0, 1, 330, 1), 10), "That is outside the world.")
+    said["nothing there"] = has(excavate_run(".excavate " + excavate_box(2, Y + 1, 2, 4, Y + 3, 4), 10), "Nothing to dig in that box.")
+    said["far"] = has(excavate_run(".excavate " + excavate_box(200, Y, 0, 202, Y, 2), 10), "blocks away; .excavate starts within 64.")
+    said["no job"] = has(excavate_run(".excavate stop", 10), "Not excavating anything.")
+    got["moved by the refusals"] = round(flat(before, pos()), 2)
+    slot(0, "diamond_pickaxe")
+    ctl("key", "1", "tap")
+    cmd(f"fill {X0+2} {Y+1} {Z0-1} {X0+4} {Y+2} {Z0+1} minecraft:stone", f"setblock {X0+3} {Y+1} {Z0+1} minecraft:bedrock",
+        f"setblock {X0+5} {Y+1} {Z0-1} minecraft:glass", f"setblock {X0+5} {Y+1} {Z0+1} minecraft:glass",
+        f"setblock {X0+6} {Y+1} {Z0} minecraft:glass", f"setblock {X0+5} {Y+1} {Z0} minecraft:water",
+        f"setblock {X0+2} {Y+3} {Z0-1} minecraft:gravel")
+    wait(10)
+    lines = excavate_run(".excavate " + excavate_box(2, Y + 1, -1, 4, Y + 2, 1), 240)
+    said["17 to dig"] = has(lines, ": 17 blocks to dig.")
+    got["ended"] = excavate_end(lines)
+    got["left: by the water, under the gravel"] = (count(X0 + 4, Y + 1, Z0, X0 + 4, Y + 1, Z0, "stone"), count(X0 + 2, Y + 2, Z0 - 1, X0 + 2, Y + 2, Z0 - 1, "stone"))
+    got["bedrock"] = count(X0 + 3, Y + 1, Z0 + 1, X0 + 3, Y + 1, Z0 + 1, "bedrock")
+    got["stone left in the box"] = count(X0 + 2, Y + 1, Z0 - 1, X0 + 4, Y + 2, Z0 + 1, "stone")
+    got["gravel"] = count(X0 + 2, Y + 3, Z0 - 1, X0 + 2, Y + 3, Z0 - 1, "gravel")
+    got["water"] = count(X0 - 4, Y + 1, Z0 - 4, X0 + 8, Y + 2, Z0 + 4, "water")
+    health = hp()
+    highway_ground()
+    reset()
+    ok = (all(said.values()) and got["moved by the refusals"] < 0.3
+          and got["ended"] == "Excavated 15 blocks; 2 blocks are left: no way or line to them, or not safe to dig (a drop under, sand or gravel over, lava or water beside)."
+          and got["left: by the water, under the gravel"] == (1, 1) and got["bedrock"] == 1 and got["stone left in the box"] == 2
+          and got["gravel"] == 1 and got["water"] == 1 and health == 20)
+    return ok, f"said: {said}; {got}; health {health}"
+
+
+@test(".excavate (what stops it: a stop, a screen, the wrong tool, a .goto)")
+def _():
+    # East each time, 3x3x5 of dirt dug by hand. .excavate stop and .goto stop end it with blocks left; an open
+    # inventory only holds it and shut, it ends with the box empty; obsidian by hand is given up after 20 s; a .goto
+    # takes over from it.
+    said, got = {}, {}
+    has = lambda lines, text: any(text in line for line in lines)
+    box = excavate_box(2, Y + 1, -1, 6, Y + 3, 1)
+    dirt = lambda: count(X0 + 2, Y + 1, Z0 - 1, X0 + 6, Y + 3, Z0 + 1, "dirt")
+
+    def fresh():
+        highway_ground()
+        reset()
+        cmd("clear @s", f"fill {X0+2} {Y+1} {Z0-1} {X0+6} {Y+3} {Z0+1} minecraft:dirt")
+        wait(5)
+
+    def started(line, limit=60):
+        mark = log_mark()
+        say(line)
+        t0 = time.time()
+        while time.time() - t0 < limit and dirt() > 40:
+            time.sleep(0.5)
+        return mark
+
+    for stop in (".excavate stop", ".goto stop"):
+        fresh()
+        started(".excavate " + box)
+        lines = excavate_run(stop, 10)
+        said[stop] = has(lines, "Stopped excavating after ")
+        before = dirt()
+        time.sleep(8)
+        got[f"after {stop}"] = (before, dirt())
+    fresh()
+    mark = started(".excavate " + box)
+    ctl("key", "e", "tap")
+    wait(10)
+    before = dirt()
+    time.sleep(8)
+    got["held behind the inventory"] = (before, dirt())
+    ctl("key", "esc", "tap")
+    wait(3)
+    if state().get("screen") not in ("playing", None):
+        ctl("close")
+    t0 = time.time()
+    while time.time() - t0 < 240 and not any("Excavated " in t or "Stopped excavating" in t for t in sunset_said(mark)):
+        time.sleep(1)
+    got["after the inventory"] = excavate_end(sunset_said(mark))
+    got["dirt after the inventory"] = dirt()
+    highway_ground()
+    reset()
+    cmd("clear @s", f"setblock {X0+3} {Y+1} {Z0} minecraft:obsidian")
+    wait(5)
+    lines = excavate_run(".excavate " + excavate_box(3, Y + 1, 0, 3, Y + 1, 0), 60)
+    got["wrong tool"] = excavate_end(lines)
+    said["wrong tool"] = got["wrong tool"] == f"Stopped excavating after 0 blocks: obsidian at {X0 + 3} {Y + 1} {Z0} did not break in 20 s with what you hold."
+    fresh()
+    started(".excavate " + box)
+    mark = log_mark()
+    say(f".goto {X0 - 5} {Y + 1} {Z0}")
+    wait(10)
+    said["a .goto takes over"] = has(sunset_said(mark), "Stopped excavating after ") and has(sunset_said(mark), "a new walking goal started")
+    t0 = time.time()
+    while time.time() - t0 < 30 and flat(pos(), (X0 - 4.5, 0, Z0 + 0.5)) > 0.6:
+        time.sleep(1)
+    got["after the .goto"] = [round(v - o, 1) for v, o in zip(pos(), (X0, Y, Z0))]
+    health = hp()
+    highway_ground()
+    reset()
+    ok = (all(said.values()) and all(a == b and 0 < 45 - a for a, b in (got["after .excavate stop"], got["after .goto stop"]))
+          and got["held behind the inventory"][0] == got["held behind the inventory"][1]
+          and got["after the inventory"] == "Excavated 45 blocks." and got["dirt after the inventory"] == 0
+          and flat(got["after the .goto"], (-4.5, 0, 0.5)) < 0.7 and health == 20)
+    return ok, f"said: {said}; {got}; health {health}"
+
+
 # The Grim alerts of Sayer's two screenshots (3 Nov), the earlier one first: what the report's table must count.
 GRIM_LINES = [
     *[l for v in range(102, 108) for l in (f"Simulation (x{v}.0) .420000", f"GroundSpoof (x{v - 73}.0) claimed false")],

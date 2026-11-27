@@ -158,6 +158,7 @@ and setting names, the start of the name is enough.
 | `.goto <x> <y> <z>` | walk somewhere up to 128 blocks away; `.goto stop` or a movement key stops it |
 | `.mine <block> [count]` | walk to the nearest uncovered blocks of a kind within 32 blocks (`diamond`, `iron`, `log`, or a block id) and break them with what you hold, picking up what falls; it never tunnels. `.mine stop` or a movement key stops it, an open screen holds it |
 | `.highway <width> [height] [length]` | dig a straight tunnel the way you face (north, east, south or west; 1 to 5 wide, 2 to 5 high, 3 if not said; as long as `length`, or until stopped): each block ahead is broken with what you hold, holes in the floor are filled with whole blocks from your hotbar (obsidian first), and you walk on. `rails` adds a block along each edge, `nofloor` leaves the floor as it is. Lava or water in the way ends it. `.highway stop` or a movement key stops it, an open screen holds it |
+| `.excavate <x1> <y1> <z1> <x2> <y2> <z2>` | dig out every block in a box up to 64 a side (two corners, whole block coordinates) with what you hold: of the blocks in reach the highest goes first, so it works from the top down and you come down into the pit; otherwise it walks up to the nearest open one. A block over a drop of more than 3, under sand or gravel outside the box, or beside lava or water is left, and what is left is counted at the end. `.excavate stop` or a movement key stops it, an open screen holds it |
 | `.follow <player> [blocks]` | walk after a player in sight and stay 3 blocks (or `blocks`, 1 to 16) from them; `.follow stop` or a movement key stops it, an open screen holds it |
 | `.vclip <n>`, `.hclip <n>` | move n blocks up (negative: down) or forward |
 | `.plugins` | list loaded plugins with their modules and commands |
@@ -559,7 +560,7 @@ Speed's Grim collide mode follows the behaviour of Andromeda's Collide Boost and
 Finder's Reasons that of the base hints in Zorin, Radium, Sky, Odin, BepHax (Rotation Detector, Cave Air ESP) and
 Combatant; Villager Roller that of Lemon's Villager Roller (GPL-3.0); Sign Historian that of Path-Seeker's Sign Historian
 (a Meteor addon, GPL-3.0); Use Tracker that of Nuclear's Use Tracker, Arc's Pearl and Potion Prediction and Sky's Pearl
-Trajectory; `.highway` that of Meteor's Highway Builder (GPL-3.0). All written fresh for Sunset with no code taken.
+Trajectory; `.highway` and `.excavate` those of Meteor's Highway Builder and Excavator (GPL-3.0). All written fresh for Sunset with no code taken.
 
 Ore Sim's automatic seed discovery uses [horizon-seedcrackerx](https://github.com/luhnox/horizon-seedcrackerx) by
 [luhnox](https://github.com/luhnox), a Rust port of [SeedCrackerX](https://github.com/19MisterX98/SeedcrackerX),

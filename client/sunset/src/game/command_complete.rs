@@ -153,6 +153,7 @@ const COMMANDS: &[Command] = &[
     Command { name: "goto", aliases: &[], usage: "<x> <y> <z>|stop", about: "walk there through loaded terrain, up to 128 blocks", args: goto },
     Command { name: "follow", aliases: &[], usage: "<player> [blocks]|stop", about: "walk after a player in sight, staying a few blocks from them", args: follow },
     Command { name: "mine", aliases: &[], usage: "<block> [count]|stop", about: "walk to the nearest uncovered blocks of a kind and break them", args: mine },
+    Command { name: "excavate", aliases: &[], usage: "<x1> <y1> <z1> <x2> <y2> <z2>|stop", about: "dig out every block in a box, from the top down", args: excavate },
     Command { name: "highway", aliases: &[], usage: "<width> [height] [length] [rails] [nofloor]|stop", about: "dig a straight tunnel the way you face and floor it", args: highway },
     Command { name: "baritone", aliases: &["b"], usage: "status|goto|mine|stop|off|targets|help", about: "Full Baritone and bounded visible/Ore Sim mining", args: baritone },
     Command { name: "vclip", aliases: &[], usage: "<blocks>", about: "move up or down", args: blocks },
@@ -596,6 +597,25 @@ fn highway(_: &dyn Source, before: &[&str], _: &str) -> Step {
         list.push(Suggestion::new("nofloor", "leave holes in the floor as they are"));
     }
     if list.is_empty() { Step::Done } else { Step::Free { list, usage: "[height] [length] [rails] [nofloor]".into(), back: 0 } }
+}
+
+// .excavate's two corners, each offered as where you stand (the second one too: a box from there to here).
+fn excavate(src: &dyn Source, before: &[&str], _: &str) -> Step {
+    if before.first().is_some_and(|w| w.eq_ignore_ascii_case("stop")) {
+        return if before.len() == 1 { Step::Done } else { Step::Bad("Use .excavate <x1> <y1> <z1> <x2> <y2> <z2> or .excavate stop".into()) };
+    }
+    if let Some(bad) = before.iter().find(|c| c.parse::<i32>().is_err()) {
+        return Step::Bad(format!("{bad} is not a whole block coordinate"));
+    }
+    if before.len() >= 6 {
+        return Step::Done;
+    }
+    let mut list = coordinates(src, before.len() % 3);
+    if before.is_empty() {
+        list.push(Suggestion::new("stop", "stop excavating"));
+    }
+    let usage = ["<x1>", "<y1>", "<z1>", "<x2>", "<y2>", "<z2>"][before.len()..].join(" ");
+    Step::Free { list, usage: if before.is_empty() { format!("{usage}|stop") } else { usage }, back: 0 }
 }
 
 fn goto(src: &dyn Source, before: &[&str], _: &str) -> Step {

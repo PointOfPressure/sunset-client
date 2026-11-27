@@ -5,9 +5,9 @@
 // spring. It rides .goto's task, lease and stops (goto.rs) as .mine does; an open screen only holds it.
 // The idea is Meteor's Highway Builder; this is written fresh on Horizon's agent, none of its code.
 use super::sunset_goto as walk;
-use super::{Break, Game, TaskKind};
+use super::{Game, TaskKind};
 use crate::game::sunset_util as util;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 // A block still whole after this long is the wrong tool's (or bedrock).
@@ -203,28 +203,8 @@ pub(super) fn stop(game: &mut Game<'_>) -> Option<String> {
     Some(m.stopped(""))
 }
 
-// Puts the crosshair on the block and holds the attack button on it. Ok(false): no line to it from here.
 fn dig(game: &mut Game<'_>, pos: [i32; 3]) -> Result<bool, String> {
-    let before = game.world.block(pos[0], pos[1], pos[2]);
-    if game.aim_block(pos, None).is_err() {
-        return Ok(false);
-    }
-    let task = Break {
-        pos,
-        before,
-        items_before: game.dropped.iter().map(|i| i.id).collect(),
-        inventory: game.inventory_counts(),
-        started_tick: game.ticks,
-        collect_until: None,
-        broke_tick: 0,
-        drops: BTreeMap::new(),
-    };
-    walk::run(game, TaskKind::Break(Box::new(task)), DIG_SECONDS)?;
-    if let Err(e) = game.agent_mouse(winit::event::MouseButton::Left, true) {
-        walk::drop_walk(game);
-        return Err(e.to_string());
-    }
-    Ok(true)
+    walk::dig(game, pos, DIG_SECONDS)
 }
 
 // A walk into the middle of a cell of your lane. Ok(false): no way there.

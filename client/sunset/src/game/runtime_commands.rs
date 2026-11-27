@@ -67,6 +67,7 @@ const HELP: &[(&str, &str)] = &[
     (".goto <x> <y> <z>|stop", "walk there through loaded terrain, up to 128 blocks (by Rust); a movement key or a screen stops it"),
     (".follow <player> [blocks]|stop", "walk after a player in sight and stay that many blocks from them (3); a movement key stops it, a screen holds it"),
     (".mine <block> [count]|stop", "walk to the nearest uncovered blocks of a kind (diamond, iron, log, a block id) within 32 and break them; a movement key stops it, a screen holds it"),
+    (".excavate <x1> <y1> <z1> <x2> <y2> <z2>|stop", "dig out every block in a box (up to 64 a side) from the top down with what you hold; blocks over a drop or beside lava or water are left; a movement key stops it, a screen holds it"),
     (".highway <width> [height] [length] [rails] [nofloor]|stop", "dig a straight tunnel the way you face (1-5 wide, 2-5 high), fill holes in its floor from the hotbar and walk on; lava or water ends it, a movement key stops it, a screen holds it"),
     (".b / .baritone status|goto|mine|stop|off|targets|help", "Full Baritone and bounded visible/Ore Sim mining, bundled with Sunset"),
 ];
@@ -637,6 +638,10 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         }
         "mine" => {
             let text = super::agent::sunset_mine::command(game, &args[1..]).unwrap_or_else(|e| e);
+            say(game, &text);
+        }
+        "excavate" => {
+            let text = super::agent::sunset_excavate::command(game, &args[1..]).unwrap_or_else(|e| e);
             say(game, &text);
         }
         "highway" => {

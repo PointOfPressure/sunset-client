@@ -5,8 +5,8 @@
 // only holds it, as it does a follow.
 use crate::game::sunset_compat::SunsetGame as _;
 use super::sunset_goto as walk;
-use super::{Break, Game, TaskKind};
-use std::collections::{BTreeMap, HashSet};
+use super::{Game, TaskKind};
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 // How far it looks: a square of 32 blocks round you, 12 up and down.
@@ -152,28 +152,8 @@ fn look(game: &Game<'_>, word: &str, skip: &HashSet<[i32; 3]>) -> Vec<[i32; 3]> 
     found
 }
 
-// Puts the crosshair on the block and holds the attack button on it. Ok(false): no line to it from here.
 fn dig(game: &mut Game<'_>, pos: [i32; 3]) -> Result<bool, String> {
-    let before = game.world.block(pos[0], pos[1], pos[2]);
-    if game.aim_block(pos, None).is_err() {
-        return Ok(false);
-    }
-    let task = Break {
-        pos,
-        before,
-        items_before: game.dropped.iter().map(|i| i.id).collect(),
-        inventory: game.inventory_counts(),
-        started_tick: game.ticks,
-        collect_until: None,
-        broke_tick: 0,
-        drops: BTreeMap::new(),
-    };
-    walk::run(game, TaskKind::Break(Box::new(task)), DIG_SECONDS)?;
-    if let Err(e) = game.agent_mouse(winit::event::MouseButton::Left, true) {
-        walk::drop_walk(game);
-        return Err(e.to_string());
-    }
-    Ok(true)
+    walk::dig(game, pos, DIG_SECONDS)
 }
 
 // A walk to within `near` of the block, all the way (a path that only gets nearer is no use to a crosshair).

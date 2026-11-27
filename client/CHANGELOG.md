@@ -11,6 +11,7 @@ section of the version they build into the signed manifest, and the launcher sho
 ## Unreleased
 
 ### New
+- `.excavate <x1> <y1> <z1> <x2> <y2> <z2>`: digs out every block in a box (up to 64 a side) with what you hold, from the top down, walking up to what it can't reach and coming down into the pit; blocks over a drop, under sand or gravel outside the box or beside lava or water are left and counted. `.excavate stop` or a movement key stops it, an open screen only holds it
 - `.highway <width> [height] [length] [rails] [nofloor]`: digs a straight tunnel the way you face (1 to 5 wide, 2 to 5 high), fills holes in its floor with blocks from your hotbar and walks on, a block at a time; lava or water in the way ends it. `.highway stop` or a movement key stops it, an open screen only holds it
 - `.mine <block> [count]`: walks to the nearest uncovered blocks of a kind within 32 blocks (`diamond`, `iron`, `log`, or a block's id), breaks them with what you hold and picks up what falls; no tunnelling. `.mine stop` or a movement key stops it, an open screen only holds it
 - `.follow <player> [blocks]`: walks after a player in sight on `.goto`'s walker and stays 3 blocks from them (or the number you give); `.follow stop` or a movement key stops it, an open screen only holds it
