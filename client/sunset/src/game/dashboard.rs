@@ -669,8 +669,9 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     out.push(Shape::Fill([f[0], body, f[2], px], pal().dash_hairline));
     out.push(Shape::Fill([list[0], body, px, f[1] + f[3] - body], pal().dash_hairline));
     out.push(Shape::Fill([pane[0], body, px, f[1] + f[3] - body], pal().dash_hairline));
-    // The reworked style: a line under the module's band, which its settings scroll up to.
-    if !legacy() {
+    // The reworked style: a line under the module's band, which its settings scroll up to (none over a pane with
+    // nothing in it: a search that found nothing, with no module shown).
+    if !legacy() && !view(|v| v.chosen.is_none() && v.listed.ids.is_empty()) {
         out.push(Shape::Fill([pane[0], pane[1] - px, pane[2], px], pal().dash_hairline));
     }
 
@@ -825,9 +826,10 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         out.push(Shape::Text(fit_to(game, &none, list[2] + pane[2] - 24.0), [x, list[1] + 6.0], MUTED));
     }
     let tw = game.sunset_text_width(title) + 1.0;
-    // A search that found nothing says so below, without a count. The reworked style: the count under the title (as
-    // the module's description is under its name), and a line under the band as in the settings.
-    if page != 0 || view(|v| !v.listed.ids.is_empty()) {
+    // A search that found nothing says so below; the old style gives no count then. The reworked style: the count
+    // under the title (as the module's description is under its name; "0 modules" for a search that found nothing,
+    // so the title never stands alone), and a line under the band as in the settings.
+    if !legacy() || page != 0 || view(|v| !v.listed.ids.is_empty()) {
         if legacy() {
             out.push(Shape::Text(fit_to(game, &count, (list[2] - 20.0 - tw - 6.0).max(0.0)), [title_x + tw + 6.0, title_y], MUTED));
         } else {
