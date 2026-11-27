@@ -12532,6 +12532,17 @@ def vehicle_moves_a_tick(mark):
     return max(most, now)
 
 
+def ridden_speed(ticks=20, warm=0):
+    """Blocks a second across the ground with W held, by the game's own tick count (a slow rig's wait runs long)."""
+    ctl("key", "w", "down")
+    wait(warm)
+    a = state()
+    wait(ticks)
+    b = state()
+    ctl("key", "w", "up")
+    return flat(a["player"]["position"], b["player"]["position"]) / max(b["ticks"] - a["ticks"], 1) * 20
+
+
 @test("Entity Control (boat)")
 def _():
     # An oak boat on the platform, ridden with a right click, driven with W for 1 s: blocks a second without Entity
@@ -12557,10 +12568,7 @@ def _():
         return ctl("status").get("riding") is not None
 
     def speed(ticks=20):
-        a = pos()
-        held_keys(["w"], ticks)
-        b = pos()
-        return flat(a, b) * 20 / ticks
+        return ridden_speed(ticks)
 
     def leave():
         ctl("key", "shift", "down")
@@ -12602,6 +12610,149 @@ def _():
     return ok, (f"blocks a second {plain:.1f} off, {ten:.1f} at Speed 10, {twenty:.1f} at 20; Fly: up {y1 - y0:.2f} in 1 s, "
                 f"held {y2 - y1:+.3f} over 6 s, down to {y3 - y0:+.2f}, {lost:g} health lost landing; most MoveVehicle in "
                 f"a tick {most}; kicks {len(kicks) - kicked}")
+
+
+@test("Entity Control (mount)")
+def _():
+    # A saddled horse (speed attribute 0.1: about 4.3 blocks a second at its own gallop), ridden with /ride and driven
+    # with W looking east: as a horse without Entity Control, at Speed 10 and 20 with it, as a horse again with
+    # Mounts off, and at Speed 10 over a block one high (the horse's own step). Fly: Jump for 1 s lifts it (Vertical
+    # speed 6 = 0.3 a tick), 6 s with no key holds the height (Anti fly kick sinks 0.0313 every 40 ticks), Sprint
+    # brings it down, and landing from there costs you no health. The probe: one MoveVehicle a tick at most; no kick.
+    # Settings go in before each ride, on the platform: a ride that ended over its edge must not eat them.
+    kicked = len(kicks)
+    mark = probe_mark()
+    step = f"{X0 + 4} {Y + 1} {Z0 - 2} {X0 + 7} {Y + 1} {Z0 + 2}"
+
+    def horse(*settings):
+        reset("survival")
+        for key, value in settings:
+            setting("entitycontrol", key, value)
+        cmd("gamerule naturalRegeneration false",
+            f"summon horse {X0 + 0.5} {Y + 1} {Z0 + 0.5} {{Tame:1b,PersistenceRequired:1b,Silent:1b,"
+            'equipment:{saddle:{id:"minecraft:saddle",count:1}},attributes:[{id:"minecraft:movement_speed",base:0.1d}]}')
+        wait(10)
+        cmd("ride @s mount @e[type=horse,limit=1,sort=nearest]")
+        wait(10)
+        ctl("look", "-90", "0")
+        wait(2)
+        return ctl("status").get("riding") is not None
+
+    def leave():
+        ctl("key", "shift", "down")
+        wait(5)
+        ctl("key", "shift", "up")
+        cmd("kill @e[type=!player]")
+        wait(5)
+
+    rode = horse()
+    plain = ridden_speed(20, 3)
+    leave()
+    rode = horse(("boats", "true"), ("mounts", "true"), ("speed", "true"), ("horizontal speed", "10"), ("fly", "false")) and rode
+    toggle("entity control", True)
+    ten = ridden_speed(12, 3)
+    leave()
+    rode = horse(("horizontal speed", "20")) and rode
+    twenty = ridden_speed(6, 3)
+    leave()
+    rode = horse(("mounts", "false")) and rode
+    off = ridden_speed(20, 3)
+    leave()
+    cmd(f"fill {step} minecraft:stone")
+    rode = horse(("mounts", "true"), ("horizontal speed", "10")) and rode
+    stepped = ridden_speed(12, 3)
+    leave()
+    cmd(f"fill {step} minecraft:air")
+    rode = horse(("fly", "true")) and rode
+    y0 = pos()[1]
+    held_keys(["space"], 20)
+    y1 = pos()[1]
+    wait(120)
+    y2 = pos()[1]
+    before = hp()
+    held_keys(["ctrl"], int((y2 - y0) / 0.3) + 20)
+    wait(20)
+    y3 = pos()[1]
+    lost = health_lost(before)
+    most = vehicle_moves_a_tick(mark)
+    leave()
+    only()
+    reset()
+    say(".reset entitycontrol")
+    cmd("gamerule naturalRegeneration true")
+    ok = (rode and 1.5 < plain < 6 and 9 < ten < 10.6 and 18 < twenty < 21 and 1.5 < off < 6 and stepped > 8.5
+          and y1 - y0 > 4.5 and -0.2 < y2 - y1 <= 0.01 and y3 - y0 < 0.6 and lost == 0 and most == 1 and len(kicks) == kicked)
+    return ok, (f"blocks a second {plain:.1f} off, {ten:.1f} at Speed 10, {twenty:.1f} at 20, {off:.1f} with Mounts off, "
+                f"{stepped:.1f} over a step; Fly: up {y1 - y0:.2f} in 1 s, held {y2 - y1:+.3f} over 6 s, down to {y3 - y0:+.2f}, "
+                f"{lost:g} health lost landing; most MoveVehicle in a tick {most}; kicks {len(kicks) - kicked}")
+
+
+@test("Entity Control (other mounts, an unsaddled horse, a wall)")
+def _():
+    # Entity Control at Speed 10 on what else your client moves, and off what it does not: a saddled camel; a
+    # saddled pig while you hold its carrot on a stick, and the same pig once you hold nothing (the server moves it
+    # again: left alone); a tame horse with no saddle (never yours to move); and a saddled horse into a wall two
+    # high, where it stops and stays (no put-back, no kick). The probe: one MoveVehicle a tick at most.
+    kicked = len(kicks)
+    mark = probe_mark()
+    saddle = 'equipment:{saddle:{id:"minecraft:saddle",count:1}}'
+    wall = f"{X0 + 5} {Y + 1} {Z0 - 2} {X0 + 5} {Y + 3} {Z0 + 2}"
+
+    def ride(kind, tags, rod=False):
+        reset("survival")
+        for key, value in (("boats", "true"), ("mounts", "true"), ("speed", "true"), ("horizontal speed", "10"), ("fly", "false")):
+            setting("entitycontrol", key, value)
+        only("entity control")
+        if rod:
+            slot(0, "carrot_on_a_stick")
+        ctl("key", "1", "tap")
+        cmd(f"summon {kind} {X0 + 0.5} {Y + 1} {Z0 + 0.5} {{PersistenceRequired:1b,Silent:1b,{tags}}}")
+        wait(10)
+        cmd(f"ride @s mount @e[type={kind},limit=1,sort=nearest]")
+        wait(10)
+        ctl("look", "-90", "0")
+        wait(2)
+        return ctl("status").get("riding") is not None
+
+    def leave():
+        ctl("key", "shift", "down")
+        wait(5)
+        ctl("key", "shift", "up")
+        cmd("kill @e[type=!player]")
+        wait(5)
+
+    got, rode = {}, {}
+    rode["camel"] = ride("camel", f"Tame:1b,{saddle}")
+    got["camel"] = ridden_speed(12, 3)
+    leave()
+    rode["pig"] = ride("pig", saddle, rod=True)
+    got["pig with its rod"] = ridden_speed(12, 3)
+    ctl("key", "2", "tap")
+    wait(10)
+    got["pig, empty hand"] = ridden_speed(12, 3)
+    leave()
+    rode["bare horse"] = ride("horse", "Tame:1b")
+    got["horse, no saddle"] = ridden_speed(12, 3)
+    leave()
+    cmd(f"fill {wall} minecraft:stone")
+    rode["horse"] = ride("horse", f"Tame:1b,{saddle}")
+    held_keys(["w"], 25)
+    a = pos()
+    held_keys(["w"], 15)
+    b = pos()
+    still_riding = ctl("status").get("riding") is not None
+    most = vehicle_moves_a_tick(mark)
+    leave()
+    cmd(f"fill {wall} minecraft:air")
+    only()
+    reset()
+    say(".reset entitycontrol")
+    stopped = a[0] < X0 + 5 and flat(a, b) < 0.05
+    ok = (all(rode.values()) and 9 < got["camel"] < 10.6 and 9 < got["pig with its rod"] < 10.6 and got["pig, empty hand"] < 3
+          and got["horse, no saddle"] < 3 and stopped and still_riding and most == 1 and len(kicks) == kicked)
+    return ok, (f"blocks a second at Speed 10: { {k: round(v, 1) for k, v in got.items()} }; at the wall x {a[0] - X0:.2f} (wall at 5), "
+                f"moved {flat(a, b):.3f} held against it, riding {still_riding}; rode {rode}; most MoveVehicle in a tick {most}; "
+                f"kicks {len(kicks) - kicked}")
 
 
 @test("Fast Use (Throw modes)")

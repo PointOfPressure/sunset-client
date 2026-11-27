@@ -1,7 +1,9 @@
-// Entity Control (Sunset's, which takes in Boat Fly): the boat you drive goes where you look at the speed you set,
-// flies up with Jump and down with Sprint, and holds its height otherwise. Horizon simulates a driven boat on the
-// client and sends it once a tick (MoveVehicle), so the boat's own tick is where its motion is replaced. Animals
-// are driven by the server from your input on Horizon's server, and need a saddle on any server, so this is boats.
+// Entity Control (Sunset's, which takes in Boat Fly): the boat or the mount you drive goes where you look at the
+// speed you set, flies up with Jump and down with Sprint, and holds its height otherwise. Horizon simulates a
+// driven boat on the client and sends it once a tick (MoveVehicle), so the boat's own tick is where its motion is
+// replaced. A mount is the same when your client is the one that moves it: a saddled horse, donkey, mule or camel
+// you sit first on, a pig or strider you steer with its rod, a harnessed happy ghast. Any other animal is moved by
+// the server and is left alone, and a mount that comes down from high up takes the fall the server counts.
 
 use super::sunset::{Category, Module, with};
 use super::Game;
@@ -11,7 +13,9 @@ use winit::keyboard::KeyCode;
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new("Entity Control", Category::Movement, "Drives and flies boats.")
+        Module::new("Entity Control", Category::Movement, "Drives and flies boats and saddled mounts.")
+            .bool("Boats", true)
+            .bool("Mounts", true)
             .bool("Lock yaw", true)
             .bool("Speed", true)
             .num("Horizontal speed", 10.0, 1.0, 50.0, 0.5)
@@ -31,7 +35,12 @@ static SINK_IN: AtomicU32 = AtomicU32::new(0);
 // What the driven boat's motion this tick becomes, from the motion its own tick gave it (`velocity`), whether it
 // stands on something and is in water; None when Entity Control is off.
 pub(super) fn boat(game: &Game<'_>, velocity: Vec3, on_ground: bool, in_water: bool) -> Option<(Vec3, Option<f32>)> {
-    with(|s| s.module("Entity Control").filter(|m| m.on).map(|m| drive(game, m, velocity, on_ground, in_water)))
+    with(|s| s.module("Entity Control").filter(|m| m.on && m.b("Boats")).map(|m| drive(game, m, velocity, on_ground, in_water)))
+}
+
+// The same for the mount your client moves (its motion after its own tick); None when Entity Control or Mounts is off.
+pub(super) fn mount(game: &Game<'_>, velocity: Vec3, on_ground: bool, in_water: bool) -> Option<(Vec3, Option<f32>)> {
+    with(|s| s.module("Entity Control").filter(|m| m.on && m.b("Mounts")).map(|m| drive(game, m, velocity, on_ground, in_water)))
 }
 
 fn drive(game: &Game<'_>, m: &Module, velocity: Vec3, on_ground: bool, in_water: bool) -> (Vec3, Option<f32>) {

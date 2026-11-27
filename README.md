@@ -241,7 +241,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   **Anti Void** (with a Blink mode), **Click TP**. (Blink is now Fake Lag's Hold mode, under Combat.)
 - **Elytra Fly** (Control: fly freely; Boost: speeds up your glide, optionally only while a firework boosts you;
   Bounce, Glide cycle and Pitch 40 for long trips; Elytra Boost's settings carry over), **Chest Swap** (swap chestplate and elytra; Take off launches you with a rocket).
-- **Wind Jump**, **Pearl Catch**, **Trident Boost**, **Entity Control** (drive and fly boats), **Jesus**, **Slippy**.
+- **Wind Jump**, **Pearl Catch**, **Trident Boost**, **Entity Control** (drive and fly boats and saddled mounts), **Jesus**, **Slippy**.
 
 </details>
 

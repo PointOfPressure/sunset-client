@@ -339,7 +339,7 @@ pub(super) fn aliases(name: &str) -> &'static str {
         "Anchor Aura" => "anchor macro double anchor anchor placer anchor exploder safe anchor anchor pearl catch anchorpearlcatch",
         "Anvil" => "anti anvil self anvil auto anvil",
         "Xray" => "x-ray",
-        "Entity Control" => "boat fly boatfly entity speed entity fly horse ride vehicle",
+        "Entity Control" => "boat fly boatfly entity speed entity fly horse donkey mule camel pig strider mount ride vehicle",
         "Clear Water" => "water opacity see through transparent",
         "No Render" => "no hide fog fog water darkness blindness overlay particles particle render optimizer renderoptimizer hurt cam hurtcam scoreboard titles title hotbar text held item name",
         _ => "",
