@@ -426,11 +426,8 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         out.push(Shape::Text(text, [bx + 4.0, r[1] + text_y(row_hh())], colour));
         bw
     };
-    // A value box with a mark at its end (one-line rows): ">" for a value a click steps on, "..." for a list a click
-    // opens; how wide.
-    let marked_box = |out: &mut Vec<Shape>, text: &str, r: [f32; 4], list: bool| -> f32 {
-        value_box(out, &format!("{text} {}", if list { "..." } else { ">" }), r, 0xE4E4E4)
-    };
+    // A value box with ">" at its end (one-line rows: a click steps it on, or opens its list); how wide.
+    let marked_box = |out: &mut Vec<Shape>, text: &str, r: [f32; 4]| -> f32 { value_box(out, &format!("{text} >"), r, 0xE4E4E4) };
     // A number being typed in its slider row: the field's width (the draft and its caret are drawn in it).
     let typing = |i: usize, j: usize| editing.as_ref().filter(|e| e.inline && e.module == i && e.setting == j).and_then(|e| e.draft.as_ref().ok());
     // One row of a panel or of the settings window: what it shows, and its name when it had to be cut short.
@@ -558,7 +555,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                             x + rw - RIGHT_PAD - from + 3.0
                         }
                         // One line: a mark that a click steps it on.
-                        None if super::sunset_dashboard::one_line() => marked_box(out, &st.value_text(), r, false),
+                        None if super::sunset_dashboard::one_line() => marked_box(out, &st.value_text(), r),
                         None => value_box(out, &st.value_text(), r, 0xE4E4E4),
                     },
                     // A list of blocks, items, mobs or players: how many it holds, in a box (a click opens its picker).
@@ -577,7 +574,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                         let room = x + rw - RIGHT_PAD - setting_x - 3.0;
                         let text = if width_of(game, st.label()) + width_of(game, &full) + 8.0 > room { full.split(' ').next().unwrap_or_default().to_owned() } else { full };
                         // One line: a mark that a click opens its list.
-                        if super::sunset_dashboard::one_line() { marked_box(out, &text, r, true) } else { value_box(out, &text, r, 0xE4E4E4) }
+                        if super::sunset_dashboard::one_line() { marked_box(out, &text, r) } else { value_box(out, &text, r, 0xE4E4E4) }
                     }
                     Value::Text(_) => {
                         // The text itself: the name keeps its width, the text gets what is left (a quarter at least).

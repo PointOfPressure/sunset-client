@@ -762,7 +762,8 @@ pub(super) fn segments(game: &Game<'_>, r: [f32; 4], of: &[&str]) -> Option<Vec<
     }
     let (n, end) = (of.len() as f32, r[0] + r[2] - RIGHT_PAD);
     let share = ((end - control_x(r)) / n).floor();
-    if of.iter().any(|o| game.sunset_text_width(o) + 6.0 > share) {
+    // Room around each name too, so the picked one's light is not tight on it.
+    if of.iter().any(|o| game.sunset_text_width(o) + 12.0 > share) {
         return None;
     }
     let x0 = end - share * n;

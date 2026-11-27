@@ -67,6 +67,8 @@ struct View {
     lined: Vec<Hit>,
     hover: Option<(Hit, Instant)>,
     left: Option<(Hit, Instant)>,
+    // A module was just picked: during a search its settings scroll to the first one the search matched.
+    focus: bool,
     lit: [u32; 2],
     opened: Option<Instant>,
 }
@@ -81,6 +83,7 @@ static VIEW: Mutex<View> = Mutex::new(View {
     lined: Vec::new(),
     hover: None,
     left: None,
+    focus: false,
     lit: [0; 2],
     opened: None,
 });
@@ -288,6 +291,11 @@ pub(super) fn prepare(s: &State) {
             if v.listed.query != menu.search && !menu.search.trim().is_empty() {
                 v.chosen = None;
             }
+            // A search ended: the settings it scrolled to its find go back to their top.
+            if menu.search.trim().is_empty() && !v.listed.query.trim().is_empty() {
+                v.pane.scroll = 0.0;
+                smooth::jump(smooth::PANE);
+            }
             v.listed.ids.clear();
             v.listed.ids.extend(ids);
             v.listed.page = page;
@@ -302,9 +310,10 @@ pub(super) fn prepare(s: &State) {
         if !keep && !v.chosen.is_some_and(|i| v.listed.ids.contains(&i)) {
             v.chosen = v.listed.ids.first().copied();
             v.pane.scroll = 0.0;
+            v.focus = true;
             smooth::jump(smooth::PANE);
         }
-        let View { listed, list, pane, chosen, cards, lined, .. } = v;
+        let View { listed, list, pane, chosen, cards, lined, focus, .. } = v;
         list.rows.clear();
         let mut y = 0.0;
         // Under each module a search found, the settings it matched there, to change in place as in the panels.
@@ -334,7 +343,7 @@ pub(super) fn prepare(s: &State) {
             // The bind has a card of its own, as every section has.
             y += CARD_PAD;
             for (n, hit) in std::iter::once(Hit::Bind(i)).chain(bind.into_iter().map(|j| Hit::Setting(i, j))).enumerate() {
-                if n > 0 {
+                if n > 0 && legacy() {
                     lined.push(hit);
                 }
                 pane.rows.push((y, hit));
@@ -358,7 +367,9 @@ pub(super) fn prepare(s: &State) {
                     cards.push(Card { top: y, bottom: y, title: group });
                     y += if group.is_some() { TITLE_H } else { CARD_PAD };
                     section = Some(group);
-                } else {
+                } else if legacy() {
+                    // (The reworked style draws no line between a section's settings: its card holds them, and the
+                    // same setting listed under a search's find would get the line too.)
                     lined.push(hit);
                 }
                 pane.rows.push((y, hit));
@@ -374,6 +385,17 @@ pub(super) fn prepare(s: &State) {
             y += PAD;
         }
         pane.content = y;
+        // Picked during a search: its settings start at the first the search matched in it.
+        if std::mem::take(focus)
+            && !legacy()
+            && !menu.search.trim().is_empty()
+            && let Some(i) = *chosen
+            && let Some(&j) = listed.ids.iter().position(|&x| x == i).and_then(|k| listed.settings.get(k)).and_then(|found| found.first())
+            && let Some(&(off, _)) = pane.rows.iter().find(|(_, hit)| *hit == Hit::Setting(i, j))
+        {
+            pane.scroll = off;
+            smooth::jump(smooth::PANE);
+        }
         pane.stops.insert(0, (0.0, Hit::Dash(Part::Frame)));
         list.scroll = snap_scroll(&list.stops, list.content, room, list.scroll, 0);
         pane.scroll = snap_scroll(&pane.stops, pane.content, pane_room, pane.scroll, 0);
@@ -496,6 +518,7 @@ pub(super) fn choose(i: usize) {
         if v.chosen != Some(i) {
             v.chosen = Some(i);
             v.pane.scroll = 0.0;
+            v.focus = true;
             smooth::jump(smooth::PANE);
         }
     });
@@ -791,12 +814,21 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     // A search that finds nothing says so in the list.
     if page == 0 && view(|v| v.listed.ids.is_empty()) {
         let none = format!("Nothing matches \"{}\"", menu.search.trim());
-        out.push(Shape::Text(fit_to(game, &none, list[2] + pane[2] - 24.0), [list[0] + 10.0, list[1] + 6.0], MUTED));
+        let x = if legacy() { list[0] + 10.0 } else { list[0] + super::sunset::indent().max(6.0) };
+        out.push(Shape::Text(fit_to(game, &none, list[2] + pane[2] - 24.0), [x, list[1] + 6.0], MUTED));
     }
     let tw = game.sunset_text_width(title) + 1.0;
-    // A search that found nothing says so below, without a count.
+    // A search that found nothing says so below, without a count. The reworked style: the count under the title (as
+    // the module's description is under its name), and a line under the band as in the settings.
     if legacy() || page != 0 || view(|v| !v.listed.ids.is_empty()) {
-        out.push(Shape::Text(fit_to(game, &count, (list[2] - 20.0 - tw - 6.0).max(0.0)), [title_x + tw + 6.0, title_y], MUTED));
+        if legacy() {
+            out.push(Shape::Text(fit_to(game, &count, (list[2] - 20.0 - tw - 6.0).max(0.0)), [title_x + tw + 6.0, title_y], MUTED));
+        } else {
+            out.push(Shape::Text(fit_to(game, &count, (list[2] - 16.0).max(0.0)), [title_x, band_y + ABOUT_Y], MUTED));
+        }
+    }
+    if !legacy() {
+        out.push(Shape::Fill([list[0], list[1] - px, list[2], px], pal().dash_hairline));
     }
 
     // The list's rows: the chosen one lit (an enabled module's name is in the accent colour: draw_row).
@@ -810,7 +842,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
             if v.chosen == Some(i) {
                 // The chosen module: lit, with the light bar the panels put by a module whose settings are open (the
                 // accent colour is for what is on), so a row only pointed at never looks the same.
-                let (fill, bar) = if legacy() { (0x22FF_FFFF, 2.0) } else { (0x30FF_FFFF, 3.0) };
+                let (fill, bar) = if legacy() { (0x22FF_FFFF, 2.0) } else { (0x46FF_FFFF, 3.0) };
                 out.push(Shape::Fill([list[0], y, list[2] - if legacy() { 0.0 } else { 4.0 }, module_h()], fill));
                 out.push(Shape::Fill([list[0], y, bar, module_h()], 0xFFE4_E4E4));
             }
@@ -859,12 +891,11 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         switch(out, t, m.on, lit);
     } else if pane[2] > 60.0 {
         // No module chosen (a new search, one that finds nothing): the pane says how one gets there.
-        // A search with no finds says so once, in the list.
+        // A search with no finds (and no module shown before it) says what brings the modules back.
         let nothing = !legacy() && page == 0 && view(|v| v.listed.ids.is_empty());
-        if !nothing {
-            let text = fit_to(game, "Right click a module to see its settings here", pane[2] - 2.0 * CARD_M - 4.0);
-            out.push(Shape::Text(text, [pane[0] + CARD_M + 2.0, pane[1] + 6.0], MUTED));
-        }
+        let text = if nothing { "Esc clears the search and brings the modules back" } else { "Right click a module to see its settings here" };
+        let text = fit_to(game, text, pane[2] - 2.0 * CARD_M - 4.0);
+        out.push(Shape::Text(text, [pane[0] + CARD_M + 2.0, pane[1] + 6.0], MUTED));
     }
 
     // Its sections: a card each, with its title.
