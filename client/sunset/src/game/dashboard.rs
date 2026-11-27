@@ -18,6 +18,10 @@ pub(super) enum Part {
     Frame,
     Page(usize),
     Toggle,
+    // The reworked style: the cross that empties the search, and the profile at the foot of the categories (it opens
+    // the Profiles menu).
+    Clear,
+    Profile,
     // The Sidebar style's parts (sidebar.rs): the calls here go there while it is the style.
     Side(super::sunset_sidebar::Part),
 }
@@ -131,7 +135,7 @@ const SEARCH_MAX: f32 = 300.0;
 const HEADER_H: f32 = 28.0;
 const BAND_H: f32 = 34.0;
 // The reworked style's band: the module's name keeps its place whether its description takes one line or two.
-const BAND_TALL: f32 = 42.0;
+const BAND_TALL: f32 = 46.0;
 
 fn band_h() -> f32 {
     if legacy() { BAND_H } else { BAND_TALL }
@@ -149,6 +153,9 @@ const CARD_GAP: f32 = 6.0;
 const CARD_PAD: f32 = 3.0;
 const CARD_IN: f32 = 2.0;
 const TITLE_H: f32 = 13.0;
+// The reworked style's band: the name's line, and where its description starts.
+const TITLE_Y: f32 = 5.0;
+const ABOUT_Y: f32 = 17.0;
 
 const MUTED: u32 = 0x8C8C94;
 // A lit row or category at its brightest.
@@ -191,11 +198,30 @@ fn columns(s: &State) -> ([f32; 4], [f32; 4]) {
     ([x + SIDE, top, list, list_room], [x + SIDE + list, top, rest - list, room])
 }
 
+// The search box in the header: in the reworked style the same share of it at every scale.
+fn search_rect(s: &State) -> [f32; 4] {
+    let (f, (list, pane)) = (frame(s), columns(s));
+    let w = if legacy() { (list[2] + pane[2] - 2.0 * CARD_M).clamp(0.0, SEARCH_MAX) } else { ((list[2] + pane[2]) * 0.5).floor() };
+    [list[0] + CARD_M, f[1] + (HEADER_H - SEARCH_H) / 2.0, w, SEARCH_H]
+}
+
+// The cross at the search box's end.
+fn clear_rect(s: &State) -> [f32; 4] {
+    let r = search_rect(s);
+    [r[0] + r[2] - SEARCH_H, r[1], SEARCH_H, SEARCH_H]
+}
+
+// The profile in use, at the foot of the categories: a button that opens the Profiles menu.
+fn profile_rect(s: &State) -> [f32; 4] {
+    let f = frame(s);
+    [f[0] + 8.0, f[1] + f[3] - 34.0, SIDE - 16.0, 26.0]
+}
+
 // The chosen module's switch.
 fn toggle_rect(s: &State) -> [f32; 4] {
     let pane = columns(s).1;
     let band = band_h();
-    let y = if legacy() { pane[1] - band + (band - TOGGLE_H) / 2.0 } else { pane[1] - band + 6.0 };
+    let y = if legacy() { pane[1] - band + (band - TOGGLE_H) / 2.0 } else { pane[1] - band + TITLE_Y + 0.5 };
     [pane[0] + pane[2] - CARD_M - CARD_IN - super::sunset::RIGHT_PAD - TOGGLE_W, y, TOGGLE_W, TOGGLE_H]
 }
 
@@ -271,7 +297,9 @@ pub(super) fn prepare(s: &State) {
             v.listed.hidden = hidden;
         }
         // The first module listed, until another is chosen.
-        if !v.chosen.is_some_and(|i| v.listed.ids.contains(&i)) {
+        // (A search that finds nothing keeps the module shown before it, in the reworked style.)
+        let keep = !legacy() && v.listed.ids.is_empty() && v.chosen.is_some();
+        if !keep && !v.chosen.is_some_and(|i| v.listed.ids.contains(&i)) {
             v.chosen = v.listed.ids.first().copied();
             v.pane.scroll = 0.0;
             smooth::jump(smooth::PANE);
@@ -434,12 +462,22 @@ pub(super) fn hits(s: &State) -> Vec<([f32; 4], Hit)> {
     if view(|v| v.chosen.is_some()) {
         out.push((toggle_rect(s), Hit::Dash(Part::Toggle)));
     }
+    if !legacy() {
+        if !dash_menu(s).search.is_empty() {
+            out.push((clear_rect(s), Hit::Dash(Part::Clear)));
+        }
+        out.push((profile_rect(s), Hit::Dash(Part::Profile)));
+    }
     out
 }
 
 pub(super) fn press(s: &mut State, part: Part, right: bool) {
     if let Part::Side(p) = part {
         super::sunset_sidebar::press(s, p);
+        return;
+    }
+    if let (Part::Clear, false) = (part, right) {
+        dash_search_clear(s);
         return;
     }
     if let (Part::Page(page), false) = (part, right) {
@@ -613,21 +651,31 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         // which says both, is under the window).
         let nw = game.sunset_text_width("Sunset") + 1.0;
         out.push(Shape::Text(super::sunset::VERSION.to_owned(), [f[0] + 14.0 + nw + 5.0, f[1] + text_y(HEADER_H)], MUTED));
-        let profile = with_profile(s);
-        let room = SIDE - 26.0;
-        for (n, line) in ["Profile".to_owned(), fit_to(game, &profile, room)].into_iter().enumerate() {
-            out.push(Shape::Text(line, [f[0] + 18.0, f[1] + f[3] - 30.0 + n as f32 * 11.0], if n == 0 { MUTED } else { 0xD4D4D8 }));
+        // The profile: a button (a click opens the Profiles menu), its text in line with the categories' names.
+        let b = profile_rect(s);
+        let lit = glow(Hit::Dash(Part::Profile));
+        out.push(Shape::Round(b, control_radius().max(3.0), pal().dash_control));
+        if lit > 0 {
+            out.push(Shape::Round(b, control_radius().max(3.0), lit << 24 | 0x00FF_FFFF));
         }
+        let profile = fit_to(game, &with_profile(s), b[2] - 22.0);
+        out.push(Shape::Text("Profile".to_owned(), [b[0] + 10.0, b[1] + 3.0], MUTED));
+        out.push(Shape::Text(profile, [b[0] + 10.0, b[1] + 14.0], 0xE4E4E4));
+        out.push(Shape::Text(">".to_owned(), [b[0] + b[2] - 10.0, b[1] + text_y(b[3])], MUTED));
     }
-    // The search box: in the reworked style the same share of the header at every scale, the hints after it.
-    let search_w = if legacy() { (list[2] + pane[2] - 2.0 * CARD_M).clamp(0.0, SEARCH_MAX) } else { ((list[2] + pane[2]) * 0.5).floor() };
-    let r = [list[0] + CARD_M, f[1] + (HEADER_H - SEARCH_H) / 2.0, search_w, SEARCH_H];
+    // The search box, the hints after it.
+    let r = search_rect(s);
     let selected = menu.select_all && !menu.search.is_empty();
     out.push(Shape::Round(r, radius, if selected { 0xFF30_60B0 } else { pal().dash_control }));
     // No caret while a bind waits for its key or the Profiles menu is open: typing does not go to the box then.
     let (binding, menu_open) = (menu.binding, menu.menu_open);
     let empty = if legacy() { "Search modules" } else { "Search modules and settings" };
-    search_text(game, out, r, menu.search, if binding || menu_open { usize::MAX } else { menu.search.len() }, empty);
+    // The reworked style: a cross at its end while it holds a search (a click empties it).
+    let text_r = if legacy() || menu.search.is_empty() { r } else { [r[0], r[1], r[2] - SEARCH_H + 4.0, r[3]] };
+    search_text(game, out, text_r, menu.search, if binding || menu_open { usize::MAX } else { menu.search.len() }, empty);
+    if !legacy() && !menu.search.is_empty() {
+        super::sunset::cross(out, clear_rect(s), hover == Some(Hit::Dash(Part::Clear)));
+    }
     // What the clicks and keys do: on a strip over the window as over the panels, where the screen has the room
     // above it; else beside the search box, as many of the hints (the first matter most) as fit there whole. The
     // reworked style keeps them in the header at every scale; "Enter" only while a search lists something, and while a
@@ -637,12 +685,21 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     let enter = legacy() || super::sunset::first_match(s).is_some();
     let hint = super::sunset::gui_hint(binding, menu_open, searching && enter);
     let hint = match (legacy(), searching && !finds && !binding && !menu_open) {
-        (true, _) => hint,
-        (false, true) => "Backspace: edit the search   Esc: close",
-        (false, false) => hint.strip_prefix("Press a key or a mouse button   ").unwrap_or(hint),
+        (true, _) => hint.to_owned(),
+        (false, true) => "Esc: clear the search".to_owned(),
+        // Enter names what it will do; while searching, Esc empties the search first.
+        (false, false) => {
+            let hint = hint.strip_prefix("Press a key or a mouse button   ").unwrap_or(hint);
+            let named = super::sunset::first_match(s).map(|i| format!("Enter: turn {} {}", s.modules[i].name, if s.modules[i].on { "off" } else { "on" }));
+            let hint = match named {
+                Some(enter) if searching => hint.replace("Enter: toggle the first result", &enter),
+                _ => hint.to_owned(),
+            };
+            if searching { hint.replace("Esc: close", "Esc: clear the search") } else { hint }
+        }
     };
     if f[1] >= 15.0 && legacy() {
-        let hint = fit_to(game, hint, menu.view_w - 16.0);
+        let hint = fit_to(game, &hint, menu.view_w - 16.0);
         let hw = game.sunset_text_width(&hint);
         let strip = [((menu.view_w - hw) / 2.0 - 6.0).floor(), f[1] - 14.0, hw + 12.0, 12.0];
         out.push(Shape::Round(strip, radius, pal().dash_surface));
@@ -660,10 +717,26 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
                 }
                 kept.join("   ")
             })
-            .find(|text| game.sunset_text_width(text) <= to - from);
+            .find(|text| game.sunset_text_width(text) + if legacy() { 0.0 } else { 6.0 * text.matches("   ").count() as f32 } <= to - from);
         if let Some(text) = shown {
-            let tw = game.sunset_text_width(&text);
-            out.push(Shape::Text(text, [to - tw, f[1] + text_y(HEADER_H)], MUTED));
+            if legacy() {
+                let tw = game.sunset_text_width(&text);
+                out.push(Shape::Text(text, [to - tw, f[1] + text_y(HEADER_H)], MUTED));
+            } else {
+                // Each hint on its own, a dot between them, so they do not run together into one sentence.
+                let parts: Vec<&str> = text.split("   ").collect();
+                let mut x = to;
+                for (n, part) in parts.iter().rev().enumerate() {
+                    if n > 0 {
+                        x -= 6.0;
+                        out.push(Shape::Round([x - 1.0, f[1] + (HEADER_H / 2.0).floor() - 1.0, 2.0, 2.0], 1.0, 0xFF5A_5A62));
+                        x -= 6.0;
+                    }
+                    let tw = game.sunset_text_width(part);
+                    x -= tw;
+                    out.push(Shape::Text((*part).to_owned(), [x, f[1] + text_y(HEADER_H)], MUTED));
+                }
+            }
         }
     }
 
@@ -685,17 +758,22 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         out.push(if p == page { Shape::Plain(label, at, 0xFFFFFF, true) } else { Shape::Head(label, at, 0xD4D4D8) });
         if !legacy() {
             let listed = s.modules.iter().filter(|m| m.category == CATEGORIES[p - 1] && m.in_gui && !hidden.contains(&m.name));
+            // Nothing where none is on.
             let on = listed.filter(|m| m.on).count();
-            let count = format!("{on} on");
-            let at = [r[0] + r[2] - 8.0 - game.sunset_text_width(&count), r[1] + text_y(r[3])];
-            out.push(if p == page { Shape::Plain(count, at, 0xFFE8DC, true) } else { Shape::Text(count, at, MUTED) });
+            if on > 0 {
+                let count = format!("{on} on");
+                let at = [r[0] + r[2] - 8.0 - game.sunset_text_width(&count), r[1] + text_y(r[3])];
+                out.push(if p == page { Shape::Plain(count, at, 0xFFE8DC, true) } else { Shape::Text(count, at, MUTED) });
+            }
         }
     }
 
     // The module list's title: the category (or the search) and how many modules it lists.
     let (title, count) = view(|v| (if page == 0 { "Search" } else { CATEGORIES[page - 1].label() }, v.listed.ids.len()));
-    let band_y = list[1] - BAND_H;
-    out.push(Shape::Head(title.to_owned(), [list[0] + 10.0, band_y + text_y(BAND_H)], 0xFFFFFF));
+    let band_y = list[1] - band_h();
+    // The reworked style: on the module title's line, at the rows' names' inset.
+    let (title_x, title_y) = if legacy() { (list[0] + 10.0, band_y + text_y(BAND_H)) } else { (list[0] + super::sunset::indent().max(6.0), band_y + TITLE_Y) };
+    out.push(Shape::Head(title.to_owned(), [title_x, title_y], 0xFFFFFF));
     // What the number counts: the category's modules, or the search's finds.
     let on = view(|v| v.listed.ids.iter().filter(|&&i| s.modules[i].on).count());
     let settings = view(|v| v.list.rows.iter().filter(|(_, hit)| matches!(hit, Hit::Setting(..))).count());
@@ -716,7 +794,10 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         out.push(Shape::Text(fit_to(game, &none, list[2] + pane[2] - 24.0), [list[0] + 10.0, list[1] + 6.0], MUTED));
     }
     let tw = game.sunset_text_width(title) + 1.0;
-    out.push(Shape::Text(fit_to(game, &count, (list[2] - 20.0 - tw - 6.0).max(0.0)), [list[0] + 10.0 + tw + 6.0, band_y + text_y(BAND_H)], MUTED));
+    // A search that found nothing says so below, without a count.
+    if legacy() || page != 0 || view(|v| !v.listed.ids.is_empty()) {
+        out.push(Shape::Text(fit_to(game, &count, (list[2] - 20.0 - tw - 6.0).max(0.0)), [title_x + tw + 6.0, title_y], MUTED));
+    }
 
     // The list's rows: the chosen one lit (an enabled module's name is in the accent colour: draw_row).
     let scroll = smooth::shown(smooth::DASHBOARD, list_scroll());
@@ -763,13 +844,15 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         let two = about.len() > 1;
         // The reworked style's band is tall enough for two lines: the name stays put.
         let (name_y, about_y) = match (legacy(), two) {
-            (false, _) => (4.0, 16.0),
+            (false, _) => (TITLE_Y, ABOUT_Y),
             (true, true) => (2.0, 13.0),
             (true, false) => (5.0, 18.0),
         };
-        out.push(Shape::Head(fit_to(game, m.name, room), [pane[0] + CARD_M + 2.0, band_y + name_y], 0xFFFFFF));
+        // The reworked style: at the settings' names' inset.
+        let tx = if legacy() { pane[0] + CARD_M + 2.0 } else { pane[0] + CARD_M + CARD_IN + super::sunset::indent() + 4.0 };
+        out.push(Shape::Head(fit_to(game, m.name, room), [tx, band_y + name_y], 0xFFFFFF));
         for (n, line) in about.into_iter().enumerate() {
-            out.push(Shape::Text(line, [pane[0] + CARD_M + 2.0, band_y + about_y + n as f32 * 10.0], MUTED));
+            out.push(Shape::Text(line, [tx, band_y + about_y + n as f32 * 10.0], MUTED));
         }
         let lit = glow(Hit::Dash(Part::Toggle));
         // The same switch as a setting's.

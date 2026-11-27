@@ -317,7 +317,7 @@ pub(super) fn gui_hint(binding: bool, menu_open: bool, searching: bool) -> &'sta
     } else if menu_open {
         "Click a row to choose it   Left and Right: tabs   Esc: back"
     } else if searching {
-        "Enter: toggle the first result   Left click: on or off   Right click: settings   Esc: close"
+        "Enter: toggle the first result   Left click: on or off   Right click: settings   Esc: clear the search"
     } else {
         "Left click: on or off   Right click: settings   Type to search   Esc: close"
     }
@@ -426,16 +426,10 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         out.push(Shape::Text(text, [bx + 4.0, r[1] + text_y(row_hh())], colour));
         bw
     };
-    // A value box with a small chevron at its end (one-line rows): pointing on for a value a click steps, down for a
-    // list a click opens; how wide.
+    // A value box with a mark at its end (one-line rows): ">" for a value a click steps on, "..." for a list a click
+    // opens; how wide.
     let marked_box = |out: &mut Vec<Shape>, text: &str, r: [f32; 4], list: bool| -> f32 {
-        let bw = value_box(out, &format!("{text}    "), r, 0xE4E4E4);
-        let (cx, cy) = (r[0] + r[2] - RIGHT_PAD - 8.0, r[1] + (row_hh() / 2.0).floor());
-        let dots: [[f32; 2]; 5] = if list { [[0.0, -1.0], [1.0, 0.0], [2.0, 1.0], [3.0, 0.0], [4.0, -1.0]] } else { [[1.0, -2.0], [2.0, -1.0], [3.0, 0.0], [2.0, 1.0], [1.0, 2.0]] };
-        for [dx, dy] in dots {
-            out.push(Shape::Fill([cx + dx - 0.5, cy + dy - 0.5, 1.0, 1.0], 0xFFB4_B4BC));
-        }
-        bw
+        value_box(out, &format!("{text} {}", if list { "..." } else { ">" }), r, 0xE4E4E4)
     };
     // A number being typed in its slider row: the field's width (the draft and its caret are drawn in it).
     let typing = |i: usize, j: usize| editing.as_ref().filter(|e| e.inline && e.module == i && e.setting == j).and_then(|e| e.draft.as_ref().ok());

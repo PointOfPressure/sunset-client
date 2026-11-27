@@ -233,7 +233,8 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
         _ => return,
     };
     let mut toggled = None;
-    let mut changed = false;    let mut reset = None;
+    let mut changed = false;
+    let mut open_profiles = false;    let mut reset = None;
     with(|s| {
         // The editor is in front of everything: its buttons, nothing else; a picker's rows too.
         if let Some(Editor { module, setting, draft: Ok(draft), list: Some(picker), .. }) = &s.gui.editor {
@@ -335,6 +336,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             (Hit::Dash(super::sunset_dashboard::Part::Side(p)), false) if super::sunset_sidebar::toggles(s, p).is_some() => {
                 toggled = super::sunset_sidebar::toggles(s, p);
             }
+            (Hit::Dash(super::sunset_dashboard::Part::Profile), false) => open_profiles = true,
             (Hit::Dash(part), right) => super::sunset_dashboard::press(s, part, right),
             (Hit::Header(c), false) => {
                 let p = s.gui.panels[c];
@@ -441,6 +443,9 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             }
         }
     });
+    if open_profiles {
+        open_profile_menu(game);
+    }
     if let Some(i) = toggled {
         toggle(game, i, false);
     } else if changed {
