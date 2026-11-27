@@ -103,7 +103,11 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     }
     // Target HUD (a module of its own since 2.1; once HUD's): by the crosshair, drawn there, then slid to its dragged
     // place and made its size.
-    if let Some(target) = get("Target HUD").filter(|_| get("Kill Aura").is_some() && game.native_playing()) {
+    // What shows only while you play shows with the chat open too: the layout editor is the chat's, and it can only
+    // take what is drawn (with "no screen" alone the Compass, Shield status, Armor HUD, Target HUD and block counter
+    // went as the chat opened and could never be dragged or sized there).
+    let live = game.native_playing() || game.screen == Screen::Chat;
+    if let Some(target) = get("Target HUD").filter(|_| get("Kill Aura").is_some() && live) {
         let from = shapes.len();
         super::sunset_aura::draw_target(game, w, h, target.p("Mode") == "Potato", &mut shapes);
         super::sunset_hud_bars::editable(game, &mut shapes, from, target, "Target HUD", w, h);
@@ -298,7 +302,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             }
         }
         // After the corners' text, so a corner keeps that at its edge.
-        if game.native_playing() {
+        if live {
             super::sunset_hud_bars::draw(game, hud, w, h, corners, &mut shapes);
         }
         super::sunset_hud_list::case_shapes(hud, &mut shapes[hud_from..]);
@@ -308,7 +312,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     // Scaffold's block counter: a number and a word above the hotbar, clear of the hearts, armour and item name (or where
     // it was dragged).
     if let Some(m) = get("Scaffold").filter(|m| m.b("Block counter"))
-        && game.native_playing()
+        && live
         && game.player.is_some()
         && !game.spectator()
     {
