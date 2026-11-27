@@ -1,6 +1,6 @@
-From 57ce64aadafb0bc96a149328cee325b782ece537 Mon Sep 17 00:00:00 2001
+From 504e1a568215d96ec70960e1abd2a7f8cebbf2ef Mon Sep 17 00:00:00 2001
 From: vstxx <106024432+vstxx@users.noreply.github.com>
-Date: Thu, 26 Nov 2026 22:15:55 +0100
+Date: Sat, 28 Nov 2026 00:22:02 +0100
 Subject: [PATCH 2/2] Sunset: how this branch is built and licensed
 
 sunset/README.md.
@@ -11,7 +11,7 @@ sunset/README.md.
 
 diff --git a/sunset/README.md b/sunset/README.md
 new file mode 100644
-index 0000000000..432dae78a4
+index 0000000000..76fa00f893
 --- /dev/null
 +++ b/sunset/README.md
 @@ -0,0 +1,38 @@
@@ -22,7 +22,7 @@ index 0000000000..432dae78a4
 +`9defaa04337e68d6f368842491834af7bc5727f9` are Sunset's hook patches (one feature each, also in sunset-client's `client/horizon-patches/`); the
 +build's revision is `9defaa04337e68d6f368842491834af7bc5727f9`, the commit before the first `sunset/` commit. The rest is unmodified upstream.
 +
-+- `sunset/package/`: Sunset's .hmod package (PointOfPressure/sunset-client `20d26f03e52b7412ee6417dd15b6a5f80448db65`, `client/sunset`). Its own
++- `sunset/package/`: Sunset's .hmod package (PointOfPressure/sunset-client `442d24b7a357c70a454036dceebceca76b6bbd43`, `client/sunset`). Its own
 +  licence is `sunset/package/LICENSE`; it is here so the shipped build can be reproduced.
 +- `sunset/patch/`: the function-replacement crates (`horizon_patched*`) the launcher extracts from this revision,
 +  with Sunset's mixins and support modules woven in by horizon-mixins `e59da9094f0c2fdda6c627fe9eff22dec6a906f0`, and `horizon_patch.rs`, the
