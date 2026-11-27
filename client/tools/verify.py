@@ -2608,13 +2608,8 @@ def open_picker(search, shot=None):
     wait(5)
     # For the typing below: a real click where no panel is (bottom right) and a Shift, as menu_enter does, before the
     # picker is open (the first real input after the cursor was let go only takes it back).
-    if search and real_window():
-        env = {**os.environ, "DISPLAY": XDISPLAY}
-        for args in (("windowraise", real_window()), ("windowfocus", "--sync", real_window()),
-                     ("mousemove", "--window", real_window(), "1200", "650"), ("click", "1"), ("key", "shift")):
-            subprocess.run(["xdotool", *args], env=env, capture_output=True)
-            time.sleep(0.5)
-        wait(4)
+    if search:
+        menu_warm()
     ctl("click-at", *map(str, menu_row(3, 1)), "right")
     wait(3)
     ctl("click-at", *map(str, menu_row(3, 4)))
@@ -2660,7 +2655,23 @@ def real_window():
     return _REAL_WINDOW[0]
 
 
-def real_key(key, action="key", click=True):
+def menu_warm():
+    """Before real keys go into Sunset's menu: a real click where no panel is (bottom right) and a Shift, as menu_enter
+    does (the first real input after the cursor was let go only takes it back). Call it with the menu open and nothing
+    a click outside would shut. False without a window that takes real keys."""
+    window = real_window()
+    if not window:
+        return False
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+    for args in (("windowraise", window), ("windowfocus", "--sync", window), ("mousemove", "--window", window, "1200", "650"),
+                 ("click", "1"), ("key", "shift")):
+        subprocess.run(["xdotool", *args], env=env, capture_output=True)
+        time.sleep(0.5)
+    wait(4)
+    return True
+
+
+def real_key(key, action="key", click=True, times=1):
     """`key` as a real keyboard's (xdotool `action`: key, keydown, keyup or type), for what Sunset reads where the
     window's key events arrive (its binds, typing in its menu): horizon-ctl's keys pass that by. With `click` the
     pointer goes into the window and right clicks first, as x_press does (in the world the first press after a screen
@@ -2677,6 +2688,8 @@ def real_key(key, action="key", click=True):
         # Into a menu: the pointer in the window where no panel is (bottom right) and a Shift first, as menu_enter
         # does (the first key after the focus moved can be lost), then the text.
         steps += [("mousemove", "--window", window, "1200", "650"), ("key", "shift"), ("type", "--delay", "120", key)]
+    elif times > 1:
+        steps.append((action, "--repeat", str(times), "--repeat-delay", "60", key))
     else:
         steps.append((action, key))
     for args in steps:
@@ -5168,14 +5181,18 @@ def _():
         button or the Enter or Esc key; then closes the menu and reads the setting."""
         say(".menu spam")
         wait(5)
+        menu_warm()
         if expand:
             ctl("click-at", *map(str, menu_row(2, 1)), "right")
             wait(3)
         ctl("click-at", *map(str, menu_row(2, 3)))
         wait(3)
+        # The keyboard's own keys: Sunset's editor never sees horizon-ctl's.
         for k in keys:
-            for _ in range(40 if k == "clear" else 1):
-                ctl("key", "backspace" if k == "clear" else k, "tap")
+            if k in ("clear", "backspace"):
+                real_key("BackSpace", click=False, times=40 if k == "clear" else 1)
+            else:
+                real_key(k, "type", click=False)
         wait(2)
         apply, cancel = editor_buttons()
         if finish in ("apply", "cancel"):
@@ -5183,12 +5200,14 @@ def _():
         elif finish == "esc":
             esc()
         else:
-            ctl("key", finish, "tap")
+            real_key("Return", click=False)
         wait(3)
         # Esc closes the editor first, the menu after.
         esc()
         return messages()
 
+    if not real_window():
+        return None, REAL_KEYS
     # The settings open in the panel (not their own window), where menu_row finds the rows.
     setting("clickgui", "settings", "Inline")
     before = messages()
@@ -7146,7 +7165,9 @@ def _():
     setting("triggerbot", "crits only", "false")
 
     ready()
-    tagged = "{NoAI:1b,PersistenceRequired:1b,Tags:[\"sticky_a\"]}"
+    # The first pig has health for many hits: on a slow rig a second hit lands on it before the look moves on, and a
+    # dead first pig is no target to stick to.
+    tagged = "{NoAI:1b,PersistenceRequired:1b,Tags:[\"sticky_a\"],Health:60f,attributes:[{id:\"minecraft:max_health\",base:60}]}"
     cmd(f"summon pig {X0 - 0.5} {Y + 1} {Z0 + 2.5} {tagged}", f"summon pig {X0 + 1.5} {Y + 1} {Z0 + 2.5} {NOAI}")
     wait(10)
     pigs = sorted(mobs("pig"), key=lambda e: e["pos"][0])
@@ -7165,7 +7186,7 @@ def _():
     after = health(second)
     only()
     setting("triggerbot", "sticky target", "false")
-    ok = standing == 10 and jumped < 10 and first_hit < 10 and held_off == 10 and after < 10
+    ok = standing == 10 and jumped < 10 and 0 < first_hit < 60 and held_off == 10 and after < 10
     return ok, (f"Crits only: pig at {standing} standing, {jumped} after jumps; Sticky target: first pig {first_hit}, "
                 f"second {held_off} while the first lived, {after} after it went")
 
@@ -15208,7 +15229,8 @@ def _():
     ctl("key", "w", "down")
     wait(4)
     ctl("key", "w", "up")
-    wait(3)
+    # A command inside the packet log's 40 ticks: the ones above are older than that on a slow rig.
+    cmd("time query daytime")
     line, text = debug_report(lambda: say(".debug 60"))
     if text is None:
         return False, f"no report file: {line}"
@@ -15220,7 +15242,7 @@ def _():
     esp = next((l for l in text.splitlines() if l.startswith("- ESP")), "")
     esp_ok = "Fill opacity = 0.5 (default 0.3)" in esp and "Mode =" not in esp
     packets = text.split("## Packets sent", 1)[-1].split("## Chat", 1)[0]
-    wire = ("PlayerInput 0x01 (forward)" in packets and "ChatCommand (x" in packets and "MovePos" in packets
+    wire = ("PlayerInput 0x01 (forward)" in packets and "ChatCommand" in packets and "MovePos" in packets
             and "Last PlayerInput sent: 0x00 (none) at tick" in text)
     chat = text.split("## Chat", 1)[-1]
     chat_ok = "[player] <" in chat and "sgudpi" in chat and "[server] Grim آ» pointofpressure failed Simulation" in chat
@@ -18130,16 +18152,22 @@ def hud_frame(name, *settings, colour=False):
 def _():
     # The watermark in the bottom right corner leaves the top left for there; at Custom 0.5/0.5 it is mid-screen. The
     # module list (Sprint on) at Bottom leaves the top right for the bottom right; back at Top it is where it was.
+    # In colour, with the colours and the list held still: the default list colour fades between white and the accent,
+    # which read as "not back where it was" at Top and, as grey on the hand in the bottom corner, as "not there". (A
+    # new home's tutorial toast covers the top right corner as well: the rig starts with the tutorial done.)
     hud_scene()
     only("Sprint")
+    for name, value in (("list color mode", "Static"), ("watermark color mode", "Static"), ("list animations", "false")):
+        setting("hud", name, value)
     w, h = hud_size()
     tl, tr, br = hud_box(0, 0, 110, 28), hud_box(w - 90, 0, w, 40), hud_box(w - 110, h - 40, w, h)
     mid = hud_box(w / 2 - 10, h / 2 - 6, w / 2 + 90, h / 2 + 22)
-    base = hud_frame("hp_base")
-    corner = hud_frame("hp_wm_br", ("watermark position", "Bottom right"))
-    custom = hud_frame("hp_wm_custom", ("watermark position", "Custom"), ("watermark x", "0.5"), ("watermark y", "0.5"))
-    listed = hud_frame("hp_list_bottom", ("watermark position", "Top left"), ("module list position", "Bottom"))
-    back = hud_frame("hp_list_top", ("module list position", "Top"))
+    changed = lambda a, b, box: recoloured(a.crop(box), b.crop(box))
+    base = hud_frame("hp_base", colour=True)
+    corner = hud_frame("hp_wm_br", ("watermark position", "Bottom right"), colour=True)
+    custom = hud_frame("hp_wm_custom", ("watermark position", "Custom"), ("watermark x", "0.5"), ("watermark y", "0.5"), colour=True)
+    listed = hud_frame("hp_list_bottom", ("watermark position", "Top left"), ("module list position", "Bottom"), colour=True)
+    back = hud_frame("hp_list_top", ("module list position", "Top"), colour=True)
     wm = (changed(base, corner, tl), changed(base, corner, br), changed(base, custom, tl), changed(base, custom, mid))
     ml = (changed(base, listed, tr), changed(base, listed, br), changed(base, back, tr))
     ok = wm[0] > 50 and wm[1] > 50 and wm[2] > 50 and wm[3] > 50 and ml[0] > 30 and ml[1] > 30 and ml[2] < 10
