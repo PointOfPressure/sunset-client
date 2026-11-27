@@ -5301,7 +5301,7 @@ def _():
     x, top = 2 + 3 * (panel + 3) + panel + 4, 32
     if x + ww > w - 2:
         x = 2 + 3 * (panel + 3) - 4 - ww
-    switch, close = (x + ww - 16 - 2 - 7, top + 8), (x + ww - 8, top + 8)
+    switch, close = (x + ww - 16 - 8 - 7, top + 8), (x + ww - 8, top + 8)
     setting("clickgui", "settings", "Window")
     was = is_on("Fullbright")
     seen = []

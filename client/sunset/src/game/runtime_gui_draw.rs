@@ -250,7 +250,12 @@ pub(super) fn list_count(kind: super::sunset_picker::ListKind, text: &str) -> St
     };
     match n {
         0 => "None".to_owned(),
-        1 => format!("1 {one}"),
+        // One: its name ("Zombie", "Diamond ore"), which says more than "1 mob".
+        1 => super::sunset_picker::chosen(text).first().map_or_else(|| format!("1 {one}"), |id| {
+            let name = id.rsplit(':').next().unwrap_or(id).replace('_', " ");
+            let mut chars = name.chars();
+            chars.next().map_or_else(String::new, |c| c.to_uppercase().chain(chars).collect())
+        }),
         n => format!("{n} {many}"),
     }
 }
@@ -375,7 +380,8 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         win.content = win_body(s, win.module).1;
         // Drawn where it was opened or dragged to (its home), kept on the screen; the home itself stays.
         (win.x, win.y) = (win.home[0], win.home[1]);
-        win.room = (h - 4.0 - win.y.max(0.0) - head_h() - win.about_h - body_pad()).max(row_hh() * 3.0);
+        // (Clear of the screen's foot by a margin, not over the hotbar's edge.)
+        win.room = (h - 12.0 - win.y.max(0.0) - head_h() - win.about_h - body_pad()).max(row_hh() * 3.0);
         win.scroll = win.scroll.clamp(0.0, (win.content - win.room).max(0.0));
         let [_, _, ww, wh] = win_frame(s, &win);
         win.x = win.home[0].clamp(0.0, (w - ww).max(0.0));
@@ -465,8 +471,9 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
             }
             Hit::Bind(i) => {
                 let waiting = binding == Some(i);
-                // One line: the bind's value box keeps its place and asks for the key.
-                if waiting && super::sunset_dashboard::one_line() {
+                // The bind's value box keeps its place on the right and asks for the key, where the prompt fits there
+                // whole (always in the Dashboard's one-line rows).
+                if waiting && (super::sunset_dashboard::one_line() || width_of(game, "Press a key") + 8.0 <= rw * 0.5) {
                     let bw = value_box(out, "Press a key", r, accent());
                     label(out, "Bind", r, setting_x, bw, 0xB4B4B4);
                     return None;
@@ -871,11 +878,25 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         out.push(Shape::Text(none, [((w - nw) / 2.0).floor(), 33.0 + text_y(14.0)], 0xB4B4B4));
     }
     // What the keys and clicks do now: while a bind waits, while searching, or else.
+    // Each hint on its own with a dot between them (as many as fit, the first matter most), so they do not read as one
+    // sentence.
     let hint = gui_hint(binding.is_some(), menu_open, searching);
-    let hint = fit(hint, w - 16.0);
-    let hw = game.sunset_text_width(&hint);
+    let parts: Vec<&str> = hint.split("   ").collect();
+    let width = |n: usize| parts[..n].iter().map(|p| game.sunset_text_width(p)).sum::<f32>() + 12.0 * (n.saturating_sub(1)) as f32;
+    let n = (1..=parts.len()).rev().find(|&n| width(n) <= w - 16.0).unwrap_or(1);
+    let hw = width(n).min(w - 16.0);
     framed(out, [((w - hw) / 2.0 - 6.0).floor(), 1.0, hw + 12.0, 12.0], panel_radius(), bg(pal().panel), px);
-    out.push(Shape::Text(hint, [((w - hw) / 2.0).floor(), 1.0 + text_y(12.0)], 0xB4B4B4));
+    let mut x = ((w - hw) / 2.0).floor();
+    for (k, part) in parts[..n].iter().enumerate() {
+        if k > 0 {
+            out.push(Shape::Round([x + 5.0, 1.0 + 5.0, 2.0, 2.0], 1.0, 0xFF5A_5A62));
+            x += 12.0;
+        }
+        let part = fit(part, (w - 16.0 - (x - ((w - hw) / 2.0).floor())).max(0.0));
+        let pw = game.sunset_text_width(&part);
+        out.push(Shape::Text(part, [x, 1.0 + text_y(12.0)], 0xB4B4B4));
+        x += pw;
+    }
     profiles(out);
 }
 

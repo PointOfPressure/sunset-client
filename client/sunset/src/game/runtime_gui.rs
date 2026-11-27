@@ -524,7 +524,8 @@ pub(super) fn win_close(frame: [f32; 4]) -> [f32; 4] {
 // The module's own switch, in the title beside the close button (the size of a setting's).
 pub(super) fn win_toggle(frame: [f32; 4]) -> [f32; 4] {
     let close = win_close(frame);
-    [close[0] - 2.0 - 14.0, frame[1] + (head_h() - 8.0) / 2.0, 14.0, 8.0]
+    // (Apart from the cross, so the one is not hit for the other.)
+    [close[0] - 8.0 - 14.0, frame[1] + (head_h() - 8.0) / 2.0, 14.0, 8.0]
 }
 
 // Where a module's settings window opens: beside the row that was clicked (to its right, or its left where the screen
