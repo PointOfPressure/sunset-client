@@ -1,0 +1,764 @@
+// HUD's Armor HUD (with Compact style), Compass, Shield status, Item durability (on every damageable item's icon, and remaining/max in its tooltip), the
+// settings that change the game's own bars (Mount HUD, Food preview, Saturation, Exhaustion; drawn by hunger_flags.rs),
+// and the layout editor: with the chat (or the menu) open, every framed element moves by dragging and goes back to its
+// Default place with a right click — Coordinates, FPS, Speed, Facing and Totems (each on its own), the Compass, the
+// Armor HUD, Shield status, the watermark, the module list, the Target HUD, the server's scoreboard, other modules'
+// (Scaffold's block counter, the Murderer list, Auto Spear's damage indicator, Radar) and Horizon's own HUD widgets.
+use crate::game::sunset_compat::SunsetGame as _;
+use super::Game;
+use super::sunset::{Module, Shape};
+use horizon_client::extras::Corner;
+use horizon_client::extras_hud::Corners;
+use horizon_client::hud::HudBatch;
+use crate::game::sunset_hunger::{BARS, Bars};
+use horizon_client::items::ItemStack;
+use horizon_client::pvp_hud::{self, WidgetId};
+use std::cell::Cell;
+use std::ops::ControlFlow;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering::Relaxed};
+
+// Item durability: 0 off, 1 the number left, 2 the percent left; and the tooltip line.
+static DURABILITY: AtomicU8 = AtomicU8::new(0);
+static TOOLTIP: AtomicBool = AtomicBool::new(false);
+// The elements that can be dragged: where each was drawn last frame (x, y, width, height) and the screen it was on.
+static PLACED: Mutex<Vec<Placed>> = Mutex::new(Vec::new());
+// The left button was down last frame, while the chat was open; and the right one.
+static CHAT_PRESSED: AtomicBool = AtomicBool::new(false);
+static CHAT_RIGHT: AtomicBool = AtomicBool::new(false);
+// One of Horizon's widgets was moved and Horizon's options are not saved yet (they are when the drag ends).
+static WIDGET_MOVED: AtomicBool = AtomicBool::new(false);
+
+type Placed = (&'static str, [f32; 4], [f32; 2]);
+// Shield status: the tick the shield's cooldown was first seen, and how much of it was left then.
+static SHIELD_SINCE: Mutex<Option<(f32, f32)>> = Mutex::new(None);
+
+thread_local! {
+    // An icon drawn without Item durability's number (Sunset's own icons, and the icon under the number).
+    static PLAIN: Cell<bool> = const { Cell::new(false) };
+}
+
+// A slot box of the hotbar's sprite: one slot and its frame.
+const SLOT: f32 = 20.0;
+
+// HUD's No auto pause: the game leaves the pause menu shut when its window loses focus. It is the game's own
+// --no-pause launch option, set while the setting is on and put back once it, the HUD or Sunset goes off (never
+// cleared when the game was started with it).
+static NO_PAUSE_OURS: AtomicBool = AtomicBool::new(false);
+pub(super) fn auto_pause(game: &mut Game<'_>, keep_playing: bool) {
+    if keep_playing {
+        if !game.options.no_pause {
+            game.options.no_pause = true;
+            NO_PAUSE_OURS.store(true, Relaxed);
+        }
+    } else if NO_PAUSE_OURS.swap(false, Relaxed) {
+        game.options.no_pause = false;
+    }
+}
+
+// Each tick: the settings the game's own drawing reads.
+pub(super) fn tick(game: &Game<'_>, mods: &[Module], shown: bool) {
+    let hud = mods.iter().find(|m| m.name == "HUD" && m.on).filter(|_| shown);
+    let on = |name: &str| hud.is_some_and(|m| m.b(name));
+    let durability = if !on("Item durability") {
+        0
+    } else if hud.is_some_and(|m| m.p("Durability format") == "Percent") {
+        2
+    } else {
+        1
+    };
+    DURABILITY.store(durability, Relaxed);
+    TOOLTIP.store(on("Item durability") && on("Durability tooltip"), Relaxed);
+    let mut bars = Bars::default();
+    if let Some(p) = game.player.as_ref() {
+        let food = &p.health.food;
+        bars.mount = on("Mount HUD");
+        bars.mount_xp = bars.mount && game.riding.is_some() && !game.mount_jumping() && !game.waypoints.has_waypoints();
+        // The air bubbles take the row over the food while they show.
+        let bubbles = p.air < 300 || p.is_eye_in_fluid(horizon_client::motion::WATER);
+        bars.raise = if bubbles { 20 } else { 10 };
+        bars.saturation = on("Saturation");
+        bars.exhaustion = on("Exhaustion").then_some(food.exhaustion);
+        bars.preview = [game.held(), game.offhand.as_ref()]
+            .into_iter()
+            .flatten()
+            .find_map(|s| game.res.items().get(&s.item)?.food)
+            .filter(|_| on("Food preview"))
+            .map(|(nutrition, saturation)| {
+                let after = (food.food + nutrition as i32).min(20);
+                (after, (food.saturation + saturation).min(after as f32))
+            });
+    }
+    *BARS.lock().unwrap_or_else(|e| e.into_inner()) = bars;
+}
+
+// What is left of `max`, from 1 (all of it) to 0.
+fn left_fraction(damage: u32, max: u32) -> f32 {
+    (max.saturating_sub(damage) as f32 / max.max(1) as f32).clamp(0.0, 1.0)
+}
+
+// The game's durability bar colour: green when whole, through yellow, to red as it wears.
+pub(super) fn wear_rgb(fraction: f32) -> u32 {
+    horizon_core::color::hsv_to_argb(fraction / 3.0, 1.0, 1.0, 0) & 0x00FF_FFFF
+}
+
+// Percent left rounds as follows: 1 for the last point, never 0 while it holds.
+fn percent(damage: u32, max: u32) -> u32 {
+    let left = max.saturating_sub(damage);
+    if left == 0 { 0 } else { ((left * 100).div_ceil(max)).max(1) }
+}
+
+fn max_damage(game: &Game<'_>, stack: &ItemStack) -> Option<u32> {
+    game.res.items().get(&stack.item).map(|i| i.max_damage).filter(|m| *m > 0)
+}
+
+// An icon drawn by Sunset itself: no Item durability number on it.
+pub(super) fn plain<R>(f: impl FnOnce() -> R) -> R {
+    PLAIN.with(|p| p.set(true));
+    let r = f();
+    PLAIN.with(|p| p.set(false));
+    r
+}
+
+// Item durability: any damageable item's icon (hotbar, inventories, the stack on the pointer) gets what it has left,
+// small, in its top left corner, in the colour of its bar.
+pub(super) fn item_model(game: &Game<'_>, batch: &mut HudBatch, stack: &ItemStack, x: f32, y: f32) -> ControlFlow<()> {
+    let mode = DURABILITY.load(Relaxed);
+    if mode == 0 || PLAIN.with(Cell::get) {
+        return ControlFlow::Continue(());
+    }
+    let Some(max) = max_damage(game, stack) else {
+        return ControlFlow::Continue(());
+    };
+    plain(|| game.draw_item_model(batch, stack, x, y));
+    let text = if mode == 2 { format!("{}%", percent(stack.damage, max)) } else { max.saturating_sub(stack.damage).to_string() };
+    let start = batch.vertices.len();
+    game.native_text(batch, &text, [x, y], wear_rgb(left_fraction(stack.damage, max)), true);
+    batch.scale_since(start, x, y, 0.5, 0.5);
+    ControlFlow::Break(())
+}
+
+thread_local! {
+    // The tooltip being drawn again with the durability line.
+    static TOOLTIP_AGAIN: Cell<bool> = const { Cell::new(false) };
+}
+
+// Item durability's tooltip line, under the name: remaining / max (the game's own line shows instead with advanced
+// tooltips on a worn item). The tooltip is drawn again with the line, and the first one left out.
+pub(super) fn tooltip(
+    game: &mut Game<'_>,
+    batch: &mut HudBatch,
+    stack: &ItemStack,
+    creative: bool,
+    [x, y]: [f32; 2],
+    after_name: &[(horizon_client::text::Text, u32)],
+) -> ControlFlow<()> {
+    if TOOLTIP_AGAIN.with(Cell::get) || !TOOLTIP.load(Relaxed) || stack.damage > 0 && game.settings.file.bool("advancedItemTooltips") {
+        return ControlFlow::Continue(());
+    }
+    let Some(max) = max_damage(game, stack) else {
+        return ControlFlow::Continue(());
+    };
+    let [_, r, g, b] = wear_rgb(left_fraction(stack.damage, max)).to_be_bytes();
+    let text = format!("Durability: {} / {max}", max.saturating_sub(stack.damage));
+    let mut lines = after_name.to_vec();
+    lines.push((horizon_client::text::Text::literal(text), horizon_client::hud::rgba(r, g, b, 255)));
+    TOOLTIP_AGAIN.with(|c| c.set(true));
+    game.draw_stack_tooltip_with(batch, stack, creative, x, y, lines);
+    TOOLTIP_AGAIN.with(|c| c.set(false));
+    ControlFlow::Break(())
+}
+
+fn placed<R>(f: impl FnOnce(&mut Vec<Placed>) -> R) -> R {
+    f(&mut PLACED.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+// A new frame of the HUD: what it draws is placed again.
+pub(super) fn clear_placed() {
+    placed(Vec::clear);
+}
+
+// `name` was drawn at `rect` on a screen `w` by `h`.
+pub(super) fn place(name: &'static str, rect: [f32; 4], w: f32, h: f32) {
+    placed(|p| {
+        p.retain(|e| e.0 != name);
+        p.push((name, rect, [w, h]));
+    });
+}
+
+// Where `name` was drawn last frame (x, y, width, height) and the size of the screen it was on.
+pub(super) fn placed_rect(name: &str) -> Option<([f32; 4], [f32; 2])> {
+    placed(|p| p.iter().find(|e| e.0 == name).map(|e| (e.1, e.2)))
+}
+
+// An element's position as fractions of the screen, from where its top left corner is dragged to.
+pub(super) fn drag_to(name: &str, x: f32, y: f32) -> Option<(f64, f64)> {
+    let (_, [_, _, w, h], [sw, sh]) = placed(|p| p.iter().find(|e| e.0 == name).copied())?;
+    Some(fractions([x, y], [w, h], [sw, sh]))
+}
+
+fn fractions(at: [f32; 2], size: [f32; 2], screen: [f32; 2]) -> (f64, f64) {
+    super::sunset_hud_place::stored(at, size, screen, false)
+}
+
+// A press on an element (the chat or the menu open): which, and where in it the pointer took it.
+pub(super) fn grab(at: (f32, f32)) -> Option<(&'static str, f32, f32)> {
+    placed(|p| {
+        p.iter()
+            .rev()
+            .find(|(_, [x, y, w, h], _)| at.0 >= *x && at.0 < x + w && at.1 >= *y && at.1 < y + h)
+            .map(|(name, [x, y, _, _], _)| (*name, at.0 - x, at.1 - y))
+    })
+}
+
+// What the chat's layout editor does this frame with a drag.
+pub(super) enum ChatDrag {
+    // A press took an element, where in it.
+    Start(&'static str, f32, f32),
+    // The button came up.
+    End,
+    // A right click on an element: back to its Default place.
+    Reset(&'static str),
+    // A press on an element's corner handle: its size follows the pointer. The element's left edge, and its width at
+    // size 1.
+    Size(&'static str, f32, f32),
+}
+
+// The corner handle of an element's frame (bottom right), for its size.
+const HANDLE: f32 = 5.0;
+
+fn handle([x, y, w, h]: [f32; 4]) -> [f32; 4] {
+    [x + w - HANDLE + 1.0, y + h - HANDLE + 1.0, HANDLE, HANDLE]
+}
+
+// The size an element dragged by its corner handle has: the pointer's distance from its left edge over its width at
+// size 1, in twentieths.
+pub(super) fn dragged_size(pointer_x: f32, left: f32, width: f32) -> f32 {
+    (((pointer_x - left) / width.max(1.0) * 20.0).round() / 20.0).clamp(SIZES.0, SIZES.1)
+}
+
+// The size an element has after the wheel turned `notches` over its frame (up grows it): a twentieth a notch, at most
+// four a turn, kept inside SIZES.
+pub(super) fn wheeled_size(size: f32, notches: f32) -> f32 {
+    if notches == 0.0 || !notches.is_finite() {
+        return size;
+    }
+    let steps = if notches.abs() < 1.0 { notches.signum() } else { notches.round().clamp(-4.0, 4.0) };
+    (((size + steps * 0.05) * 20.0).round() / 20.0).clamp(SIZES.0, SIZES.1)
+}
+
+// The layout editor with the chat open: a frame round each element, a press on one takes it, its release ends the drag;
+// a right click on one sends it back.
+pub(super) fn chat_layout(game: &Game<'_>, dragging: Option<&'static str>, sized: &dyn Fn(&str) -> Option<f32>, out: &mut Vec<Shape>) -> Option<ChatDrag> {
+    let down = game.physical_buttons.contains(&winit::event::MouseButton::Left);
+    let was = CHAT_PRESSED.swap(down, Relaxed);
+    let right = game.physical_buttons.contains(&winit::event::MouseButton::Right);
+    let right_was = CHAT_RIGHT.swap(right, Relaxed);
+    let mut on_handle = None;
+    for (name, [x, y, w, h], _) in placed(|p| p.clone()) {
+        let colour = if dragging == Some(name) { 0xC0FF_FFFF } else { 0x60FF_FFFF };
+        out.push(Shape::Fill([x - 1.0, y - 1.0, w + 2.0, 1.0], colour));
+        out.push(Shape::Fill([x - 1.0, y + h, w + 2.0, 1.0], colour));
+        out.push(Shape::Fill([x - 1.0, y, 1.0, h], colour));
+        out.push(Shape::Fill([x + w, y, 1.0, h], colour));
+        // An element with a size of its own has a handle at its corner: dragged, it grows and shrinks.
+        if let Some(size) = sized(name) {
+            let [hx, hy, hw, hh] = handle([x, y, w, h]);
+            out.push(Shape::Fill([hx, hy, hw, hh], 0xE0FF_FFFF));
+            let (cx, cy) = game.cursor;
+            if cx >= hx - 1.0 && cx < hx + hw + 2.0 && cy >= hy - 1.0 && cy < hy + hh + 2.0 {
+                on_handle = Some(ChatDrag::Size(name, x, w / size.max(0.01)));
+            }
+        }
+    }
+    match dragging {
+        Some(_) if !down => Some(ChatDrag::End),
+        None if down && !was && on_handle.is_some() => on_handle,
+        None if down && !was => grab(game.cursor).map(|(name, dx, dy)| ChatDrag::Start(name, dx, dy)),
+        None if right && !right_was => grab(game.cursor).map(|(name, _, _)| ChatDrag::Reset(name)),
+        _ => None,
+    }
+}
+
+// The chat closed: the next press there starts afresh.
+pub(super) fn chat_closed() {
+    CHAT_PRESSED.store(false, Relaxed);
+    CHAT_RIGHT.store(false, Relaxed);
+}
+
+// Horizon's own HUD widgets (its PvP & HUD page: FPS, CPS, ping and the rest), framed and dragged with Sunset's: each by
+// a name of its own here. Their places are Horizon's (its layout, in its options), as its own HUD editor sets them.
+const WIDGETS: [(WidgetId, &str); 13] = [
+    (WidgetId::Armour, "Horizon armor"),
+    (WidgetId::Effects, "Horizon effects"),
+    (WidgetId::Held, "Horizon held item"),
+    (WidgetId::Ping, "Horizon ping"),
+    (WidgetId::Coords, "Horizon coordinates"),
+    (WidgetId::Server, "Horizon server"),
+    (WidgetId::Combo, "Horizon combo"),
+    (WidgetId::Fps, "Horizon FPS"),
+    (WidgetId::Cps, "Horizon CPS"),
+    (WidgetId::Keys, "Horizon keystrokes"),
+    (WidgetId::Clock, "Horizon clock"),
+    (WidgetId::Reach, "Horizon reach"),
+    (WidgetId::Speed, "Horizon speed"),
+];
+
+// The Horizon widget an element's name is, if it is one.
+pub(super) fn widget(name: &str) -> Option<WidgetId> {
+    WIDGETS.iter().find(|w| w.1 == name).map(|w| w.0)
+}
+
+// The widgets Horizon drew this frame (before the mods' HUD), as elements the editor can take.
+pub(super) fn place_widgets(game: &Game<'_>, w: f32, h: f32) {
+    for &(id, rect) in &game.pvp.boxes {
+        if let Some(&(_, name)) = WIDGETS.iter().find(|x| x.0 == id) {
+            place(name, rect, w, h);
+        }
+    }
+}
+
+// A widget dragged with its top left corner to (x, y): its place in Horizon's layout, kept on screen.
+pub(super) fn move_widget(game: &mut Game<'_>, id: WidgetId, x: f32, y: f32) {
+    let Some(&(_, [_, _, bw, bh])) = game.pvp.boxes.iter().find(|b| b.0 == id) else {
+        return;
+    };
+    let at = pvp_hud::to_fractions((x, y), (bw, bh), game.gui_size());
+    let place = game.settings.extras.pvp.layout.get_mut(id);
+    if place.at != Some(at) {
+        place.at = Some(at);
+        WIDGET_MOVED.store(true, Relaxed);
+    }
+}
+
+// A right click on a widget: back to its corner, at the size it has.
+pub(super) fn reset_widget(game: &mut Game<'_>, id: WidgetId) {
+    game.settings.extras.pvp.layout.get_mut(id).at = None;
+    WIDGET_MOVED.store(true, Relaxed);
+}
+
+// No widget is being dragged: Horizon's options are saved if one moved (as its own editor does on the release).
+pub(super) fn settle_widgets(game: &Game<'_>) {
+    if WIDGET_MOVED.swap(false, Relaxed) {
+        game.settings.save(&Game::options_path());
+    }
+}
+
+// Move a shape by (dx, dy): every coordinate it carries, so a whole element drawn into a run of shapes slides together
+// (its clip rectangle and all).
+pub(super) fn shift(shape: &mut Shape, dx: f32, dy: f32) {
+    match shape {
+        Shape::Fill(r, _) | Shape::Round(r, _, _) | Shape::Corners(r, _, _, _) | Shape::Sprite(_, r, _)
+        | Shape::Squircle(r, _, _) | Shape::ClipEnd(r) => {
+            r[0] += dx;
+            r[1] += dy;
+        }
+        Shape::Quad(corners, _) => {
+            for c in corners {
+                c[0] += dx;
+                c[1] += dy;
+            }
+        }
+        Shape::Text(_, p, _) | Shape::Head(_, p, _) | Shape::Item(_, p, _) | Shape::Scaled(_, p, _, _)
+        | Shape::Face(_, p, _) | Shape::Icon(_, p, _, _) | Shape::Sized(_, p, _, _, _) | Shape::Plain(_, p, _, _) => {
+            p[0] += dx;
+            p[1] += dy;
+        }
+        Shape::ClipStart => {}
+    }
+}
+
+// An element's size from the layout editor ("<name> size", 1 the usual; a module without the setting has 1).
+pub(super) fn size_of(m: &Module, name: &str) -> f32 {
+    let key = format!("{name} size");
+    if !m.settings.iter().any(|s| s.name == key) {
+        return 1.0;
+    }
+    let size = m.n(&key) as f32;
+    if size > 0.0 { size.clamp(SIZES.0, SIZES.1) } else { 1.0 }
+}
+
+// The sizes the layout editor gives an element.
+pub(super) const SIZES: (f32, f32) = (0.5, 3.0);
+
+// A run of shapes drawn at the usual size made `s` times as big about `origin` (the element's top left corner): every
+// place and length, and its text as text of that size (Shape::Sized: drawn sharp from a font of that size, not
+// stretched).
+pub(super) fn resize(shapes: &mut [Shape], origin: [f32; 2], s: f32) {
+    if (s - 1.0).abs() < 0.001 {
+        return;
+    }
+    let at = |p: [f32; 2]| [origin[0] + (p[0] - origin[0]) * s, origin[1] + (p[1] - origin[1]) * s];
+    let rect = |r: [f32; 4]| {
+        let [x, y] = at([r[0], r[1]]);
+        [x, y, r[2] * s, r[3] * s]
+    };
+    for shape in shapes {
+        match shape {
+            Shape::Fill(r, _) | Shape::Sprite(_, r, _) => *r = rect(*r),
+            Shape::Round(r, radius, _) | Shape::Corners(r, radius, _, _) | Shape::Squircle(r, radius, _) => {
+                *r = rect(*r);
+                *radius *= s;
+            }
+            Shape::Quad(corners, _) => *corners = corners.map(at),
+            Shape::Text(t, p, argb) => *shape = Shape::Sized(std::mem::take(t), at(*p), *argb, s, false),
+            Shape::Head(t, p, argb) => *shape = Shape::Sized(std::mem::take(t), at(*p), *argb, s, true),
+            Shape::Plain(t, p, argb, bold) => *shape = Shape::Sized(std::mem::take(t), at(*p), *argb, s, *bold),
+            Shape::Scaled(_, p, _, k) | Shape::Sized(_, p, _, k, _) | Shape::Icon(_, p, _, k) => {
+                *p = at(*p);
+                *k *= s;
+            }
+            Shape::Item(_, p, size) | Shape::Face(_, p, size) => {
+                *p = at(*p);
+                *size *= s;
+            }
+            Shape::ClipEnd(r) => {
+                let ([x0, y0], [x1, y1]) = (at([r[0], r[1]]), at([r[2], r[3]]));
+                *r = [x0, y0, x1, y1];
+            }
+            Shape::ClipStart => {}
+        }
+    }
+}
+
+// The rectangle a run of shapes covers: what it filled, its icons and its text (a line 9 high, as the font draws it).
+// None if it drew nothing with a place.
+pub(super) fn bounds(game: &Game<'_>, shapes: &[Shape]) -> Option<[f32; 4]> {
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for s in shapes {
+        let r = match s {
+            Shape::Fill(r, _) | Shape::Round(r, _, _) | Shape::Corners(r, _, _, _) | Shape::Sprite(_, r, _)
+            | Shape::Squircle(r, _, _) => *r,
+            Shape::Quad(c, _) => {
+                for p in c {
+                    x0 = x0.min(p[0]);
+                    y0 = y0.min(p[1]);
+                    x1 = x1.max(p[0]);
+                    y1 = y1.max(p[1]);
+                }
+                continue;
+            }
+            Shape::Text(t, p, _) | Shape::Head(t, p, _) | Shape::Plain(t, p, _, _) => [p[0], p[1], game.sunset_text_width(t), 9.0],
+            Shape::Scaled(t, p, _, k) | Shape::Sized(t, p, _, k, _) => [p[0], p[1], game.sunset_text_width(t) * k, 9.0 * k],
+            Shape::Item(_, p, size) | Shape::Face(_, p, size) => [p[0], p[1], *size, *size],
+            Shape::Icon(_, p, _, k) => [p[0], p[1], 9.0 * k, 9.0 * k],
+            Shape::ClipStart | Shape::ClipEnd(_) => continue,
+        };
+        x0 = x0.min(r[0]);
+        y0 = y0.min(r[1]);
+        x1 = x1.max(r[0] + r[2]);
+        y1 = y1.max(r[1] + r[3]);
+    }
+    (x0 <= x1).then(|| [x0, y0, x1 - x0, y1 - y0])
+}
+
+// The bands the game's status effect icons take at the top right, when it draws them (`Hud.extractEffects`: 24 pixel
+// icons 25 apart from the right edge, the beneficial row at y 1 and the harmful one at 26): each as wide as its icons
+// and 25 high, as Horizon's top right corner reserves them. None while Horizon's effects widget takes their place, nor
+// in an inventory that lists its own effects (wide enough for that, as `EffectsInInventory.canSeeEffects`).
+fn effect_bands(game: &Game<'_>, w: f32) -> [Option<[f32; 4]>; 2] {
+    use super::Screen;
+    let own_list = match game.screen {
+        Screen::Inventory => game.container.is_none() && game.craft_size == 2 && (w - 176.0) / 2.0 - 2.0 >= 32.0,
+        Screen::Creative => (w - horizon_client::creative::Creative::WIDTH as f32) / 2.0 - 2.0 >= 32.0,
+        _ => false,
+    };
+    if own_list || game.settings.extras.pvp.hud.effects {
+        return [None, None];
+    }
+    let (mut beneficial, mut harmful) = (0.0, 0.0);
+    for e in &game.potions.effects.list {
+        let icon = horizon_client_render::hud_overlays::EffectIcon::from(e);
+        if !icon.show_icon {
+            continue;
+        }
+        if icon.beneficial {
+            beneficial += 25.0;
+        } else {
+            harmful += 25.0;
+        }
+    }
+    let band = |width: f32, top: f32| (width > 0.0).then_some([w - width, top, width, 25.0]);
+    [band(beneficial, 0.0), band(harmful, 25.0)]
+}
+
+// The module list's top left for a box at `rect`: where it is, or just under the effect icons it would cover (2 below
+// their band, as Horizon's corner puts what follows them), wherever it was placed or dragged to.
+pub(super) fn below_effects(game: &Game<'_>, [x, y, bw, bh]: [f32; 4], w: f32, h: f32) -> (f32, f32) {
+    let mut y = y;
+    for [ex, ey, ew, eh] in effect_bands(game, w).into_iter().flatten() {
+        if x < ex + ew && x + bw > ex && y < ey + eh && y + bh > ey {
+            y = ey + eh + 2.0;
+        }
+    }
+    (x, y.min((h - bh).max(0.0)))
+}
+
+// An independent element (not stacked in a corner) just drawn into `shapes[from..]` by module `m`: registered so the
+// editor can grab it, and, when its `name position` is Custom, slid to where it was dragged. Its box is what it drew.
+pub(super) fn editable(game: &Game<'_>, shapes: &mut Vec<Shape>, from: usize, m: &Module, name: &'static str, w: f32, h: f32) {
+    let Some([bx, by, bw, bh]) = bounds(game, &shapes[from..]) else {
+        return;
+    };
+    // At the size the layout editor gave it: placed as big as it will be, then made so about its corner.
+    let size = size_of(m, name);
+    let (x, y) = if m.p(&format!("{name} position")) == "Custom" {
+        let [x, y] = super::sunset_hud_place::custom([m.n(&format!("{name} x")), m.n(&format!("{name} y"))], [bw * size, bh * size], [w, h], false);
+        (x, y)
+    } else {
+        (bx, by)
+    };
+    let (dx, dy) = (x - bx, y - by);
+    if dx != 0.0 || dy != 0.0 {
+        for s in &mut shapes[from..] {
+            shift(s, dx, dy);
+        }
+    }
+    resize(&mut shapes[from..], [x, y], size);
+    place(name, [x, y, bw * size, bh * size], w, h);
+}
+
+// Compass: 140 degrees of headings round the one you face, a tick every 5 degrees, a label
+// every 15 (N, NE, E... at the eighths), and your heading over the middle.
+fn compass(game: &Game<'_>, hud: &Module, w: f32, h: f32, out: &mut Vec<Shape>) {
+    const WIDTH: f32 = 180.0;
+    const HEIGHT: f32 = 26.0;
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    // Placed as big as its size makes it, drawn at the usual size from that corner, then resized (the function's end).
+    let size = size_of(hud, "Compass");
+    let (x0, y0) = if hud.p("Compass position") == "Custom" {
+        let [x, y] = super::sunset_hud_place::custom([hud.n("Compass x"), hud.n("Compass y")], [WIDTH * size, HEIGHT * size], [w, h], false);
+        (x, y)
+    } else {
+        ((w - WIDTH * size) / 2.0, 2.0)
+    };
+    place("Compass", [x0, y0, WIDTH * size, HEIGHT * size], w, h);
+    let from = out.len();
+    out.push(Shape::Fill([x0, y0 + 9.0, WIDTH, HEIGHT - 9.0], 0x5000_0000));
+    let heading = heading(p.yaw);
+    let middle = y0 + 9.0 + (HEIGHT - 9.0) / 2.0;
+    for (offset, degree) in ticks(heading) {
+        let x = x0 + offset * WIDTH;
+        let major = degree % 45 == 0;
+        let (top, bottom) = if major { (middle - 7.0, middle - 1.0) } else { (middle - 5.0, middle - 3.0) };
+        out.push(Shape::Fill([x, top, 1.0, bottom - top], if major { 0xD0FF_FFFF } else { 0x90FF_FFFF }));
+        if degree % 15 == 0 {
+            let text = if major { ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][(degree / 45) as usize].to_owned() } else { degree.to_string() };
+            let (scale, colour) = if major { (0.8, 0xFFFFFF) } else { (0.6, 0xAAAAAA) };
+            let tx = x - game.sunset_text_width(&text) * scale / 2.0;
+            out.push(Shape::Scaled(text, [tx, middle + 1.0], colour, scale));
+        }
+    }
+    let mid = x0 + WIDTH / 2.0;
+    out.push(Shape::Fill([mid - 0.5, y0 + 9.0, 1.0, HEIGHT - 9.0], 0xFFE5_2E33));
+    let text = (heading as i32).rem_euclid(360).to_string();
+    let tx = mid - game.sunset_text_width(&text) * 0.4;
+    out.push(Shape::Scaled(text, [tx, y0], 0xE6E6E6, 0.8));
+    resize(&mut out[from..], [x0, y0], size);
+}
+
+// Your heading from north (0) round through east (90), as a compass reads it: the game's yaw is 0 facing south.
+fn heading(yaw: f32) -> f32 {
+    (yaw + 180.0).rem_euclid(360.0)
+}
+
+// The compass's ticks for `heading`: each 5 degrees within 70 either side, as how far across the strip it is (0 to 1)
+// and its heading (0 to 355).
+fn ticks(heading: f32) -> Vec<(f32, i32)> {
+    let from = heading - 70.0;
+    let first = (from / 5.0).ceil() as i32 * 5;
+    (0..)
+        .map(|i| first + i * 5)
+        .take_while(|&d| d as f32 <= heading + 70.0)
+        .map(|d| ((d as f32 - from) / 140.0, d.rem_euclid(360)))
+        .collect()
+}
+
+// One piece the Armor HUD shows: its item, damage and maximum (0: none), or an empty slot.
+type Piece = Option<(std::sync::Arc<str>, u32, u32)>;
+
+pub(super) fn draw(game: &Game<'_>, hud: &Module, w: f32, h: f32, corners: &mut Corners, out: &mut Vec<Shape>) {
+    if hud.b("Compass") {
+        compass(game, hud, w, h, out);
+    }
+    if hud.b("Shield status") {
+        let from = out.len();
+        shield(game, w, h, out);
+        editable(game, out, from, hud, "Shield status", w, h);
+    } else {
+        *SHIELD_SINCE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+    if !hud.b("Armor HUD") || game.player.is_none() || game.spectator() {
+        return;
+    }
+    let piece = |s: Option<&ItemStack>| -> Piece {
+        s.map(|s| (std::sync::Arc::clone(&s.item), s.damage, max_damage(game, s).unwrap_or(0)))
+    };
+    let mut pieces: Vec<Piece> = game.armor.iter().map(|s| piece(s.as_ref())).collect();
+    if hud.b("Armor HUD hands") {
+        pieces.push(piece(game.held()));
+        pieces.push(piece(game.offhand.as_ref()));
+    }
+    if hud.b("Armor HUD hide empty") {
+        pieces.retain(Option::is_some);
+    }
+    if pieces.iter().all(Option::is_none) {
+        return;
+    }
+    let vertical = hud.p("Armor HUD layout") == "Vertical";
+    let compact = hud.p("Armor HUD style") == "Compact";
+    let shows = hud.p("Armor HUD durability");
+    let (bar, words) = (shows == "Bar" || shows == "Bar and percent", shows != "Bar");
+    let label = |p: &Piece| -> Option<String> {
+        let (_, damage, max) = p.as_ref().filter(|p| words && p.2 > 0)?;
+        Some(if shows == "Number" { max.saturating_sub(*damage).to_string() } else { format!("{}%", percent(*damage, *max)) })
+    };
+    // Each piece's size: a slot box, or (Compact) the icon and its words beside it.
+    let sizes: Vec<[f32; 2]> = pieces
+        .iter()
+        .map(|p| if compact { [16.0 + label(p).map_or(0.0, |t| 3.0 + game.sunset_text_width(&t)), 16.0] } else { [SLOT + 2.0, SLOT + 2.0] })
+        .collect();
+    let gap = if compact { 4.0 } else { 0.0 };
+    // Boxes in a row share their frames, as on the hotbar.
+    let step = |s: [f32; 2]| if vertical { s[1] + gap } else if compact { s[0] + gap } else { SLOT };
+    let along: f32 = sizes.iter().map(|s| step(*s)).sum::<f32>() - gap + if vertical || compact { 0.0 } else { 2.0 };
+    let across = sizes.iter().map(|s| if vertical { s[0] } else { s[1] }).fold(0.0, f32::max);
+    // Placed as big as its size (the layout editor's) makes it, drawn at the usual size from that corner, then resized.
+    let size = size_of(hud, "Armor HUD");
+    let (drawn_w, drawn_h) = if vertical { (across, along) } else { (along, across) };
+    let (bw, bh) = (drawn_w * size, drawn_h * size);
+    let (x0, y0) = match hud.p("Armor HUD position") {
+        "Top left" => corners.place(Corner::TopLeft, bw, bh),
+        "Top right" => corners.place(Corner::TopRight, bw, bh),
+        "Bottom left" => corners.place(Corner::BottomLeft, bw, bh),
+        "Bottom right" => corners.place(Corner::BottomRight, bw, bh),
+        "Custom" => {
+            let [x, y] = super::sunset_hud_place::custom([hud.n("Armor HUD x"), hud.n("Armor HUD y")], [bw, bh], [w, h], false);
+            (x, y)
+        }
+        // Beside the hotbar, on the side the off hand slot isn't.
+        _ if game.settings.main_hand_left => (w / 2.0 - 91.0 - 6.0 - bw, h - bh),
+        _ => (w / 2.0 + 91.0 + 6.0, h - bh),
+    };
+    place("Armor HUD", [x0, y0, bw, bh], w, h);
+    let from = out.len();
+    if !compact && !vertical {
+        frame(out, x0, y0, pieces.len());
+    }
+    let mut at = 0.0;
+    for (p, size) in pieces.iter().zip(&sizes) {
+        let (x, y) = if vertical { (x0, y0 + at) } else { (x0 + at, y0) };
+        at += step(*size);
+        if !compact && vertical {
+            frame(out, x, y, 1);
+        }
+        let (ix, iy) = if compact { (x, y) } else { (x + 3.0, y + 3.0) };
+        let Some((item, damage, max)) = p else {
+            continue;
+        };
+        out.push(Shape::Item(std::sync::Arc::clone(item), [ix, iy], 16.0));
+        if *max == 0 {
+            continue;
+        }
+        let fraction = left_fraction(*damage, *max);
+        let rgb = wear_rgb(fraction);
+        if bar {
+            out.push(Shape::Fill([ix + 2.0, iy + 13.0, 13.0, 2.0], 0xFF00_0000));
+            out.push(Shape::Fill([ix + 2.0, iy + 13.0, (13.0 * fraction).round(), 1.0], 0xFF00_0000 | rgb));
+        }
+        let Some(text) = label(p) else {
+            continue;
+        };
+        if compact {
+            out.push(Shape::Text(text, [ix + 19.0, iy + 4.0], rgb));
+        } else {
+            // In the box: over the icon's foot, or (with the bar) its head.
+            let tw = game.sunset_text_width(&text) * 0.75;
+            let ty = if bar { iy } else { iy + 16.0 - 6.75 };
+            out.push(Shape::Scaled(text, [ix + 16.0 - tw, ty], rgb, 0.75));
+        }
+    }
+    resize(&mut out[from..], [x0, y0], size);
+}
+
+// Slot boxes from the hotbar's own sprite: its left end and `slots` slots, then its right edge.
+fn frame(out: &mut Vec<Shape>, x: f32, y: f32, slots: usize) {
+    let width = 1.0 + SLOT * slots as f32;
+    out.push(Shape::Sprite("gui/sprites/hud/hotbar", [x, y, width, 22.0], [0.0, 0.0, width / 182.0, 1.0]));
+    out.push(Shape::Sprite("gui/sprites/hud/hotbar", [x + width, y, 1.0, 22.0], [181.0 / 182.0, 0.0, 1.0, 1.0]));
+}
+
+// Shield status: while an axe has your shield down, its icon, the seconds left and a bar, left of the crosshair (the
+// Target HUD has its right).
+fn shield(game: &Game<'_>, w: f32, h: f32, out: &mut Vec<Shape>) {
+    let shield = [game.offhand.as_ref(), game.held()].into_iter().flatten().find(|s| s.item.ends_with("shield"));
+    let group = shield.map_or_else(
+        || std::sync::Arc::from("minecraft:shield"),
+        |s| horizon_client::cooldowns::group(s, game.res.items().get(&s.item).and_then(|i| i.use_cooldown.as_ref())),
+    );
+    let partial = game.clock.fraction() as f32;
+    let left = game.cooldowns.percent(&group, partial);
+    let mut since = SHIELD_SINCE.lock().unwrap_or_else(|e| e.into_inner());
+    if left <= 0.0 {
+        *since = None;
+        return;
+    }
+    let now = game.ticks as f32 + partial;
+    let (start, first) = *since.get_or_insert((now, left));
+    // The whole cooldown, from how fast it runs down: an axe's five seconds until that can be told.
+    let (elapsed, run) = (now - start, first - left);
+    let total = if elapsed >= 2.0 && run > 0.005 { elapsed / run } else { 100.0 };
+    let text = format!("{:.1}s", left * total / 20.0);
+    let width = 24.0 + game.sunset_text_width(&text);
+    let (x, y) = (w / 2.0 - 12.0 - width, h / 2.0 + 12.0);
+    out.push(Shape::Fill([x, y, width, 24.0], 0x9000_0000));
+    out.push(Shape::Item(std::sync::Arc::from("minecraft:shield"), [x + 2.0, y + 2.0], 16.0));
+    out.push(Shape::Text(text, [x + 20.0, y + 6.0], 0xFF5555));
+    out.push(Shape::Fill([x + 2.0, y + 20.0, width - 4.0, 2.0], 0xFF30_3030));
+    out.push(Shape::Fill([x + 2.0, y + 20.0, (width - 4.0) * left, 2.0], 0xFFFF_5555));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_wheel_sizes_an_element_a_twentieth_a_notch_inside_the_sizes() {
+        assert_eq!(wheeled_size(1.0, 1.0), 1.05);
+        assert_eq!(wheeled_size(1.0, -1.0), 0.95);
+        // A smooth wheel's part of a notch is a notch; a spun wheel is four at most.
+        assert_eq!(wheeled_size(1.0, 0.25), 1.05);
+        assert_eq!(wheeled_size(1.0, -30.0), 0.8);
+        assert_eq!(wheeled_size(SIZES.1, 3.0), SIZES.1);
+        assert_eq!(wheeled_size(SIZES.0, -1.0), SIZES.0);
+        assert_eq!(wheeled_size(1.3, 0.0), 1.3);
+        assert_eq!(wheeled_size(1.3, f32::NAN), 1.3);
+    }
+
+    #[test]
+    fn the_compass_reads_north_at_the_games_yaw_180() {
+        assert_eq!([heading(180.0), heading(-90.0), heading(0.0), heading(90.0), heading(-180.0)], [0.0, 90.0, 180.0, 270.0, 0.0]);
+    }
+
+    #[test]
+    fn compass_ticks_cover_140_degrees_every_5() {
+        let t = ticks(0.0);
+        assert_eq!(t.len(), 29);
+        assert_eq!(t.first().copied(), Some((0.0, 290)));
+        assert_eq!(t[14], (0.5, 0));
+        assert_eq!(t.last().copied(), Some((1.0, 70)));
+        // Off the 5s: the first tick is past the strip's left edge, never before it.
+        let t = ticks(12.5);
+        assert!(t.iter().all(|&(at, d)| (0.0..=1.0).contains(&at) && d % 5 == 0));
+        assert_eq!(t.first().map(|v| v.1), Some(305));
+    }
+
+    #[test]
+    fn a_dragged_element_stays_on_the_screen() {
+        assert_eq!(fractions([64.0, 32.0], [32.0, 16.0], [128.0, 64.0]), (0.5, 0.5));
+        assert_eq!(fractions([-30.0, 90.0], [32.0, 16.0], [128.0, 64.0]), (0.0, 0.75));
+        assert_eq!(fractions([120.0, 0.0], [32.0, 16.0], [128.0, 64.0]), (0.75, 0.0));
+    }
+}
