@@ -152,6 +152,7 @@ and setting names, the start of the name is enough.
 | `.preset [name]` | show the presets and what one changes; add `apply` to apply it |
 | `.seed` | the world seed Ore Sim uses: `.seed <seed>` sets it, `.seed auto` finds it (see Ore Sim) |
 | `.goto <x> <y> <z>` | walk somewhere up to 128 blocks away; `.goto stop` or a movement key stops it |
+| `.follow <player> [blocks]` | walk after a player in sight and stay 3 blocks (or `blocks`, 1 to 16) from them; `.follow stop` or a movement key stops it, an open screen holds it |
 | `.vclip <n>`, `.hclip <n>` | move n blocks up (negative: down) or forward |
 | `.plugins` | list loaded plugins with their modules and commands |
 | `.relog [seconds]` | leave and rejoin this server (default 1 second) |

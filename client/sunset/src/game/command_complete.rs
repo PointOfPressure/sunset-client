@@ -151,6 +151,7 @@ const COMMANDS: &[Command] = &[
     Command { name: "waypoint", aliases: &["waypoints", "wp"], usage: "add|remove|list [name]", about: "save a place", args: waypoint },
     Command { name: "loadout", aliases: &["loadouts"], usage: "save|delete|export|import|list|<name>", about: "keep and put on your hotbar, offhand and armour", args: loadout },
     Command { name: "goto", aliases: &[], usage: "<x> <y> <z>|stop", about: "walk there through loaded terrain, up to 128 blocks", args: goto },
+    Command { name: "follow", aliases: &[], usage: "<player> [blocks]|stop", about: "walk after a player in sight, staying a few blocks from them", args: follow },
     Command { name: "baritone", aliases: &["b"], usage: "status|goto|mine|stop|off|targets|help", about: "Full Baritone and bounded visible/Ore Sim mining", args: baritone },
     Command { name: "vclip", aliases: &[], usage: "<blocks>", about: "move up or down", args: blocks },
     Command { name: "hclip", aliases: &[], usage: "<blocks>", about: "move forward", args: blocks },
@@ -520,6 +521,21 @@ fn coordinate_step(src: &dyn Source, coords: &[&str]) -> Step {
     }
     let usage = ["<x>", "<y>", "<z>"][coords.len()..].join(" ");
     Step::Free { list: coordinates(src, coords.len()), usage, back: 0 }
+}
+
+fn follow(src: &dyn Source, before: &[&str], _: &str) -> Step {
+    match before {
+        [] => {
+            let mut list: Vec<Suggestion> = src.players().into_iter().map(|p| Suggestion::new(p, "online")).collect();
+            list.push(Suggestion::new("stop", "stop following"));
+            Step::Free { list, usage: "<player> [blocks]|stop".into(), back: 0 }
+        }
+        [word] if word.eq_ignore_ascii_case("stop") => Step::Done,
+        [_] => Step::Free { list: vec![Suggestion::new("3", "blocks to stay away (1 to 16)")], usage: "[blocks]".into(), back: 0 },
+        [_, blocks] if blocks.parse::<f64>().is_ok_and(|b| (1.0..=16.0).contains(&b)) => Step::Done,
+        [_, blocks] => Step::Bad(format!("{blocks} is not a distance from 1 to 16 blocks")),
+        _ => Step::Bad("Use .follow <player> [blocks] or .follow stop".into()),
+    }
 }
 
 fn goto(src: &dyn Source, before: &[&str], _: &str) -> Step {
@@ -946,6 +962,10 @@ mod tests {
         assert_eq!(texts(&at_end(".goto ")), ["10 64 -3", "10 64", "10", "stop"]);
         assert_eq!(texts(&at_end(".goto 10 ")), ["64 -3", "64"]);
         assert_eq!(at_end(".goto 10 x ").error.as_deref(), Some("x is not a whole block coordinate"));
+        assert_eq!(texts(&at_end(".follow ")), ["Alex", "Steve", "stop"]);
+        assert_eq!(texts(&at_end(".follow Steve ")), ["3"]);
+        assert_eq!(at_end(".follow Steve 40 ").error.as_deref(), Some("40 is not a distance from 1 to 16 blocks"));
+        assert!(at_end(".follow Steve 2 ").error.is_none());
         assert_eq!(at_end(".vclip ").usage.as_deref(), Some("<blocks>"));
     }
 
@@ -959,7 +979,7 @@ mod tests {
     // Every name runtime_commands.rs `run` matches has its grammar here.
     #[test]
     fn every_command_run_reads() {
-        let run = "relog seed auradebug elytratarget antibotdebug scan vanish staffcheck goto baritone b help commands \
+        let run = "relog seed auradebug elytratarget antibotdebug scan vanish staffcheck goto follow baritone b help commands \
                    menu gui pages toggle t modules list settings get set movementpreset bind binds panic debug profile \
                    profiles config cfg preset presets reset friend friends f loadout loadouts waypoint waypoints wp \
                    vclip hclip plugins";

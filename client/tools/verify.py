@@ -14562,6 +14562,195 @@ def _():
     return stopped, f"(walked, blocks short, moved after: A held walks on by hand, the rest stand) {got}" + ("" if window else "; ClickGUI: no window")
 
 
+# ---- .follow <player> [blocks]: .goto's walker aimed at a player, again each time they move on
+
+def follow_settle(limit=25, still=1.5):
+    """Waits until you have stood still (no walk running, not moving) for `still` seconds; where you are then, and
+    how far you walked meanwhile."""
+    trail, t0, quiet = [pos()], time.time(), None
+    while time.time() - t0 < limit:
+        time.sleep(0.1)
+        st = state()
+        trail.append(st["player"]["position"])
+        if st.get("busy") or flat(trail[-2], trail[-1]) > 0.02:
+            quiet = None
+        elif quiet is None:
+            quiet = time.time()
+        elif time.time() - quiet >= still:
+            break
+    return trail[-1], sum(flat(a, b) for a, b in zip(trail, trail[1:]))
+
+
+def follow_bot(x, z=0.5, yaw=90):
+    cmd(f"tp Bot1 {X0 + x} {Y + 1} {Z0 + z} {yaw} 0")
+    wait(5)
+    return [X0 + x, Y + 1, Z0 + z]
+
+
+@test(".follow (a player)")
+def _():
+    # Bot1 moved about the arena: you walk after him and stand about 3 blocks off (6 when asked), stay put while he is
+    # near, go round a wall, keep up while he walks, and send one move packet a tick with no server teleport.
+    if not CTL2:
+        return None, "needs a second player"
+    got = {}
+    goto_clear()
+    reset()
+    bot_ready(2.5)
+    mark = log_mark()
+    say(".follow bot1")
+    wait(10)
+    started = any("Following Bot1, staying 3 blocks away" in line for line in sunset_said(mark))
+    wire = probe_mark() if probe_path() and SERVER else None
+    end, walked = follow_settle(limit=4)
+    got["near already"] = (round(walked, 1), round(flat(end, follow_bot(0.5, 2.5)), 1))
+    at = follow_bot(10.5)
+    end, walked = follow_settle()
+    got["10 east"] = (round(walked, 1), round(flat(end, at), 1))
+    # A wall between you and where he goes next: the path goes round its end.
+    cmd(f"fill {X0+5} {Y+1} {Z0-3} {X0+5} {Y+3} {Z0+3} minecraft:stone")
+    at = follow_bot(0.5)
+    end, walked = follow_settle()
+    got["behind a wall"] = (round(walked, 1), round(flat(end, at), 1))
+    past_wall = end[0] < X0 + 5
+    goto_clear()
+    # He walks east for 2.5 s: you keep up and end near him.
+    before = pos()
+    ctl2("look", "-90", "0")
+    ctl2("key", "w", "down")
+    time.sleep(2.5)
+    ctl2("key", "w", "up")
+    wait(10)
+    his = ctl2("state")["player"]["position"]
+    end, _ = follow_settle()
+    got["he walks"] = (round(flat(before, end), 1), round(flat(end, his), 1))
+    he_walked = his[0] - (X0 + 0.5)
+    stats = wire_stats(wire) if wire is not None else None
+    mark = log_mark()
+    say(".follow Bot1 6")
+    wait(10)
+    six = any("Following Bot1, staying 6 blocks away" in line for line in sunset_said(mark))
+    at = follow_bot(his[0] - X0 - 11 if his[0] - X0 > 6 else his[0] - X0 + 11, 0.5)
+    end, walked = follow_settle()
+    got["6 blocks"] = (round(walked, 1), round(flat(end, at), 1))
+    say(".follow stop")
+    wait(5)
+    bot_done()
+    health = hp()
+    reset()
+    near = lambda k, lo, hi: lo <= got[k][1] <= hi
+    ok = (started and six and got["near already"][0] < 0.5 and near("10 east", 1.5, 3.9) and got["10 east"][0] > 5
+          and near("behind a wall", 1.5, 3.9) and past_wall and got["behind a wall"][0] > 7 and he_walked > 4
+          and near("he walks", 1.0, 3.9) and got["he walks"][0] > he_walked - 4.5 and near("6 blocks", 4.0, 6.9)
+          and (stats is None or (stats[1] <= 1 and stats[2] == 0)) and health == 20)
+    return ok, (f"(walked (he walks: moved), blocks from Bot1 at the end) {got}; past the wall: {past_wall}; he walked {he_walked:.1f}; "
+                f"said following: {started}, at 6: {six}; health {health}; "
+                + (f"{stats[0]} ticks, at most {stats[1]} move packets in one, {stats[2]} server teleports" if stats else "no probe"))
+
+
+@test(".follow (stops, screens, out of sight)")
+def _():
+    # What ends a follow (.follow stop, .goto stop, a .goto of its own, half a minute out of sight, and with a mapped
+    # window a real A press) and what only holds it (the inventory open; out of sight for a few seconds); names and
+    # distances it refuses.
+    if not CTL2:
+        return None, "needs a second player"
+    got, said = {}, {}
+    goto_clear()
+    reset()
+    bot_ready(2.5)
+
+    def after(line, ticks=10):
+        mark = log_mark()
+        say(line)
+        wait(ticks)
+        return sunset_said(mark)
+
+    has = lambda lines, text: any(text in line for line in lines)
+    said["nobody"] = has(after(".follow Nobody"), "No player called Nobody here.")
+    said["40 blocks"] = has(after(".follow Bot1 40"), "40 is not a distance from 1 to 16 blocks.")
+    said["not following"] = has(after(".follow stop"), "Not following anyone.") and has(after(".follow"), "Use .follow <player>")
+    for stop, line in ((".follow stop", "Stopped following Bot1."), (".goto stop", "Stopped following Bot1."),
+                       (f".goto {X0 + 2} {Y + 1} {Z0 - 3}", "Stopped following Bot1: a new walking goal started.")):
+        reset()
+        follow_bot(0.5, 2.5)
+        said[stop.split(" ")[0] + (" stop" if stop.endswith("stop") else " x y z") + ": following"] = has(after(".follow Bot1"), "Following Bot1")
+        said[stop.split(" ")[0] + (" stop" if stop.endswith("stop") else " x y z")] = has(after(stop), line)
+        follow_settle(limit=8)
+        say(".goto stop")
+        wait(5)
+        here = pos()
+        follow_bot(10.5)
+        wait(40)
+        got[stop.split(" ")[0] + (" stop" if stop.endswith("stop") else " x y z")] = round(flat(here, pos()), 2)
+    # The inventory open: he moves off, you stand; shut, you go after him.
+    reset()
+    follow_bot(0.5, 2.5)
+    after(".follow Bot1")
+    ctl("key", "e", "tap")
+    wait(5)
+    here = pos()
+    at = follow_bot(10.5)
+    wait(40)
+    held = flat(here, pos())
+    ctl("key", "esc", "tap")
+    wait(3)
+    if state().get("screen") not in ("playing", None):
+        ctl("close")
+    end, walked = follow_settle()
+    got["inventory"] = (round(held, 2), round(walked, 1), round(flat(end, at), 1))
+    # Out of sight for a few seconds, then back: said once, and the follow goes on.
+    mark = log_mark()
+    cmd(f"tp Bot1 {X0 + 400} {Y + 40} {Z0}")
+    time.sleep(6)
+    at = follow_bot(0.5)
+    end, walked = follow_settle()
+    lines = sunset_said(mark)
+    said["out of sight"] = sum("Bot1 is out of sight; waiting half a minute for them." in line for line in lines) == 1
+    got["back in sight"] = (round(walked, 1), round(flat(end, at), 1))
+    # Gone for good: half a minute later the follow is over, and his coming back moves nobody.
+    mark = log_mark()
+    cmd(f"tp Bot1 {X0 + 400} {Y + 40} {Z0}")
+    t0 = time.time()
+    while time.time() - t0 < 60 and not has(sunset_said(mark), "Stopped following Bot1: out of sight for half a minute."):
+        time.sleep(2)
+    said["gone"] = has(sunset_said(mark), "Stopped following Bot1: out of sight for half a minute.")
+    gone_after = time.time() - t0
+    here = pos()
+    follow_bot(10.5)
+    wait(40)
+    got["after gone"] = round(flat(here, pos()), 2)
+    # A real movement key (xdotool: a mapped window, OFFSCREEN=0) ends it, standing by him or on the way to him.
+    window = x_window()
+    for name, off in ((("a key, standing", 0), ("a key, walking", 14.5)) if window else ()):
+        reset()
+        follow_bot(0.5, 2.5)
+        after(".follow Bot1")
+        subprocess.run(["xdotool", "windowraise", window], env={**os.environ, "DISPLAY": XDISPLAY}, capture_output=True)
+        at = follow_bot(off) if off else None
+        mark = log_mark()
+        pressed = x_press("a")
+        wait(10)
+        if not pressed:
+            say(".follow stop")
+            wait(5)
+            continue
+        said[name] = has(sunset_said(mark), "Stopped following Bot1: you moved.")
+        if at:
+            follow_settle(limit=6)
+            got[name] = round(flat(pos(), at), 1)
+            said[name] = said[name] and got[name] > 4.5
+    bot_done()
+    health = hp()
+    reset()
+    ok = (all(said.values()) and all(got[k] < 0.3 for k in (".follow stop", ".goto stop", "after gone"))
+          and got["inventory"][0] < 0.3 and got["inventory"][1] > 5 and 1.5 <= got["inventory"][2] <= 3.9
+          and got["back in sight"][0] > 3 and 1.5 <= got["back in sight"][1] <= 3.9 and 25 < gone_after < 60 and health == 20)
+    return ok, (f"said: {said}; blocks moved after a stop, (held behind the inventory, walked after, from Bot1), "
+                f"(walked, from Bot1) once back: {got}; gone said after {gone_after:.0f} s; health {health}"
+                + ("" if window else "; a real movement key: no window"))
+
+
 
 # The Grim alerts of Sayer's two screenshots (3 Nov), the earlier one first: what the report's table must count.
 GRIM_LINES = [

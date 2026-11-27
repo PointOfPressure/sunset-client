@@ -65,6 +65,7 @@ const HELP: &[(&str, &str)] = &[
     (".vclip <blocks>", "move up or down"),
     (".hclip <blocks>", "move forward"),
     (".goto <x> <y> <z>|stop", "walk there through loaded terrain, up to 128 blocks (by Rust); a movement key or a screen stops it"),
+    (".follow <player> [blocks]|stop", "walk after a player in sight and stay that many blocks from them (3); a movement key stops it, a screen holds it"),
     (".b / .baritone status|goto|mine|stop|off|targets|help", "Full Baritone and bounded visible/Ore Sim mining, bundled with Sunset"),
 ];
 
@@ -626,6 +627,10 @@ pub(super) fn run(game: &mut Game<'_>, args: &[&str]) {
         "staffcheck" => super::sunset_vanish::staff_command(game, &args[1..]),
         "goto" => {
             let text = super::agent::sunset_goto::command(game, &args[1..]).unwrap_or_else(|e| e);
+            say(game, &text);
+        }
+        "follow" => {
+            let text = super::agent::sunset_goto::follow_command(game, &args[1..]).unwrap_or_else(|e| e);
             say(game, &text);
         }
         "baritone" | "b" => {
