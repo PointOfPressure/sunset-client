@@ -1,12 +1,13 @@
 // .goto x y z (from Rust's PR #24): walks there on Horizon's own A* path and walking task, the one horizon-ctl's goto
 // runs, so it lives next to them in agent.rs. Movement keys, a screen, the menu, Panic or turning Sunset off stop it.
 // .follow <player> [blocks] aims the same walk at a player, and again each time they move on (Follow, below).
+// .mine <block> [count] (mine.rs, beside this file in agent.rs) walks to blocks and breaks them on the same lease.
 use crate::game::sunset_compat::SunsetGame as _;
 use super::{Game, Goto, MOVE_KEYS, Progress, TaskKind};
 use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
-const TASK: &str = "sunset.goto";
+pub(super) const TASK: &str = "sunset.goto";
 const RANGE: f64 = 128.0;
 
 // The running walk's answer channel and the dimension it started in.
@@ -62,25 +63,28 @@ pub(crate) fn foreign_input(game: &Game<'_>) -> (Vec<winit::keyboard::KeyCode>, 
     }
 }
 
-// Whatever stops the walk ends a follow too, walking at that moment or standing by its player.
+// Whatever stops the walk ends a follow or a .mine too, walking at that moment or not.
 pub(crate) fn cancel(game: &mut Game<'_>, why: &str) -> bool {
     let followed = follow().take();
-    let Some(f) = followed else {
+    let Some(why) = followed.map(|f| unfollowed(&f.name, why)).or_else(|| super::sunset_mine::stopped(game, why)) else {
         return stop_walk(game, why);
     };
-    let why = unfollowed(&f.name, why);
     if !stop_walk(game, &why) {
         crate::game::sunset::say(game, &why);
     }
     true
 }
 
-// Ends the walk now running: its answer carries `why` (frame says it), its keys and lease are given back.
+// Ends the task of ours now running (a walk, or .mine's dig): its answer carries `why` (frame says it), its keys,
+// its held attack button and the lease are given back.
 fn stop_walk(game: &mut Game<'_>, why: &str) -> bool {
     if !owns(game) {
         return false;
     }
     if let Some(task) = game.agent.task.take() {
+        if matches!(task.kind, TaskKind::Break(_)) {
+            let _ = game.agent_mouse(winit::event::MouseButton::Left, false);
+        }
         let _ = task.reply.send(serde_json::json!({ "error": why }).to_string());
     }
     // The walk holds movement keys only: the mouse buttons stay as you hold them.
@@ -98,7 +102,7 @@ fn release_lease(game: &mut Game<'_>) {
 }
 
 // Drops the walk without a word: it is ended if still going, and an answer it already gave is not read.
-fn drop_walk(game: &mut Game<'_>) {
+pub(super) fn drop_walk(game: &mut Game<'_>) {
     stop_walk(game, "navigation stopped");
     *WALK.lock().unwrap_or_else(|e| e.into_inner()) = None;
     release_lease(game);
@@ -129,6 +133,9 @@ pub(crate) fn command(game: &mut Game<'_>, args: &[&str]) -> Result<String, Stri
         if let Some(name) = unfollow(game) {
             return Ok(format!("Stopped following {name}."));
         }
+        if let Some(text) = super::sunset_mine::stop(game) {
+            return Ok(text);
+        }
         let stopped = cancel(game, "navigation stopped");
         return Ok(if stopped { "Stopped walking." } else { "Not walking anywhere." }.into());
     };
@@ -157,8 +164,25 @@ pub(crate) fn command(game: &mut Game<'_>, args: &[&str]) -> Result<String, Stri
     Ok(format!("Walking to {} {} {} ({nodes} steps). .goto stop stops.", at[0], at[1], at[2]))
 }
 
+// Starts a task of Sunset's own on the movement lease (taken first unless a walk of ours holds it); its answer
+// comes back through frame.
+pub(super) fn run(game: &mut Game<'_>, kind: TaskKind, timeout: f64) -> Result<(), String> {
+    use crate::game::sunset_movement_owner as owner;
+    let lease = match owner::current().filter(|l| l.owner == owner::Owner::Goto) {
+        Some(lease) => lease,
+        None => owner::acquire(game, owner::Owner::Goto)?,
+    };
+    let (tx, rx) = channel();
+    if let Err(e) = game.start_task(TASK, kind, &tx, timeout) {
+        owner::release(game, lease);
+        return Err(e.to_string());
+    }
+    *WALK.lock().unwrap_or_else(|e| e.into_inner()) = Some((rx, game.dim.id()));
+    Ok(())
+}
+
 // A walk from where you stand to within `near` of `target`, if loaded terrain has a way.
-fn plan(game: &Game<'_>, target: [f64; 3], near: f64, sprint: bool) -> Option<Goto> {
+pub(super) fn plan(game: &Game<'_>, target: [f64; 3], near: f64, sprint: bool) -> Option<Goto> {
     let p = game.player.as_ref()?;
     let from = [p.position.x.floor() as i32, p.position.y.round() as i32, p.position.z.floor() as i32];
     let path = game.find_path(from, target, near, &[])?;
@@ -325,21 +349,22 @@ pub(crate) fn frame(game: &mut Game<'_>) {
     if !game.sunset_window() { return; }
     let walk_dim = WALK.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|(_, dim)| *dim);
     let follow_dim = follow().as_ref().map(|f| f.dim);
-    let Some(dim) = walk_dim.or(follow_dim) else {
+    let Some(dim) = walk_dim.or(follow_dim).or_else(super::sunset_mine::dim) else {
         return;
     };
     let screen = crate::game::sunset::gui_open() || game.require_playing_screen().is_err()
         || game.screen_over_playing() || game.sleeping.is_some();
     if dim != game.dim.id() || !game.native_on("sunset") {
         cancel(game, "stopped: you changed dimension or Sunset was turned off");
-    } else if screen && follow_dim.is_some() {
-        // A follow outlasts a screen (the chat, the inventory, the menu): it stands while one is up.
+    } else if screen && (follow_dim.is_some() || super::sunset_mine::hold(game)) {
+        // A follow or a .mine outlasts a screen (the chat, the inventory, the menu): it stands while one is up.
         drop_walk(game);
     } else if screen {
         cancel(game, "stopped: a screen opened or Sunset was turned off");
     }
     walk_answer(game);
     follow_frame(game, screen);
+    super::sunset_mine::frame(game, screen);
 }
 
 // The walk's answer, once it has one: the lease goes back, and a walk of .goto's says how it ended.
@@ -356,9 +381,8 @@ fn walk_answer(game: &mut Game<'_>) {
     *walk = None;
     drop(walk);
     release_lease(game);
-    let Some(v) = reply.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()) else {
-        return;
-    };
+    // No answer (the task was dropped unanswered): Null, which a follow or a .mine reads as a step that failed.
+    let v = reply.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()).unwrap_or(serde_json::Value::Null);
     let arrived = v["arrived"].as_bool() == Some(true);
     if let Some(f) = follow().as_mut() {
         // A follow's walks end without a word: it walks on when the player does. One that got stuck waits a second.
@@ -367,14 +391,17 @@ fn walk_answer(game: &mut Game<'_>) {
         }
         return;
     }
+    if super::sunset_mine::answer(game, &v) || v.is_null() {
+        return;
+    }
     let text = if arrived { "Arrived." } else { v["error"].as_str().unwrap_or("Stopped walking.") };
     crate::game::sunset::say(game, text);
 }
 
 // A movement key you press stops the walk; the game then takes the key as usual, so your movement wins at once.
 pub(crate) fn key(game: &mut Game<'_>, key: &str) {
-    // Keys typed into a screen (the chat) are not movement: a follow waits behind the screen.
-    if follow().is_some() && (game.require_playing_screen().is_err() || game.screen_over_playing()) {
+    // Keys typed into a screen (the chat) are not movement: a follow or a .mine waits behind the screen.
+    if (follow().is_some() || super::sunset_mine::dim().is_some()) && (game.require_playing_screen().is_err() || game.screen_over_playing()) {
         return;
     }
     let moves = ["key.forward", "key.back", "key.left", "key.right", "key.jump", "key.sneak", "key.sprint"];

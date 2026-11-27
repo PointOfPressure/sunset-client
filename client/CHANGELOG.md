@@ -11,6 +11,7 @@ section of the version they build into the signed manifest, and the launcher sho
 ## Unreleased
 
 ### New
+- `.mine <block> [count]`: walks to the nearest uncovered blocks of a kind within 32 blocks (`diamond`, `iron`, `log`, or a block's id), breaks them with what you hold and picks up what falls; no tunnelling. `.mine stop` or a movement key stops it, an open screen only holds it
 - `.follow <player> [blocks]`: walks after a player in sight on `.goto`'s walker and stays 3 blocks from them (or the number you give); `.follow stop` or a movement key stops it, an open screen only holds it
 - HUD layout editor: with the chat open, the wheel over an element's frame sets its size too (up grows it, down shrinks it); over anything else the chat scrolls as before
 - HUD layout editor: the server's scoreboard sidebar has a size too (the handle at its frame's corner, or the wheel)

@@ -152,6 +152,7 @@ const COMMANDS: &[Command] = &[
     Command { name: "loadout", aliases: &["loadouts"], usage: "save|delete|export|import|list|<name>", about: "keep and put on your hotbar, offhand and armour", args: loadout },
     Command { name: "goto", aliases: &[], usage: "<x> <y> <z>|stop", about: "walk there through loaded terrain, up to 128 blocks", args: goto },
     Command { name: "follow", aliases: &[], usage: "<player> [blocks]|stop", about: "walk after a player in sight, staying a few blocks from them", args: follow },
+    Command { name: "mine", aliases: &[], usage: "<block> [count]|stop", about: "walk to the nearest uncovered blocks of a kind and break them", args: mine },
     Command { name: "baritone", aliases: &["b"], usage: "status|goto|mine|stop|off|targets|help", about: "Full Baritone and bounded visible/Ore Sim mining", args: baritone },
     Command { name: "vclip", aliases: &[], usage: "<blocks>", about: "move up or down", args: blocks },
     Command { name: "hclip", aliases: &[], usage: "<blocks>", about: "move forward", args: blocks },
@@ -535,6 +536,22 @@ fn follow(src: &dyn Source, before: &[&str], _: &str) -> Step {
         [_, blocks] if blocks.parse::<f64>().is_ok_and(|b| (1.0..=16.0).contains(&b)) => Step::Done,
         [_, blocks] => Step::Bad(format!("{blocks} is not a distance from 1 to 16 blocks")),
         _ => Step::Bad("Use .follow <player> [blocks] or .follow stop".into()),
+    }
+}
+
+fn mine(_: &dyn Source, before: &[&str], _: &str) -> Step {
+    const KINDS: &[(&str, &str)] = &[
+        ("coal", "coal ore"), ("copper", "copper ore"), ("iron", "iron ore"), ("lapis", "lapis ore"), ("redstone", "redstone ore"),
+        ("gold", "gold ore"), ("diamond", "diamond ore"), ("emerald", "emerald ore"), ("quartz", "nether quartz ore"),
+        ("debris", "ancient debris"), ("log", "any log"), ("stop", "stop mining"),
+    ];
+    match before {
+        [] => Step::Free { list: words(KINDS), usage: "<block> [count]|stop".into(), back: 0 },
+        [word] if word.eq_ignore_ascii_case("stop") => Step::Done,
+        [_] => Step::Free { list: Vec::new(), usage: "[count]".into(), back: 0 },
+        [_, count] if count.parse::<u32>().is_ok_and(|n| (1..=1024).contains(&n)) => Step::Done,
+        [_, count] => Step::Bad(format!("{count} is not a number of blocks from 1 to 1024")),
+        _ => Step::Bad("Use .mine <block> [count] or .mine stop".into()),
     }
 }
 
@@ -966,6 +983,9 @@ mod tests {
         assert_eq!(texts(&at_end(".follow Steve ")), ["3"]);
         assert_eq!(at_end(".follow Steve 40 ").error.as_deref(), Some("40 is not a distance from 1 to 16 blocks"));
         assert!(at_end(".follow Steve 2 ").error.is_none());
+        assert_eq!(texts(&at_end(".mine d")), ["diamond", "debris"]);
+        assert_eq!(at_end(".mine diamond 0 ").error.as_deref(), Some("0 is not a number of blocks from 1 to 1024"));
+        assert!(at_end(".mine oak_log 3 ").error.is_none());
         assert_eq!(at_end(".vclip ").usage.as_deref(), Some("<blocks>"));
     }
 
@@ -979,7 +999,7 @@ mod tests {
     // Every name runtime_commands.rs `run` matches has its grammar here.
     #[test]
     fn every_command_run_reads() {
-        let run = "relog seed auradebug elytratarget antibotdebug scan vanish staffcheck goto follow baritone b help commands \
+        let run = "relog seed auradebug elytratarget antibotdebug scan vanish staffcheck goto follow mine baritone b help commands \
                    menu gui pages toggle t modules list settings get set movementpreset bind binds panic debug profile \
                    profiles config cfg preset presets reset friend friends f loadout loadouts waypoint waypoints wp \
                    vclip hclip plugins";

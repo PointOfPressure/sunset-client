@@ -152,6 +152,7 @@ and setting names, the start of the name is enough.
 | `.preset [name]` | show the presets and what one changes; add `apply` to apply it |
 | `.seed` | the world seed Ore Sim uses: `.seed <seed>` sets it, `.seed auto` finds it (see Ore Sim) |
 | `.goto <x> <y> <z>` | walk somewhere up to 128 blocks away; `.goto stop` or a movement key stops it |
+| `.mine <block> [count]` | walk to the nearest uncovered blocks of a kind within 32 blocks (`diamond`, `iron`, `log`, or a block id) and break them with what you hold, picking up what falls; it never tunnels. `.mine stop` or a movement key stops it, an open screen holds it |
 | `.follow <player> [blocks]` | walk after a player in sight and stay 3 blocks (or `blocks`, 1 to 16) from them; `.follow stop` or a movement key stops it, an open screen holds it |
 | `.vclip <n>`, `.hclip <n>` | move n blocks up (negative: down) or forward |
 | `.plugins` | list loaded plugins with their modules and commands |

@@ -14915,6 +14915,142 @@ def _():
                 + ("" if window else "; a real movement key: no window"))
 
 
+# ---- .mine <block> [count]: .goto's walker up to uncovered blocks of a kind, the game's own dig on each (mine.rs)
+
+MINE_END = ("Mined ", "Stopped mining", " in sight within 32 blocks (covered", "is not a number of blocks", "Not mining anything", "Use .mine")
+
+
+def mine_run(line, limit=120):
+    """Types a .mine line and waits for the line that ends it (Mined ..., Stopped mining ..., a refusal): Sunset's
+    lines since."""
+    mark = log_mark()
+    say(line)
+    t0 = time.time()
+    while time.time() - t0 < limit:
+        time.sleep(1)
+        lines = sunset_said(mark)
+        if any(end in text for text in lines for end in MINE_END):
+            break
+    wait(5)
+    return sunset_said(mark)
+
+
+def mine_place(block, *spots):
+    for x, y, z in spots:
+        cmd(f"setblock {X0 + x} {y} {Z0 + z} minecraft:{block}")
+    wait(5)
+
+
+def mine_count(block):
+    return count(X0 - 4, Y, Z0 - 5, X0 + 16, Y + 9, Z0 + 5, block)
+
+
+@test(".mine (ores in sight)")
+def _():
+    # Five diamond ores about the arena with a pickaxe in hand: one on the floor 4 east, two stacked 7 east (the upper
+    # one opens the lower), one set in the floor, one 8 up in the air that nothing reaches. All but the high one are
+    # mined and their diamonds picked up; then ".mine diamond 2" of four more ends at two. One move packet a tick.
+    goto_clear()
+    reset()
+    cmd("clear @s")
+    slot(0, "diamond_pickaxe")
+    ctl("key", "1", "tap")
+    # The floor is one block thick: a block under the ore set in it, or its diamond falls out of the arena.
+    was = lambda y: next(iter(ctl("blocks", *map(str, (X0 + 5, y, Z0 - 2, X0 + 5, y, Z0 - 2))).get("counts", {})), "minecraft:air")
+    floor, under = was(Y), was(Y - 1)
+    cmd(f"setblock {X0 + 5} {Y - 1} {Z0 - 2} minecraft:stone")
+    mine_place("diamond_ore", (4, Y + 1, 0), (7, Y + 1, 2), (7, Y + 2, 2), (5, Y, -2), (6, Y + 8, 0))
+    wire = probe_mark() if probe_path() and SERVER else None
+    lines = mine_run(".mine diamond")
+    stats = wire_stats(wire) if wire is not None else None
+    seen = any("Mining diamond: 5 in sight" in text for text in lines)
+    ended = next((text.split("[Sunset] ")[-1].strip() for text in lines if "Mined " in text), None)
+    all_left, diamonds = mine_count("diamond_ore"), items_of("diamond")
+    cmd(f"setblock {X0 + 5} {Y} {Z0 - 2} {floor}", f"setblock {X0 + 5} {Y - 1} {Z0 - 2} {under}")
+    reset()
+    mine_place("diamond_ore", (3, Y + 1, 2), (6, Y + 1, -2), (9, Y + 1, 2), (12, Y + 1, -2))
+    lines = mine_run(".mine diamond 2")
+    two = any("Mining up to 2 diamond" in text for text in lines) and any("Mined 2 diamond" in text for text in lines)
+    two_left = mine_count("diamond_ore")
+    health = hp()
+    cmd(f"fill {X0-4} {Y+1} {Z0-5} {X0+16} {Y+9} {Z0+5} minecraft:air", "clear @s")
+    reset()
+    ok = (seen and ended == "Mined 4 diamond; 1 more in sight could not be reached." and all_left == 1 and diamonds == 4
+          and two and two_left == 3 and (stats is None or (stats[1] <= 1 and stats[2] == 0)) and health == 20)
+    return ok, (f"5 in sight said: {seen}; ended: {ended!r}; ores left {all_left} (the high one), diamonds picked up {diamonds}; "
+                f"'2' of four more: {two}, ores left {two_left} (2 and the high one); health {health}; "
+                + (f"{stats[0]} ticks, at most {stats[1]} move packets in one, {stats[2]} server teleports" if stats else "no probe"))
+
+
+@test(".mine (kinds, stops, the wrong tool)")
+def _():
+    # By hand: "log" takes an oak and a birch log; nothing of a kind, a bad count and no job are said; an open
+    # inventory holds the job and it ends once shut; .mine stop ends it with logs left; obsidian by hand is given up
+    # after 20 s.
+    said, got = {}, {}
+    goto_clear()
+    reset()
+    cmd("clear @s")
+    has = lambda lines, text: any(text in line for line in lines)
+    said["nothing there"] = has(mine_run(".mine emerald", 10), "No emerald in sight within 32 blocks")
+    said["count 0"] = has(mine_run(".mine diamond 0", 10), "0 is not a number of blocks from 1 to 1024.")
+    said["no job"] = has(mine_run(".mine stop", 10), "Not mining anything.") and has(mine_run(".mine", 10), "Use .mine <block>")
+    mine_place("oak_log", (4, Y + 1, 1))
+    mine_place("birch_log", (7, Y + 1, -1))
+    said["log"] = has(mine_run(".mine log"), "Mined 2 log.")
+    got["logs left"] = mine_count("oak_log") + mine_count("birch_log")
+    got["logs picked up"] = items_of("oak_log") + items_of("birch_log")
+    # Three logs: the inventory opened after the first holds the job (no log goes while it is open), shut it ends.
+    reset()
+    mine_place("oak_log", (3, Y + 1, 2), (8, Y + 1, -2), (13, Y + 1, 2))
+    mark = log_mark()
+    say(".mine oak_log")
+    t0 = time.time()
+    while time.time() - t0 < 40 and mine_count("oak_log") == 3:
+        time.sleep(0.5)
+    ctl("key", "e", "tap")
+    wait(10)
+    before = mine_count("oak_log")
+    time.sleep(8)
+    got["held behind the inventory"] = (before, mine_count("oak_log"))
+    ctl("key", "esc", "tap")
+    wait(3)
+    if state().get("screen") not in ("playing", None):
+        ctl("close")
+    t0 = time.time()
+    while time.time() - t0 < 60 and not has(sunset_said(mark), "Mined "):
+        time.sleep(1)
+    said["after the inventory"] = has(sunset_said(mark), "Mined 3 oak_log.")
+    got["after the inventory"] = mine_count("oak_log")
+    # .mine stop after the first of three: said, and the other two stay.
+    reset()
+    mine_place("oak_log", (3, Y + 1, 2), (8, Y + 1, -2), (13, Y + 1, 2))
+    say(".mine oak_log")
+    t0 = time.time()
+    while time.time() - t0 < 40 and mine_count("oak_log") == 3:
+        time.sleep(0.5)
+    said[".mine stop"] = has(mine_run(".mine stop", 10), "Stopped mining oak_log after 1.")
+    before = mine_count("oak_log")
+    time.sleep(8)
+    got["after .mine stop"] = (before, mine_count("oak_log"))
+    cmd(f"fill {X0-4} {Y+1} {Z0-5} {X0+16} {Y+9} {Z0+5} minecraft:air", "clear @s")
+    # Obsidian with an empty hand: 20 s, then it says what did not break.
+    reset()
+    mine_place("obsidian", (3, Y + 1, 0))
+    lines = mine_run(".mine obsidian", 45)
+    said["wrong tool"] = has(lines, "Stopped mining obsidian after 0") and has(lines, "did not break in 20 s with what you hold")
+    got["obsidian left"] = mine_count("obsidian")
+    health = hp()
+    cmd(f"fill {X0-4} {Y+1} {Z0-5} {X0+16} {Y+9} {Z0+5} minecraft:air", "clear @s")
+    reset()
+    held = got["held behind the inventory"]
+    stopped = got["after .mine stop"]
+    ok = (all(said.values()) and got["logs left"] == 0 and got["logs picked up"] == 2 and held[0] == held[1] and 1 <= held[0] <= 2
+          and got["after the inventory"] == 0 and stopped[0] == stopped[1] and 1 <= stopped[0] <= 2 and got["obsidian left"] == 1
+          and health == 20)
+    return ok, f"said: {said}; {got}; health {health}"
+
+
 
 # The Grim alerts of Sayer's two screenshots (3 Nov), the earlier one first: what the report's table must count.
 GRIM_LINES = [
