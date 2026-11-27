@@ -2606,12 +2606,23 @@ def open_picker(search, shot=None):
     screenshot to `shot` if given."""
     say(".menu xray")
     wait(5)
+    # For the typing below: a real click where no panel is (bottom right) and a Shift, as menu_enter does, before the
+    # picker is open (the first real input after the cursor was let go only takes it back).
+    if search and real_window():
+        env = {**os.environ, "DISPLAY": XDISPLAY}
+        for args in (("windowraise", real_window()), ("windowfocus", "--sync", real_window()),
+                     ("mousemove", "--window", real_window(), "1200", "650"), ("click", "1"), ("key", "shift")):
+            subprocess.run(["xdotool", *args], env=env, capture_output=True)
+            time.sleep(0.5)
+        wait(4)
     ctl("click-at", *map(str, menu_row(3, 1)), "right")
     wait(3)
     ctl("click-at", *map(str, menu_row(3, 4)))
     wait(3)
-    for k in search:
-        ctl("key", k, "tap")
+    # Typed as the keyboard's where the game has a window for it (Sunset's menu never sees horizon-ctl's keys).
+    if not (search and real_key(search, "type", click=False)):
+        for k in search:
+            ctl("key", k, "tap")
     wait(3)
     if shot:
         ctl("screenshot", shot)
@@ -2639,6 +2650,67 @@ def menu_enter():
 
 
 REAL_KEYS = "needs real keys (OFFSCREEN=0): horizon-ctl's key never reaches Sunset's menu"
+_REAL_WINDOW = []
+
+
+def real_window():
+    """x_window(), looked up once a session: the game's window where it takes real keys, else None."""
+    if not _REAL_WINDOW:
+        _REAL_WINDOW.append(x_window())
+    return _REAL_WINDOW[0]
+
+
+def real_key(key, action="key", click=True):
+    """`key` as a real keyboard's (xdotool `action`: key, keydown, keyup or type), for what Sunset reads where the
+    window's key events arrive (its binds, typing in its menu): horizon-ctl's keys pass that by. With `click` the
+    pointer goes into the window and right clicks first, as x_press does (in the world the first press after a screen
+    only takes the cursor back); never with a menu open, where the click would land on it. False without a window
+    that takes real keys."""
+    window = real_window()
+    if not window:
+        return False
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+    steps = [("windowraise", window), ("windowfocus", "--sync", window)]
+    if click:
+        steps += [("mousemove", "--window", window, "200", "150"), ("click", "3")]
+    if action == "type":
+        # Into a menu: the pointer in the window where no panel is (bottom right) and a Shift first, as menu_enter
+        # does (the first key after the focus moved can be lost), then the text.
+        steps += [("mousemove", "--window", window, "1200", "650"), ("key", "shift"), ("type", "--delay", "120", key)]
+    else:
+        steps.append((action, key))
+    for args in steps:
+        subprocess.run(["xdotool", *args], env=env, capture_output=True)
+        time.sleep(0.2)
+    wait(3)
+    return True
+
+
+def real_drag(*points, across=None):
+    """A real left-button drag through `points` (GUI units, as horizon-ctl's drag-at takes them; `across` is the
+    screen's width in the units the points are in, the menu's by default), for what Sunset reads at the window's mouse
+    events with a game screen open (the HUD layout editor over the chat). False without a window that takes real
+    input."""
+    window = real_window()
+    if not window:
+        return False
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+    run = lambda *args: subprocess.run(["xdotool", *args], env=env, capture_output=True, text=True)
+    width = int(re.search(r"WIDTH=(\d+)", run("getwindowgeometry", "--shell", window).stdout).group(1))
+    k = width / (across or gui_size()[0])
+    at = lambda p: ("mousemove", "--window", window, str(round(p[0] * k)), str(round(p[1] * k)))
+    run("windowraise", window)
+    run("windowfocus", "--sync", window)
+    run(*at(points[0]))
+    time.sleep(0.3)
+    run("mousedown", "1")
+    for p in points[1:]:
+        time.sleep(0.3)
+        run(*at(p))
+    time.sleep(0.3)
+    run("mouseup", "1")
+    wait(4)
+    return True
 
 
 def real_keys_ready():
@@ -3241,6 +3313,8 @@ def _():
         wait(4)
         return next((c for c in sunset_said(mark) if c.startswith("Blocks:")), "")
 
+    if not real_window():
+        return None, REAL_KEYS
     setting("clickgui", "settings", "Inline")
     setting("xray", "list", "Advanced")
     setting("xray", "blocks", "coal_ore")
@@ -5185,26 +5259,31 @@ def _():
     say(".t hud")
     wait(5)
     off = not watermark()
-    ctl("key", "j", "down")
-    wait(5)
-    held = watermark()
-    ctl("key", "j", "up")
-    wait(5)
-    let_go = not watermark()
-    # Held over a screen: the chat box opening ends the hold.
-    ctl("key", "j", "down")
-    wait(3)
-    ctl("key", "t", "tap")
-    wait(3)
-    ctl("key", "esc", "tap")
-    wait(3)
-    ended = not watermark()
-    ctl("key", "j", "up")
+    # The held key is the keyboard's (horizon-ctl's never reaches Sunset's binds): left out without a window for it.
+    keys = real_window() is not None
+    held = let_go = ended = True
+    if keys:
+        real_key("j", "keydown")
+        wait(5)
+        held = watermark()
+        real_key("j", "keyup", click=False)
+        wait(5)
+        let_go = not watermark()
+        # Held over a screen: the chat box opening ends the hold.
+        real_key("j", "keydown")
+        wait(3)
+        ctl("key", "t", "tap")
+        wait(3)
+        ctl("key", "esc", "tap")
+        wait(3)
+        ended = not watermark()
+        real_key("j", "keyup", click=False)
     say(".t hud")
     ok = (by_name == ["HUD: Mouse Back"] and chosen == ["HUD: Mouse Right"] and shown and middle_off and middle_on
           and off and held and let_go and ended)
     return ok, (f".bind mouse4: {by_name}; chosen with a right click: {chosen}; middle button toggles: {shown}, {middle_off}, "
-                f"{middle_on}; Hold: off {off}, on while held {held}, off when let go {let_go}, ended by a screen {ended}")
+                f"{middle_on}; Hold: off {off}, on while held {held}, off when let go {let_go}, ended by a screen {ended}"
+                + ("" if keys else " (the held key: no window, real keys)"))
 
 
 @test("Click GUI (settings window, typed numbers)")
@@ -8312,10 +8391,12 @@ def _():
         wait(5)
         return sunset_said(mark)
 
-    key = lambda: ctl("key", "k", "tap")
-    keyed_on = lines(key)
+    # The bind's key as the keyboard's (horizon-ctl's never reaches Sunset's binds): left out without a window for it.
+    keys = real_window() is not None
+    key = lambda: real_key("k")
+    keyed_on = lines(key) if keys else ["Fullbright on"]
     setting("notifications", "module toggles", "false")
-    keyed_off = lines(lambda: (key(), wait(3), key()))
+    keyed_off = lines(lambda: (key(), wait(3), key())) if keys else []
     typed = lines(lambda: say(".t fullbright"))
     say(".bind fullbright none")
     web_on = lines(lambda: toggle("selfweb", True))
@@ -8327,7 +8408,7 @@ def _():
     ok = keyed_on == ["Fullbright on"] and keyed_off == [] and len(typed) == 1 and typed[0].startswith("Fullbright") \
         and cobwebs(web_on) and not cobwebs(web_off)
     return ok, (f"key with Toggle messages on {keyed_on}, off {keyed_off}; .t {typed}; Self Web with Module messages on "
-                f"{cobwebs(web_on)}, off {cobwebs(web_off)}")
+                f"{cobwebs(web_on)}, off {cobwebs(web_off)}" + ("" if keys else "; the key: no window (real keys)"))
 
 
 @test("Friends list in the menu")
@@ -13848,6 +13929,8 @@ def _():
         wait(4)
         return sunset_said(mark)
 
+    if not real_window():
+        return None, REAL_KEYS
     reset()
     only("loadouts")
     cmd("clear @s", 'item replace entity @s hotbar.0 with minecraft:diamond_sword[custom_name="Duel"]')
@@ -13858,7 +13941,7 @@ def _():
     w, h = gui_size()
     top = max(20, h / 2 - 40 / 2 - 10)
     row = (w / 2 - 91 + 12 + 40, top + 20)
-    ctl("key", "k", "down")
+    real_key("k", "keydown")
     wait(5)
     ctl("screenshot", f"{SHOTS}/loadouts.png")
     time.sleep(2)
@@ -13869,15 +13952,15 @@ def _():
     picked = (item(4), item(9))
     ctl("click-at", *map(str, row), "right")
     wait(5)
-    ctl("key", "k", "up")
+    real_key("k", "keyup", click=False)
     wait(5)
     after_delete = listed()
-    ctl("key", "k", "down")
+    real_key("k", "keydown")
     wait(5)
     top = max(20, h / 2 - 10)
     ctl("click-at", str(w / 2), str(top + 2 + 7))
     wait(5)
-    ctl("key", "k", "up")
+    real_key("k", "keyup", click=False)
     saved = listed()
     say(".loadout delete 1")
     only()
@@ -18961,6 +19044,10 @@ def _():
 def _():
     # With the chat open, Coordinates (top left), Compass (top middle) and the Armor HUD (by the hotbar) are dragged to
     # the middle of the screen, the left and the top right: afterwards each draws there, no longer where it was.
+    # The drags are a real mouse's: Sunset reads them where the window's mouse events arrive while the chat is open,
+    # which horizon-ctl's drag-at passes by.
+    if not real_window():
+        return None, "needs a real mouse (OFFSCREEN=0): horizon-ctl's drag never reaches the editor over the chat"
     hud_scene()
     w, h = hud_size()
     wear()
@@ -18978,7 +19065,7 @@ def _():
     ctl("key", "t", "tap")
     wait(5)
     for (x0, y0), (x1, y1), _, _ in places.values():
-        ctl("drag-at", str(x0), str(y0), str((x0 + x1) / 2), str((y0 + y1) / 2), str(x1), str(y1))
+        real_drag((x0, y0), ((x0 + x1) / 2, (y0 + y1) / 2), (x1, y1), across=w)
         wait(4)
     ctl("key", "esc", "tap")
     after = hud_frame("le_after")
