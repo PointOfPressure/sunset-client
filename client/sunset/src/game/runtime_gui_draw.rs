@@ -691,7 +691,10 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
             // A Dashboard row fades as the pointer comes and goes.
             let glow = super::sunset_dashboard::glow(*hit);
             if glow > 0 {
-                out.push(Shape::Fill(*r, glow << 24 | 0x00FF_FFFF));
+                match super::sunset_dashboard::card_of(*hit, *r) {
+                    Some((card, radius)) => out.push(Shape::Round(card, radius, glow << 24 | 0x00FF_FFFF)),
+                    None => out.push(Shape::Fill(*r, glow << 24 | 0x00FF_FFFF)),
+                }
             }
         } else if hovered {
             let last = rows.get(k + 1).is_none_or(|(_, next)| matches!(next, Hit::Header(_)));

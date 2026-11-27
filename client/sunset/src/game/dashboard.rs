@@ -912,6 +912,16 @@ pub(super) fn wheel(s: &State, steps: f32, at: (f32, f32)) {
     });
 }
 
+// What lights under the pointer for a row, given its place: a bind alone in its card lights the whole card, so no
+// strip of the card shows round the light (None: the row itself).
+pub(super) fn card_of(hit: Hit, r: [f32; 4]) -> Option<([f32; 4], f32)> {
+    if !one_line() || !matches!(hit, Hit::Bind(_)) {
+        return None;
+    }
+    let alone = view(|v| v.cards.first().is_some_and(|c| v.pane.rows.iter().filter(|(off, _)| *off < c.bottom).count() == 1));
+    alone.then(|| ([r[0] - CARD_IN, r[1] - CARD_PAD, r[2] + 2.0 * CARD_IN, r[3] + 2.0 * CARD_PAD], control_radius().max(4.0)))
+}
+
 // The menu has just opened (Enabled lists afresh what is on).
 pub(super) fn opened() {
     view(|v| {
