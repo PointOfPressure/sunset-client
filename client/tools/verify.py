@@ -5724,17 +5724,48 @@ def _():
 
 @test("Auto Trap")
 def _():
+    # Bot1 stands still in the open; Auto Trap (Full top: the four sides of the head and the block over it) boxes him
+    # in and turns itself off, with Packet Order on (the default) and off, and with the Face top (the sides only). Every
+    # obsidian in the 5x5x5 around him is one of the shape's: a place clicked again before the server's answer came put
+    # a block on top of the first (7 to 9 obsidian for 5 in single player on a slow client, 27 Nov).
     if not CTL2:
         return None, "needs a second player"
-    cmd("gamemode survival Bot1", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5}")
-    slot(0, "obsidian", 32)
-    wait(10)
-    only("autotrap")
-    wait(60)
-    boxed = count(X0 - 1, Y + 1, Z0 + 1, X0 + 1, Y + 3, Z0 + 3, "obsidian")
-    off = turned_itself_off("autotrap", "Auto Trap")
-    only()
-    return boxed == 5 and off, f"{boxed} obsidian round Bot1's head (5 is the Full top); off after: {off}"
+    full = {(-1, 2, 2), (1, 2, 2), (0, 2, 1), (0, 2, 3), (0, 3, 2)}
+    face = full - {(0, 3, 2)}
+
+    def run(order, top):
+        only()
+        reset()
+        cmd(f"fill {X0 - 2} {Y + 1} {Z0} {X0 + 2} {Y + 5} {Z0 + 4} minecraft:air")
+        if is_on("Packet Order") != order:
+            say(".t packetorder")
+            wait(2)
+        say(".reset autotrap")
+        setting("autotrap", "top blocks", top)
+        cmd("gamemode survival Bot1", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5}")
+        slot(0, "obsidian", 32)
+        wait(10)
+        only("autotrap")
+        wait(60)
+        cells = {(x - X0, y - Y, z - Z0) for x in range(X0 - 2, X0 + 3) for y in range(Y + 1, Y + 6)
+                 for z in range(Z0, Z0 + 5) if count(x, y, z, x, y, z, "obsidian")}
+        off = turned_itself_off("autotrap", "Auto Trap")
+        only()
+        return cells, off
+
+    runs = {}
+    try:
+        runs["Full, Packet Order on"] = (run(True, "Full"), full)
+        runs["Full, Packet Order off"] = (run(False, "Full"), full)
+        runs["Face, Packet Order on"] = (run(True, "Face"), face)
+    finally:
+        if not is_on("Packet Order"):
+            say(".t packetorder")
+            wait(2)
+        say(".reset autotrap")
+    ok = all(cells == want and off for (cells, off), want in runs.values())
+    return ok, "; ".join(f"{name}: {len(cells)} obsidian of {len(want)}, missing {sorted(want - cells)}, extra "
+                         f"{sorted(cells - want)}, off after {off}" for name, ((cells, off), want) in runs.items())
 
 
 @test("Chest Swap")
@@ -10530,6 +10561,39 @@ def _():
     return ok, f"off then on ({not off_state}, {on_state}): " + "; ".join(
         f"{name}: {late} of {n} actions after the move packet, {moved} ticks moved, most {most} moves a tick, done {done}"
         for name, (late, n, moved, most, done) in runs.items())
+
+@test("BlockIn (an end crystal in the way)")
+def _():
+    # An end crystal keeps blocks out of its 2x2x2 box, so the server refuses a place there. One stood over BlockIn's
+    # east side (that box also takes the north and south sides): BlockIn places the west side once and leaves the
+    # others alone while the crystal stands, so the hotbar is free for Crystal Aura to break it (it sent a place into
+    # the crystal every tick, and PvP Bot never hit on Paper). Once the crystal is gone the other three go in.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    ring = (X0 - 1, Y + 1, Z0 - 1, X0 + 1, Y + 2, Z0 + 1)
+    only()
+    reset()
+    cmd(f"fill {' '.join(map(str, ring))} minecraft:air", "kill @e[type=end_crystal]")
+    say(".reset blockin")
+    slot(0, "diamond_sword")
+    slot(2, "obsidian", 64)
+    ctl("key", "1", "tap")
+    cmd(f"summon minecraft:end_crystal {X0 + 1.5} {Y + 1} {Z0 + 0.5} {{ShowBottom:0b}}")
+    wait(10)
+    mark = probe_mark()
+    only("blockin")
+    wait(40)
+    blocked = count(*ring, "obsidian")
+    sends = sum(1 for t in probe_ticks(mark) for line in t if line == f"pkt {USE_ITEM_ON}")
+    west = count(X0 - 1, Y + 1, Z0, X0 - 1, Y + 1, Z0, "obsidian")
+    cmd("kill @e[type=end_crystal]")
+    wait(30)
+    after = count(*ring, "obsidian")
+    only()
+    ok = blocked == 1 and west == 1 and sends == 1 and after == 4
+    return ok, (f"with the crystal: {blocked} obsidian (west side {west}), {sends} place packets in 2 s; "
+                f"after it was gone: {after} of 4")
+
 
 @test("BlockIn (each block placed once, Packet Order on and off)")
 def _():

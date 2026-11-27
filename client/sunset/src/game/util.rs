@@ -10,6 +10,7 @@ use horizon_protocol::packets::{
     play::{self, Serverbound as S},
 };
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicI32, Ordering as AtomicOrdering};
 
 // The next block-action sequence number, from the game's own counter.
 pub(super) fn sequence(game: &mut Game<'_>) -> i32 {
@@ -295,7 +296,16 @@ fn obstructed(game: &Game<'_>, p: [i32; 3]) -> bool {
     if game.player.as_ref().is_some_and(|pl| hits(pl.bounds())) {
         return true;
     }
-    game.mobs.iter().any(|m| m.alive() && !m.removed && hits(m.bounds()))
+    if game.mobs.iter().any(|m| m.alive() && !m.removed && hits(m.bounds())) {
+        return true;
+    }
+    // An end crystal keeps blocks out of its 2x2x2 box over its base, as a mob does (EndCrystal blocks building). The
+    // server refused every place into one, and BlockIn sent it again each tick with the hotbar, so in a crystal fight
+    // Crystal Aura never got the hand to break the crystal that stood in BlockIn's way (PvP Bot dealt nothing on Paper).
+    game.crystals.iter().any(|c| {
+        let p = &c.position;
+        p.x - 1.0 < hi[0] && p.x + 1.0 > lo[0] && p.y < hi[1] && p.y + 2.0 > lo[1] && p.z - 1.0 < hi[2] && p.z + 1.0 > lo[2]
+    })
 }
 
 // Check whether a block can be placed here.
@@ -303,17 +313,39 @@ pub(super) fn can_place(game: &Game<'_>, p: [i32; 3], check_entities: bool) -> b
     p[1] >= -64 && p[1] < 320 && replaceable(game, p) && (!check_entities || !obstructed(game, p))
 }
 
-// Places sent, by the tick they go out in: the block shows once the server answers, a round trip later (a tick later
-// still when Packet Order holds the place for the next tick), and until then the spot is not clicked again. Without it every place
-// went out twice with Packet Order on, and at one block a tick the work took twice as long.
-static PLACES_SENT: Mutex<Vec<([i32; 3], u64)>> = Mutex::new(Vec::new());
+// Places sent: the spot, the tick the place goes out in and its block-action sequence. The block shows once the server
+// answers, a round trip later (a tick later still when Packet Order holds the place for the next tick), and until then
+// the spot is not clicked again. The server acknowledges a sequence (BlockChangedAck) after that action's block
+// changes, so where it acknowledges at all the spot waits for that, up to 2 s: on a slow client or server the answer
+// can take longer than 2 ticks plus the ping, and a second click into the filled spot put a block on top of it (an
+// air place clicks the spot itself; Auto Trap left 7 to 9 obsidian for its 5 in single player). Without the memory every
+// place went out twice with Packet Order on, and at one block a tick the work took twice as long.
+static PLACES_SENT: Mutex<Vec<([i32; 3], u64, i32)>> = Mutex::new(Vec::new());
+// The highest block-action sequence the server has acknowledged on this connection; -1 before the first.
+static BLOCK_ACK: AtomicI32 = AtomicI32::new(-1);
+
+// From the packet tap: the server acknowledged block actions up to `sequence`, or (None) a new connection began.
+pub(crate) fn block_acked(sequence: Option<i32>) {
+    match sequence {
+        Some(s) => {
+            BLOCK_ACK.fetch_max(s, AtomicOrdering::Relaxed);
+        }
+        None => {
+            BLOCK_ACK.store(-1, AtomicOrdering::Relaxed);
+            PLACES_SENT.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        }
+    }
+}
 
 fn awaiting(game: &Game<'_>, p: [i32; 3]) -> bool {
     let ping = super::remote::sunset_combat_remote::latency(game).unwrap_or(0).max(0) as u64;
-    let wait = (2 + ping.div_ceil(50)).min(20);
+    let quick = (2 + ping.div_ceil(50)).min(20);
+    let acked = BLOCK_ACK.load(AtomicOrdering::Relaxed);
     let mut sent = PLACES_SENT.lock().unwrap_or_else(|e| e.into_inner());
-    sent.retain(|(_, at)| game.ticks < at.saturating_add(wait));
-    sent.iter().any(|(q, _)| *q == p)
+    sent.retain(|&(_, at, seq)| {
+        game.ticks < at.saturating_add(quick) || (acked >= 0 && seq > acked && game.ticks < at.saturating_add(40))
+    });
+    sent.iter().any(|(q, ..)| *q == p)
 }
 
 // Put the block in hotbar `slot` (or the offhand's, slot OFFHAND) at `p`, clicking a
@@ -362,7 +394,7 @@ pub(super) fn place_block(game: &mut Game<'_>, p: [i32; 3], slot: usize, rotate:
         }
         // Counted from the tick the place goes out in: the next one when Packet Order holds it.
         let out = game.ticks + u64::from(super::sunset::order_waits());
-        PLACES_SENT.lock().unwrap_or_else(|e| e.into_inner()).push((p, out));
+        PLACES_SENT.lock().unwrap_or_else(|e| e.into_inner()).push((p, out, seq));
     });
     true
 }
