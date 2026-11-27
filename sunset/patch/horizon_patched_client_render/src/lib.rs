@@ -256,9 +256,47 @@ pub mod chat {
             ticks: u64,
             focused: bool,
         ) {
+            {
+                fn sunset_debug_chat(
+                    content: &crate::text::Text,
+                    source: crate::chat::ChatSource,
+                ) {
+                    #[allow(unused_imports)]
+                    use crate::command as _;
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return;
+                    }
+                    ::sunset_core::chat_log::added(
+                        &content.strip_legacy().plain(),
+                        source as u8,
+                    );
+                }
+                sunset_debug_chat(&content, source)
+            };
             let tag = indicator
                 .map(|color| std::sync::Arc::new(Tag::system_single_player(color)));
-            self.add_message(&atlas.font, content, tag, source, ticks, focused);
+            self.add_message(
+                &atlas.font,
+                ({
+                    fn sunset_streamer_chat(value: Text) -> Text {
+                        let mut value = value;
+                        if ::sunset_core::lifecycle::RUNTIME.running()
+                            && let Some(protect) = ::sunset_core::bridge::STREAMER_TEXT
+                                .get()
+                        {
+                            protect(
+                                &mut value as *mut Text as ::sunset_core::bridge::Ptr,
+                            );
+                        }
+                        value
+                    }
+                    sunset_streamer_chat
+                })(content),
+                tag,
+                source,
+                ticks,
+                focused,
+            );
         }
     }
     #[doc(hidden)]
@@ -298,6 +336,42 @@ pub mod fog {
         near: &NearPlane,
         seen: &dyn Fn(BlockStateId, [i32; 3]) -> BlockStateId,
     ) -> FogType {
+        if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+            fn sunset_fog_hook(
+                world: &World,
+                facts: &BlockFacts,
+                camera: [f64; 3],
+                near: &NearPlane,
+                seen: &dyn Fn(BlockStateId, [i32; 3]) -> BlockStateId,
+            ) -> std::ops::ControlFlow<FogType> {
+                if !::sunset_core::lifecycle::RUNTIME.running() {
+                    return std::ops::ControlFlow::Continue(());
+                }
+                use std::sync::atomic::Ordering::Relaxed;
+                let (water, lava) = (
+                    ::sunset_core::fog::NO_WATER.load(Relaxed),
+                    ::sunset_core::fog::NO_LAVA.load(Relaxed),
+                );
+                if !(water || lava) || ::sunset_core::fog::busy() {
+                    return std::ops::ControlFlow::Continue(());
+                }
+                ::sunset_core::fog::set_busy(true);
+                let found = fog_type(world, facts, camera, near, seen);
+                ::sunset_core::fog::set_busy(false);
+                std::ops::ControlFlow::Break(
+                    match found {
+                        FogType::Water if water => FogType::Atmospheric,
+                        FogType::Lava | FogType::PowderSnow if lava => {
+                            FogType::Atmospheric
+                        }
+                        other => other,
+                    },
+                )
+            }
+            sunset_fog_hook(world, facts, camera, near, seen)
+        } {
+            return __horizon_mixins_return;
+        }
         let block = |b: [i32; 3]| seen(world.block(b[0], b[1], b[2]), b);
         camera_fog_type(
             camera,
@@ -377,6 +451,37 @@ pub mod font {
     impl __Fnr_Font_take_patches for Font {
         /// Atlas pixels rasterized since the last call.
         fn take_patches(&self) -> Vec<Patch> {
+            if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                fn sunset_patches(this: &Font) -> std::ops::ControlFlow<Vec<Patch>> {
+                    #[allow(unused_imports)]
+                    use crate::{resource_source as _, zip as _};
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    if ::sunset_core::font::STYLE
+                        .load(std::sync::atomic::Ordering::Relaxed) == 0
+                    {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    let mut patches = std::mem::take(
+                        &mut this.cache.borrow_mut().region.pending,
+                    );
+                    for patch in &mut patches {
+                        for px in patch.rgba.chunks_exact_mut(4) {
+                            if px[0] == px[3] && px[1] == px[3] && px[2] == px[3] {
+                                let coverage = f32::from(px[3]) / 255.0;
+                                px.copy_from_slice(
+                                    &[255, 255, 255, (coverage.powf(0.8) * 255.0).round() as u8],
+                                );
+                            }
+                        }
+                    }
+                    std::ops::ControlFlow::Break(patches)
+                }
+                sunset_patches(&*self)
+            } {
+                return __horizon_mixins_return;
+            }
             std::mem::take(&mut self.cache.borrow_mut().region.pending)
         }
     }
@@ -647,6 +752,20 @@ pub mod gfx {
         }
         impl __Fnr_Stars_draw for Stars {
             fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+                if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                    fn sunset_atmosphere_stars() -> std::ops::ControlFlow<()> {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return std::ops::ControlFlow::Continue(());
+                        }
+                        if ::sunset_core::atmosphere::owns_sky() {
+                            return std::ops::ControlFlow::Break(());
+                        }
+                        std::ops::ControlFlow::Continue(())
+                    }
+                    sunset_atmosphere_stars()
+                } {
+                    return __horizon_mixins_return;
+                }
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(0, &self.group, &[]);
                 pass.set_vertex_buffer(0, self.vertices.slice(..));
@@ -668,6 +787,14 @@ pub mod gfx {
         /// Hand the window surface over to the renderer that replaces this one on
         /// the same device (it takes `spare_surface`).
         fn release_surface(&mut self) {
+            {
+                fn sunset_atmosphere_release(renderer: &mut Renderer) {
+                    if let Some(release) = ::sunset_core::bridge::RELEASE_SURFACE.get() {
+                        release(renderer as *mut Renderer as *mut u8);
+                    }
+                }
+                sunset_atmosphere_release(&mut *self)
+            };
             self.frame_gen.stop();
             self.stop_display_reader();
             self.queue.wait();
@@ -722,6 +849,22 @@ pub mod menu_blur {
             radius: f32,
             timing: Option<&mut crate::gfx::pack_timing::PassTiming>,
         ) {
+            if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                fn sunset_menu_blur() -> std::ops::ControlFlow<()> {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    if ::sunset_core::overlay::NO_MENU
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                    {
+                        return std::ops::ControlFlow::Break(());
+                    }
+                    std::ops::ControlFlow::Continue(())
+                }
+                sunset_menu_blur()
+            } {
+                return __horizon_mixins_return;
+            }
             if !self.ready(device, size) {
                 return;
             }
@@ -847,6 +990,24 @@ pub mod particles {
             override_limiter: bool,
             always_show: bool,
         ) {
+            if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                fn sunset_particle_add(
+                    options: &ParticleOptions,
+                ) -> std::ops::ControlFlow<()> {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    if ::sunset_core::particles::any()
+                        && ::sunset_core::particles::hidden(options.ty.name())
+                    {
+                        return std::ops::ControlFlow::Break(());
+                    }
+                    std::ops::ControlFlow::Continue(())
+                }
+                sunset_particle_add(options)
+            } {
+                return __horizon_mixins_return;
+            }
             let c = self.camera;
             let d2 = (p[0] - c[0]).powi(2) + (p[1] - c[1]).powi(2)
                 + (p[2] - c[2]).powi(2);
@@ -877,6 +1038,22 @@ pub mod particles {
     impl __Fnr_ParticleEngine_push for ParticleEngine {
         /// `ParticleEngine.add` (via `particlesToAdd`, applied on the next tick).
         fn push(&mut self, particle: Particle) {
+            if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                fn sunset_particle_push(
+                    particle: &Particle,
+                ) -> std::ops::ControlFlow<()> {
+                    if ::sunset_core::lifecycle::RUNTIME.running()
+                        && ::sunset_core::particles::any()
+                        && ::sunset_core::particles::hidden(particle.ty.name())
+                    {
+                        return std::ops::ControlFlow::Break(());
+                    }
+                    std::ops::ControlFlow::Continue(())
+                }
+                sunset_particle_push(&particle)
+            } {
+                return __horizon_mixins_return;
+            }
             self.pending.push(PendingParticle::Ordinary(particle));
         }
     }
@@ -913,6 +1090,51 @@ pub mod screen_effects {
     }
     impl __Fnr_ScreenEffects_build for ScreenEffects {
         fn build(&self, input: &ScreenInputs) -> Vec<ScreenQuad> {
+            if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                fn sunset_overlay_hook(
+                    this: &ScreenEffects,
+                    input: &ScreenInputs<'_>,
+                ) -> std::ops::ControlFlow<Vec<ScreenQuad>> {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    use std::sync::atomic::Ordering::Relaxed;
+                    let (fire, liquid, wall, gui) = (
+                        ::sunset_core::overlay::NO_FIRE.load(Relaxed),
+                        ::sunset_core::overlay::NO_LIQUID.load(Relaxed),
+                        ::sunset_core::overlay::NO_WALL.load(Relaxed),
+                        ::sunset_core::overlay::NO_GUI.load(Relaxed),
+                    );
+                    if !(fire || liquid || wall || gui) || ::sunset_core::overlay::busy()
+                    {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    ::sunset_core::overlay::set_busy(true);
+                    let none: &[GuiDraw] = &[];
+                    let changed = ScreenInputs {
+                        sprites: input.sprites,
+                        flags: input.flags,
+                        aspect: input.aspect,
+                        partial: input.partial,
+                        block_overlay: if wall {
+                            None
+                        } else {
+                            input.block_overlay.clone()
+                        },
+                        water: if liquid { None } else { input.water },
+                        on_fire: input.on_fire && !fire,
+                        fire_lower: input.fire_lower,
+                        gui_overlays: if gui { none } else { input.gui_overlays },
+                        custom: input.custom,
+                    };
+                    let quads = this.build(&changed);
+                    ::sunset_core::overlay::set_busy(false);
+                    std::ops::ControlFlow::Break(quads)
+                }
+                sunset_overlay_hook(&*self, input)
+            } {
+                return __horizon_mixins_return;
+            }
             let mut out = Vec::new();
             let sprite = |name: &str| {
                 input.sprites.get(name).map(|r| [r.u0, r.v0, r.u1, r.v1])
@@ -1130,6 +1352,23 @@ pub mod ui {
         h: f32,
         in_world: bool,
     ) {
+        if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+            fn sunset_pause_dark(in_world: bool) -> std::ops::ControlFlow<()> {
+                if !::sunset_core::lifecycle::RUNTIME.running() {
+                    return std::ops::ControlFlow::Continue(());
+                }
+                if in_world
+                    && ::sunset_core::overlay::NO_MENU
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    return std::ops::ControlFlow::Break(());
+                }
+                std::ops::ControlFlow::Continue(())
+            }
+            sunset_pause_dark(in_world)
+        } {
+            return __horizon_mixins_return;
+        }
         let sprite = if in_world {
             "gui/inworld_menu_background"
         } else {
