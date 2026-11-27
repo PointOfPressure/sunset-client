@@ -12,6 +12,7 @@ section of the version they build into the signed manifest, and the launcher sho
 
 ### New
 - HUD layout editor: with the chat open, the wheel over an element's frame sets its size too (up grows it, down shrinks it); over anything else the chat scrolls as before
+- HUD layout editor: the server's scoreboard sidebar has a size too (the handle at its frame's corner, or the wheel)
 
 ## 2.1.0
 

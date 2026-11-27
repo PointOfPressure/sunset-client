@@ -16419,6 +16419,72 @@ def _():
                 f"{up} (saved {saved}), forty down {least}, eighty up {most}")
 
 
+@test("HUD layout editor (scoreboard size)")
+def _():
+    # The server's scoreboard sidebar (the game draws it) has a size too. Looking at the floor, the box of pixels it
+    # changes: at size 2 about twice as wide and tall with the same right edge and middle (it is in the game's own
+    # place), at 0.5 about half, at 1 again as at first; at a place of its own at size 3 it is whole on the screen; with
+    # the chat open four notches of the wheel over it make it 1.2 at a place of its own, and .reset puts it back.
+    from PIL import ImageChops
+    reset()
+    ctl("look", "0", "80")
+    only("fullbright")
+    for key, value in (("watermark", "false"), ("module list", "false"), ("coordinates", "false"), ("fps", "false"), ("speed", "false"),
+                       ("facing", "false"), ("totems", "false"), ("scoreboard position", "Default"), ("scoreboard size", "1")):
+        setting("hud", key, value)
+    cmd("gamerule send_command_feedback false", "scoreboard objectives add sunsetsize dummy", "scoreboard players set Sunset sunsetsize 7")
+
+    def frame_of(name):
+        clear_chat()
+        wait(6)
+        return colour_frame(f"hud-board-{name}")
+
+    bare = frame_of("off")
+    cmd("scoreboard objectives setdisplay sidebar sunsetsize")
+    wait(10)
+
+    def box(name, **settings):
+        for key, value in settings.items():
+            setting("hud", "scoreboard " + key, value)
+        return ImageChops.difference(bare, frame_of(name)).getbbox() or (0, 0, 0, 0)
+
+    def board():
+        rows = said_after(".settings hud", 6)
+        got = [r.split(": ", 1)[1] for key in ("Scoreboard size", "Scoreboard position") for r in rows if r.startswith(key + ":")]
+        return (float(got[0]), got[1]) if len(got) == 2 else (None, None)
+
+    one, two, half, again = box("1", size="1"), box("2", size="2"), box("0.5", size="0.5"), box("1b", size="1")
+    own = box("3", size="3", position="Custom", x="1", y="0.4")
+    for key, value in (("position", "Default"), ("size", "1")):
+        setting("hud", "scoreboard " + key, value)
+    k = hud_scale()
+    at = ((one[0] + one[2]) / 2 / k, (one[1] + one[3]) / 2 / k)
+    ctl("key", "t", "tap")
+    wait(6)
+    for _ in range(4):
+        ctl("scroll-at", str(at[0]), str(at[1]), "1")
+        wait(1)
+    wait(4)
+    ctl("key", "esc", "tap")
+    wait(4)
+    wheeled = board()
+    say(".reset hud")
+    wait(4)
+    back = board()
+    cmd("scoreboard objectives remove sunsetsize", "gamerule send_command_feedback true")
+    only()
+    wide, tall = (lambda b: b[2] - b[0]), (lambda b: b[3] - b[1])
+    full = bare.size
+    ok = (wide(one) > 20 and tall(one) > 10
+          and 1.7 < wide(two) / wide(one) < 2.3 and 1.7 < tall(two) / tall(one) < 2.3
+          and abs(two[2] - one[2]) <= 2 * k and abs((two[1] + two[3]) - (one[1] + one[3])) <= 4 * k
+          and 0.35 < wide(half) / wide(one) < 0.7 and all(abs(a - b) <= 1 for a, b in zip(again, one))
+          and 2.6 < wide(own) / wide(one) < 3.4 and own[0] >= 0 and own[2] <= full[0] and own[3] <= full[1]
+          and wheeled == (1.2, "Custom") and back == (1.0, "Default"))
+    return ok, (f"the sidebar's box at size 1 {one}, 2 {two}, 0.5 {half}, 1 again {again}, at 3 in a place of its own {own} "
+                f"of {full}; after four notches of the wheel {wheeled}, after .reset {back}")
+
+
 @test("Effects (kill, crit sparks, break bursts, target aura)")
 def _():
     # Each new effect in a colour the scene has none of (Custom, Purple), in front of a wall, counted as purple pixels

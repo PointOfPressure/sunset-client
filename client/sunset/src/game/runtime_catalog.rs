@@ -368,7 +368,8 @@ pub(super) fn defaults() -> Vec<Module> {
             // The server's scoreboard sidebar isn't drawn by the HUD, but the chat editor can move it (scoreboard_pos.rs).
             .pick("Scoreboard position", &["Default", "Custom"])
             .num("Scoreboard x", 1.0, 0.0, 1.0, 0.001)
-            .num("Scoreboard y", 0.4, 0.0, 1.0, 0.001),
+            .num("Scoreboard y", 0.4, 0.0, 1.0, 0.001)
+            .num("Scoreboard size", 1.0, 0.5, 3.0, 0.05),
         // Its place and size are the layout editor's (open the chat: drag it, drag its corner; hud_place.rs), kept as
         // "Target HUD position", x, y and size. HUD's own until 2.1 (runtime_config.rs moves a config's lines).
         Module::new("Target HUD", Render, "Who Kill Aura is hitting, by the crosshair: name, distance and health.")
