@@ -42,7 +42,7 @@ const TOLD: Duration = Duration::from_millis(250);
 
 pub(super) fn defaults() -> Vec<Module> {
     vec![
-        Module::new(LAG, Category::Combat, "Delays what you send, in order. Hold (what Blink was) keeps your moves back until you turn it off.")
+        Module::new(LAG, Category::Combat, "Delays what you send, in order. Hold keeps your moves back until you turn it off.")
             .pick("Mode", &["Delay", "Pulse", "Dynamic", "Knockback", "Repel", "Hold"])
             .num("Delay (ms)", 100.0, 10.0, 1000.0, 10.0)
             // Hold (Blink): 0 holds until you turn it off.

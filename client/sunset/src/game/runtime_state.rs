@@ -793,7 +793,8 @@ pub(super) fn sync_flags(s: &mut State) {
     }
     let g = s.module("ClickGUI");
     OLED_THEME.store(g.is_some_and(|m| m.p("Theme") == "OLED"), Ordering::Relaxed);
-    super::sunset_dashboard::set_on(g.is_some_and(|m| m.p("Style") == "Dashboard"));
+    let style = g.map_or("", |m| m.p("Style"));
+    super::sunset_dashboard::set_on(style == "Dashboard" || style == "Dashboard (Legacy)", style == "Dashboard (Legacy)");
     super::sunset_sidebar::set_on(g.is_some_and(|m| m.p("Style") == "Sidebar"));
     super::sunset_smooth::set_enabled(g.is_none_or(|m| m.p("Animations") != "Off"));
     LOOK[0].store(g.map_or(0xFFB020, |m| m.c("Accent color") & 0x00FF_FFFF), Ordering::Relaxed);

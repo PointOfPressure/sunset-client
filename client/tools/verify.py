@@ -2672,7 +2672,7 @@ def close_menu():
 @test("ClickGUI Dashboard (look and frame cost)")
 def _():
     # Style Dashboard at GUI scale 2 (Theme OLED) and 4 (Theme Grey): screenshots (dash2.png, dash4.png), and its
-    # surface (#000000 in OLED, #121214 in Grey) fills the middle of the screen. Then the game thread's CPU ms a frame with the menu shut, open as panels and open as the
+    # surface (#000000 in OLED, #121214 in Grey) fills its categories' column under the last category. Then the game thread's CPU ms a frame with the menu shut, open as panels and open as the
     # Dashboard (the median of 4 samples of 2 s): the Dashboard should cost under 0.3 ms over the panels.
     from PIL import Image
     sock = os.path.join(session_dir(), "c.sock").encode()
@@ -2707,8 +2707,16 @@ def _():
         ctl("screenshot", f"{SHOTS}/dash{scale}.png")
         time.sleep(2)
         img = Image.open(f"{SHOTS}/dash{scale}.png").convert("RGB")
-        middle = img.crop((img.width // 2 - 40, img.height * 3 // 4, img.width // 2 + 40, img.height * 3 // 4 + 20))
-        surface[scale] = sum(1 for px in middle.getdata() if px == want) / (80 * 20)
+        # The categories' column under its last category, a strip 80 x 20 of the menu's units (Fit to screen is off
+        # in the tests: a unit is a GUI pixel); the window as dash_geometry() lays it out at this scale.
+        vw, vh = img.width / scale, img.height / scale
+        fw = math.floor(min(max(vw - 16, 0), max(610, min(vw * 0.8, 610 * 1.33))))
+        fh = math.floor(min(max(vh - 16, 0), max(420, min(vh * 0.82, 420 * 1.33))))
+        fx, fy = math.floor((vw - fw) / 2), math.floor((vh - fh) / 2)
+        # (above the profile's two lines at its foot)
+        box = (fx + 12, fy + fh - 60, fx + 92, fy + fh - 40)
+        strip = img.crop(tuple(int(c * scale) for c in box))
+        surface[scale] = sum(1 for px in strip.getdata() if px == want) / max(strip.width * strip.height, 1)
         close_menu()
     setting("clickgui", "theme", "Grey")
     ctl("options-set", "guiScale", "0")
@@ -2727,7 +2735,7 @@ def _():
     med = {k: sorted(v)[len(v) // 2] if v else None for k, v in ms.items()}
     extra = med["Dashboard"] - med["Dropdown"] if stat else None
     ok = all(v > 0.5 for v in surface.values()) and extra is not None and extra < 0.3
-    return ok, (f"surface share in the middle: {surface}; game thread ms a frame: shut {med['shut']:.3f}, panels "
+    return ok, (f"surface share under the categories: {surface}; game thread ms a frame: shut {med['shut']:.3f}, panels "
                 f"{med['Dropdown']:.3f}, Dashboard {med['Dashboard']:.3f} (Dashboard over panels {extra:+.3f})" if stat else "no game thread found")
 
 
@@ -2779,6 +2787,97 @@ def sidebar_shots(gw):
 
     return shot, share
 
+
+
+def dash_geometry(fit=True):
+    """The Dashboard's window in GUI pixels as dashboard.rs lays it out at the defaults (Panel width 120, Fit to screen
+    on): (k, fx, fy, fw, fh, lw), where k is the menu's units to GUI pixels (Fit to screen makes the menu smaller until
+    its window's 627 units fit, never under two screen pixels a unit; 1 with fit=False, for Fit to screen off), the
+    frame and the module list's width in the menu's units. Since the rework the window grows past 610 x 420 to 80% x 82%
+    of a roomy screen, a third more at most."""
+    w, h = gui_size()
+    d = ctl("status")["display"]
+    scale = w and d["width"] / w
+    k = min(1.0, max(w / 627, 2 / scale)) if fit else 1.0
+    vw, vh = w / k, h / k
+    wanted, tall = 190 + 120 * 3.5, 420
+    most_w, most_h = max(wanted, min(vw * 0.8, wanted * 1.33)), max(tall, min(vh * 0.82, tall * 1.33))
+    fw, fh = math.floor(min(max(vw - 16, 0), most_w)), math.floor(min(max(vh - 16, 0), most_h))
+    fx, fy = math.floor((vw - fw) / 2), math.floor((vh - fh) / 2)
+    rest = fw - 104
+    lw = math.floor(min(min(max(rest * 0.42, 150), 270), rest))
+    return k, fx, fy, fw, fh, lw
+
+
+@test("ClickGUI Dashboard (one-line settings, picks side by side, a search's settings, Legacy)")
+def _():
+    # The reworked Dashboard: Aim Assist (Combat's first module, picked when the menu opens on Combat) shows its
+    # settings one to a line: a click a quarter along Horizontal speed's track (beside its name, its number at the row's
+    # end) sets about 3.2 of 1-10; Range shape's two options side by side are picked by a click on one (Mode's three
+    # can be too wide for their share with some fonts, and then a click steps them as in the Legacy style, where a
+    # click on Mode steps it to the next, Duelkit). A search for "stickiness" lists Aim Assist with that setting under
+    # it, and a click three quarters along it there sets about 0.67 of 0-0.9.
+    import re
+    def num(line):
+        found = re.findall(r"[-0-9.]+", line.split(":", 1)[1]) if ":" in line else []
+        return float(found[0]) if found else None
+
+    def values():
+        # Read once the menu's clicks are done: the first click after the chat command only takes the pointer back.
+        return {c.split(":", 1)[0]: c.split(":", 1)[1].strip() for c in said_after(".settings aimassist") if ":" in c}
+
+    def click(x, y, k):
+        ctl("click-at", str(round(x * k, 1)), str(round(y * k, 1)))
+        wait(4)
+
+    say(".reset aimassist")
+    setting("clickgui", "style", "Dashboard")
+    # At the defaults, Fit to screen on (clean() turns it off for the other tests).
+    say(".set clickgui fit to screen true")
+    got = {}
+    say(".menu")
+    wait(8)
+    k, fx, fy, fw, fh, lw = dash_geometry()
+    click(fx + 38, fy + 36 + 10, k)
+    # The rows start under the header (28) and the band (42; 34 in the Legacy style). The pane's rows: inset 10 from
+    # its sides; the bind's card (20), a gap (6), the first card's top (3).
+    rx, rw = fx + 104 + lw + 10, fw - 104 - lw - 20
+    control, end = math.floor(rx + rw * 0.46), rx + rw - 7
+    track = end - 36 - control
+    click(control + track * 0.25, fy + 70 + 29 + 14 * 2 + 7, k)
+    # Range shape (Sphere, Column), 15 rows under Mode: a click on Sphere (the one picked), then one on Column, leave
+    # Column, where two clicks that step would come back to Sphere.
+    share = math.floor((end - control) / 2)
+    click(end - share * 1.5, fy + 70 + 29 + 14 * 15 + 7, k)
+    click(end - 3, fy + 70 + 29 + 14 * 15 + 7, k)
+    now = values()
+    got["slider"], got["pick"] = num("x:" + now.get("Horizontal speed", "")), now.get("Range shape", "")
+    close_menu()
+    say(".reset aimassist")
+    say(".menu stickiness")
+    wait(8)
+    # The setting's row under its module: set in 10, clear of the scroll marker (4), in the middle of a module's 18.
+    lx, lrw = fx + 104 + 10, lw - 14
+    lcontrol, lend = math.floor(lx + lrw * 0.46), lx + lrw - 7
+    click(lcontrol + (lend - 36 - lcontrol) * 0.75, fy + 70 + 18 + 9, k)
+    got["search"] = num("x:" + values().get("Stickiness", ""))
+    close_menu()
+    say(".reset aimassist")
+    setting("clickgui", "style", "Dashboard (Legacy)")
+    say(".menu")
+    wait(8)
+    k, fx, fy, fw, fh, lw = dash_geometry()
+    click(fx + 38, fy + 36 + 10, k)
+    rx, rw = fx + 104 + lw + 10, fw - 104 - lw - 20
+    click(rx + rw - 10, fy + 62 + 29 + 7, k)
+    got["legacy pick"] = values().get("Mode", "")
+    close_menu()
+    say(".reset aimassist")
+    say(".reset clickgui")
+    say(".set clickgui fit to screen false")
+    ok = (got["slider"] is not None and 2.9 <= got["slider"] <= 3.6 and got["pick"].startswith("Column")
+          and got["search"] is not None and 0.6 <= got["search"] <= 0.75 and got["legacy pick"].startswith("Duelkit"))
+    return ok, f"{got}"
 
 @test("ClickGUI Sidebar (style, theme, accent, width, opacity)")
 def _():

@@ -728,15 +728,64 @@ pub(super) fn close_gui(game: &mut Game<'_>) {
 
 // The number's own line above a slider: clicks lower than this go to the slider, so the end of the track (and its knob,
 // which reaches a little above it) slides instead of opening the number for typing.
+// A one-line row has its number beside the track, so the whole height counts.
 pub(super) fn number_band(r: [f32; 4]) -> f32 {
+    if super::sunset_dashboard::one_line() {
+        return r[1] + r[3];
+    }
     r[1] + row_hh() - 4.0
 }
 
+// One-line settings (the Dashboard): the name takes the row's left part, the slider or a pick's options start here, and a
+// slider's number gets this much at the row's end, so the tracks of a column line up whatever their numbers.
+fn control_x(r: [f32; 4]) -> f32 {
+    (r[0] + r[2] * 0.46).floor()
+}
+const NUMBER_W: f32 = 30.0;
+
 // Where a slider's track starts in its row, and how long it is.
 pub(super) fn slider_track(r: [f32; 4]) -> (f32, f32) {
+    if super::sunset_dashboard::one_line() {
+        let x0 = control_x(r);
+        return (x0, (r[0] + r[2] - RIGHT_PAD - NUMBER_W - 6.0 - x0).max(1.0));
+    }
     let x0 = r[0] + indent() + 4.0;
     (x0, (r[0] + r[2] - RIGHT_PAD - x0).max(1.0))
 }
+
+// A pick's options side by side in a one-line row, an equal share of the control's room each: where each goes, when
+// every name fits its share; else None, and a click steps through them as everywhere else.
+// Only so, so that every control of a column starts at one line.
+pub(super) fn segments(game: &Game<'_>, r: [f32; 4], of: &[&str]) -> Option<Vec<[f32; 4]>> {
+    if !super::sunset_dashboard::one_line() || !(2..=4).contains(&of.len()) {
+        return None;
+    }
+    let (n, end) = (of.len() as f32, r[0] + r[2] - RIGHT_PAD);
+    let share = ((end - control_x(r)) / n).floor();
+    if of.iter().any(|o| game.sunset_text_width(o) + 6.0 > share) {
+        return None;
+    }
+    let x0 = end - share * n;
+    Some((0..of.len()).map(|k| [x0 + share * k as f32, r[1] + 2.0, share, row_hh() - 4.0]).collect())
+}
+
+// The picks drawn as segments, (module, setting, each option's place where it was last drawn): a click takes the option
+// drawn under it (text is measured at the menu's scale only while it draws, so the click does not lay them out again).
+// Kept, not cleared each frame: a frame can reuse the menu's last shapes without drawing its rows again.
+static DRAWN_SEGMENTS: std::sync::Mutex<Vec<(usize, usize, Vec<[f32; 4]>)>> = std::sync::Mutex::new(Vec::new());
+
+pub(super) fn segments_drawn(update: impl FnOnce(&mut Vec<(usize, usize, Vec<[f32; 4]>)>)) {
+    update(&mut DRAWN_SEGMENTS.lock().unwrap_or_else(|e| e.into_inner()));
+}
+
+pub(super) fn drawn_segment(i: usize, j: usize, at: (f32, f32)) -> Option<usize> {
+    let drawn = DRAWN_SEGMENTS.lock().unwrap_or_else(|e| e.into_inner());
+    let (.., parts) = drawn.iter().find(|(m, s, _)| (*m, *s) == (i, j))?;
+    parts.iter().position(|&p| inside(p, at))
+}
+
+// The room a module's switch takes at its row's end in the reworked Dashboard.
+pub(super) const MODULE_SWITCH: f32 = 20.0;
 
 // A slider's value from the pointer's place along its row.
 pub(super) fn slide(s: &mut State, i: usize, j: usize, r: [f32; 4], x: f32) -> bool {

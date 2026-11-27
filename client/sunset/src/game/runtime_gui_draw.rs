@@ -426,6 +426,15 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         out.push(Shape::Text(text, [bx + 4.0, r[1] + text_y(row_hh())], colour));
         bw
     };
+    // A value box with a small triangle at its end (one-line rows: a click steps it or opens its list); how wide.
+    let marked_box = |out: &mut Vec<Shape>, text: &str, r: [f32; 4]| -> f32 {
+        let bw = value_box(out, &format!("{text}   "), r, 0xE4E4E4);
+        let (tx, ty) = (r[0] + r[2] - RIGHT_PAD - 7.0, r[1] + (row_hh() / 2.0).floor());
+        for (k, h) in [5.0_f32, 3.0, 1.0].into_iter().enumerate() {
+            out.push(Shape::Fill([tx + k as f32, ty - h / 2.0, 1.0, h], 0xFFA0_A0A8));
+        }
+        bw
+    };
     // A number being typed in its slider row: the field's width (the draft and its caret are drawn in it).
     let typing = |i: usize, j: usize| editing.as_ref().filter(|e| e.inline && e.module == i && e.setting == j).and_then(|e| e.draft.as_ref().ok());
     // One row of a panel or of the settings window: what it shows, and its name when it had to be cut short.
@@ -443,10 +452,15 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                 if open.contains(&i) && !dash {
                     out.push(Shape::Round([name_x - 5.0, y + 3.0, 2.0, rh - 6.0], 1.0, 0xFFE4_E4E4));
                 }
-                if !tag.is_empty() {
-                    out.push(Shape::Text(tag, [x + rw - RIGHT_PAD - tag_w, y + text_y(rh)], 0x707070));
+                // The reworked Dashboard: a switch at each module's row end, its key before it.
+                let sw = if super::sunset_dashboard::one_line() { MODULE_SWITCH } else { 0.0 };
+                if sw > 0.0 {
+                    switch(out, [x + rw - RIGHT_PAD - 14.0, y + ((rh - 8.0) / 2.0).floor(), 14.0, 8.0], m.on, 0);
                 }
-                (label(out, m.name, r, name_x, tag_w, if m.on { accent() } else { 0xE4E4E4 }) && hovered).then_some(m.name)
+                if !tag.is_empty() {
+                    out.push(Shape::Text(tag, [x + rw - RIGHT_PAD - sw - tag_w, y + text_y(rh)], 0x707070));
+                }
+                (label(out, m.name, r, name_x, tag_w + sw, if m.on { accent() } else { 0xE4E4E4 }) && hovered).then_some(m.name)
             }
             Hit::Bind(i) => {
                 let waiting = binding == Some(i);
@@ -505,13 +519,44 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                         };
                         let (tx, track) = slider_track(r);
                         let t = if max > min { ((v - min) / (max - min)) as f32 } else { 0.0 };
-                        let ty = y + row_hh();
-                        out.push(Shape::Round([tx, ty, track, 2.0], 1.0, pal().track));
-                        out.push(Shape::Round([tx, ty, track * t, 2.0], 1.0, solid(accent())));
-                        out.push(Shape::Round([tx + track * t - 2.5, ty - 1.5, 5.0, 5.0], control.min(2.5), 0xFFE4_E4E4));
-                        vw
+                        // One line (the Dashboard): the track beside the name, in the row's middle, and not under a
+                        // number being typed (its field can be wider than the number's place).
+                        let one = super::sunset_dashboard::one_line();
+                        let ty = if one { y + ((rh - 2.0) / 2.0).floor() } else { y + row_hh() };
+                        if !(one && typing(i, j).is_some()) {
+                            out.push(Shape::Round([tx, ty, track, 2.0], 1.0, pal().track));
+                            out.push(Shape::Round([tx, ty, track * t, 2.0], 1.0, solid(accent())));
+                            out.push(Shape::Round([tx + track * t - 2.5, ty - 1.5, 5.0, 5.0], control.min(2.5), 0xFFE4_E4E4));
+                        }
+                        if one { x + rw - RIGHT_PAD - tx + 3.0 } else { vw }
                     }
-                    Value::Pick { .. } => value_box(out, &st.value_text(), r, 0xE4E4E4),
+                    // A short pick in a one-line row: its options side by side, the chosen one lit (not in the accent
+                    // colour, which is for what is on); a click picks one.
+                    Value::Pick { i: picked, of } => match segments(game, r, of) {
+                        Some(parts) => {
+                            segments_drawn(|drawn| {
+                                drawn.retain(|(m, s, _)| (*m, *s) != (i, j));
+                                if drawn.len() >= 64 {
+                                    drawn.remove(0);
+                                }
+                                drawn.push((i, j, parts.clone()));
+                            });
+                            let from = parts[0][0];
+                            out.push(Shape::Round([from, parts[0][1], x + rw - RIGHT_PAD - from, parts[0][3]], control, pal().value_box));
+                            for (k, part) in parts.iter().enumerate() {
+                                if k == picked {
+                                    out.push(Shape::Round(*part, control, 0x38FF_FFFF));
+                                }
+                                let tw = width_of(game, of[k]);
+                                let colour = if k == picked { 0xFFFFFF } else { 0x9A9AA2 };
+                                out.push(Shape::Text(of[k].to_owned(), [(part[0] + (part[2] - tw) / 2.0).floor(), y + text_y(row_hh())], colour));
+                            }
+                            x + rw - RIGHT_PAD - from + 3.0
+                        }
+                        // One line: a mark that a click steps it on.
+                        None if super::sunset_dashboard::one_line() => marked_box(out, &st.value_text(), r),
+                        None => value_box(out, &st.value_text(), r, 0xE4E4E4),
+                    },
                     // A list of blocks, items, mobs or players: how many it holds, in a box (a click opens its picker).
                     Value::Text(ref t) if super::sunset_picker::list_kind(modules[i].name, st.name).is_some() => {
                         use super::sunset_picker as pick;
@@ -527,7 +572,8 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                         // Where the name would be cut for it, only the number.
                         let room = x + rw - RIGHT_PAD - setting_x - 3.0;
                         let text = if width_of(game, st.label()) + width_of(game, &full) + 8.0 > room { full.split(' ').next().unwrap_or_default().to_owned() } else { full };
-                        value_box(out, &text, r, 0xE4E4E4)
+                        // One line: a mark that a click opens its list.
+                        if super::sunset_dashboard::one_line() { marked_box(out, &text, r) } else { value_box(out, &text, r, 0xE4E4E4) }
                     }
                     Value::Text(_) => {
                         // The text itself: the name keeps its width, the text gets what is left (a quarter at least).

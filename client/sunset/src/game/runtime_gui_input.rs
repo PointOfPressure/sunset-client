@@ -224,8 +224,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
         _ => return,
     };
     let mut toggled = None;
-    let mut changed = false;
-    let mut reset = None;
+    let mut changed = false;    let mut reset = None;
     with(|s| {
         // The editor is in front of everything: its buttons, nothing else; a picker's rows too.
         if let Some(Editor { module, setting, draft: Ok(draft), list: Some(picker), .. }) = &s.gui.editor {
@@ -420,7 +419,14 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     s.gui.drag = None;
                     s.binding = None;
                 } else {
-                    s.modules[i].settings[j].click(right);
+                    // A pick shown as its options side by side (the Dashboard): the one clicked.
+                    let part = match s.modules[i].settings[j].value {
+                        Value::Pick { .. } if !right => drawn_segment(i, j, at),
+                        _ => None,
+                    };                    match (part, &mut s.modules[i].settings[j].value) {
+                        (Some(k), Value::Pick { i: picked, .. }) => *picked = k,
+                        _ => s.modules[i].settings[j].click(right),
+                    }
                     changed = true;
                 }
             }
