@@ -426,12 +426,14 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
         out.push(Shape::Text(text, [bx + 4.0, r[1] + text_y(row_hh())], colour));
         bw
     };
-    // A value box with a small triangle at its end (one-line rows: a click steps it or opens its list); how wide.
-    let marked_box = |out: &mut Vec<Shape>, text: &str, r: [f32; 4]| -> f32 {
-        let bw = value_box(out, &format!("{text}   "), r, 0xE4E4E4);
-        let (tx, ty) = (r[0] + r[2] - RIGHT_PAD - 7.0, r[1] + (row_hh() / 2.0).floor());
-        for (k, h) in [5.0_f32, 3.0, 1.0].into_iter().enumerate() {
-            out.push(Shape::Fill([tx + k as f32, ty - h / 2.0, 1.0, h], 0xFFA0_A0A8));
+    // A value box with a small chevron at its end (one-line rows): pointing on for a value a click steps, down for a
+    // list a click opens; how wide.
+    let marked_box = |out: &mut Vec<Shape>, text: &str, r: [f32; 4], list: bool| -> f32 {
+        let bw = value_box(out, &format!("{text}    "), r, 0xE4E4E4);
+        let (cx, cy) = (r[0] + r[2] - RIGHT_PAD - 8.0, r[1] + (row_hh() / 2.0).floor());
+        let dots: [[f32; 2]; 5] = if list { [[0.0, -1.0], [1.0, 0.0], [2.0, 1.0], [3.0, 0.0], [4.0, -1.0]] } else { [[1.0, -2.0], [2.0, -1.0], [3.0, 0.0], [2.0, 1.0], [1.0, 2.0]] };
+        for [dx, dy] in dots {
+            out.push(Shape::Fill([cx + dx - 0.5, cy + dy - 0.5, 1.0, 1.0], 0xFFB4_B4BC));
         }
         bw
     };
@@ -464,6 +466,12 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
             }
             Hit::Bind(i) => {
                 let waiting = binding == Some(i);
+                // One line: the bind's value box keeps its place and asks for the key.
+                if waiting && super::sunset_dashboard::one_line() {
+                    let bw = value_box(out, "Press a key", r, accent());
+                    label(out, "Bind", r, setting_x, bw, 0xB4B4B4);
+                    return None;
+                }
                 if waiting {
                     // The row keeps its name with the prompt beside it; where both do not fit, the prompt takes the
                     // row, so it is never cut to "Press a...".
@@ -544,17 +552,19 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                             let from = parts[0][0];
                             out.push(Shape::Round([from, parts[0][1], x + rw - RIGHT_PAD - from, parts[0][3]], control, pal().value_box));
                             for (k, part) in parts.iter().enumerate() {
-                                if k == picked {
-                                    out.push(Shape::Round(*part, control, 0x38FF_FFFF));
-                                }
                                 let tw = width_of(game, of[k]);
-                                let colour = if k == picked { 0xFFFFFF } else { 0x9A9AA2 };
-                                out.push(Shape::Text(of[k].to_owned(), [(part[0] + (part[2] - tw) / 2.0).floor(), y + text_y(row_hh())], colour));
+                                let at = [(part[0] + (part[2] - tw) / 2.0).floor(), y + text_y(row_hh())];
+                                if k == picked {
+                                    out.push(Shape::Round(*part, control, 0x5AFF_FFFF));
+                                    out.push(Shape::Head(of[k].to_owned(), at, 0xFFFFFF));
+                                } else {
+                                    out.push(Shape::Text(of[k].to_owned(), at, 0x9A9AA2));
+                                }
                             }
                             x + rw - RIGHT_PAD - from + 3.0
                         }
                         // One line: a mark that a click steps it on.
-                        None if super::sunset_dashboard::one_line() => marked_box(out, &st.value_text(), r),
+                        None if super::sunset_dashboard::one_line() => marked_box(out, &st.value_text(), r, false),
                         None => value_box(out, &st.value_text(), r, 0xE4E4E4),
                     },
                     // A list of blocks, items, mobs or players: how many it holds, in a box (a click opens its picker).
@@ -573,7 +583,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
                         let room = x + rw - RIGHT_PAD - setting_x - 3.0;
                         let text = if width_of(game, st.label()) + width_of(game, &full) + 8.0 > room { full.split(' ').next().unwrap_or_default().to_owned() } else { full };
                         // One line: a mark that a click opens its list.
-                        if super::sunset_dashboard::one_line() { marked_box(out, &text, r) } else { value_box(out, &text, r, 0xE4E4E4) }
+                        if super::sunset_dashboard::one_line() { marked_box(out, &text, r, true) } else { value_box(out, &text, r, 0xE4E4E4) }
                     }
                     Value::Text(_) => {
                         // The text itself: the name keeps its width, the text gets what is left (a quarter at least).
@@ -849,7 +859,7 @@ pub(super) fn draw_gui(game: &Game<'_>, modules: &[Module], w: f32, h: f32, px: 
     let live = binding.is_none() && !menu_open;
     let clear = search_clear(w);
     let text_room = if search.is_empty() { field } else { [field[0], field[1], field[2] - clear[2] + 4.0, field[3]] };
-    search_text(game, out, text_room, &search, if live { search.len() } else { usize::MAX }, "Search modules");
+    search_text(game, out, text_room, &search, if live { search.len() } else { usize::MAX }, "Search modules and settings");
     // A cross at its end empties it.
     if !search.is_empty() {
         cross(out, clear, live && inside(clear, at));

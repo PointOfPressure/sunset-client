@@ -139,13 +139,22 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
 }
 
 // The module a search points at: the one it scores best (search.rs).
-fn first_match(s: &State) -> Option<usize> {
+// Only when the first find's own name matched what was typed: a module found for one of its settings (Enter on "range"
+// would turn ESP off) or its description is left as it is.
+pub(super) fn first_match(s: &State) -> Option<usize> {
     if s.gui.search.trim().is_empty() {
         return None;
     }
     let listed = s.in_gui();
     let found = super::sunset_search::results(&s.modules, &s.gui.search);
-    super::sunset_search::ranked(&found, (0..s.modules.len()).filter(|&i| listed(&s.modules[i]))).first().copied()
+    let first = super::sunset_search::ranked(&found, (0..s.modules.len()).filter(|&i| listed(&s.modules[i]))).first().copied()?;
+    let name = s.modules[first].name.to_lowercase();
+    let words: Vec<&str> = name.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let typed = s.gui.search.to_lowercase();
+    let typed: Vec<&str> = typed.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let joined: String = words.concat();
+    let named = typed.iter().all(|t| words.iter().any(|w| w.starts_with(t))) || joined.starts_with(&typed.concat());
+    named.then_some(first)
 }
 
 // A letter, digit or space typed in the click GUI's search.

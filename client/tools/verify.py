@@ -2856,8 +2856,9 @@ def _():
     say(".reset aimassist")
     say(".menu stickiness")
     wait(8)
-    # The setting's row under its module: set in 10, clear of the scroll marker (4), in the middle of a module's 18.
-    lx, lrw = fx + 104 + 10, lw - 14
+    # The setting's row under its module: set in 10, its right edge on the module rows' (8 in, clear of the scroll
+    # marker), in the middle of a module's 18.
+    lx, lrw = fx + 104 + 10, lw - 18
     lcontrol, lend = math.floor(lx + lrw * 0.46), lx + lrw - 7
     click(lcontrol + (lend - 36 - lcontrol) * 0.75, fy + 70 + 18 + 9, k)
     got["search"] = num("x:" + values().get("Stickiness", ""))

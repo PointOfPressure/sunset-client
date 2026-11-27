@@ -392,7 +392,8 @@ fn column_rows(s: &State, column: &Column, [x, y, w, room]: [f32; 4], scroll: f3
 fn list_rows(s: &State, column: &Column, [x, y, w, room]: [f32; 4], scroll: f32, out: &mut Vec<([f32; 4], Hit)>) {
     let w = w - 4.0;
     out.extend(column.rows[visible(&column.rows, scroll, room)].iter().map(|&(off, hit)| match hit {
-        Hit::Setting(..) => ([x + SET_IN, y + off - scroll + ((module_h() - row_hh()) / 2.0).floor(), w - SET_IN, row_hh()], hit),
+        // Their right edge on the module rows' (module_text takes 4 off those).
+        Hit::Setting(..) => ([x + SET_IN, y + off - scroll + ((module_h() - row_hh()) / 2.0).floor(), w - SET_IN - 4.0, row_hh()], hit),
         _ => ([x, y + off - scroll, w, height(s, hit)], hit),
     }));
 }
@@ -600,6 +601,10 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     out.push(Shape::Fill([f[0], body, f[2], px], pal().dash_hairline));
     out.push(Shape::Fill([list[0], body, px, f[1] + f[3] - body], pal().dash_hairline));
     out.push(Shape::Fill([pane[0], body, px, f[1] + f[3] - body], pal().dash_hairline));
+    // The reworked style: a line under the module's band, which its settings scroll up to.
+    if !legacy() {
+        out.push(Shape::Fill([pane[0], pane[1] - px, pane[2], px], pal().dash_hairline));
+    }
 
     // The header: the name, and the search box over the columns (typing anywhere goes to it).
     out.push(Shape::Head("Sunset".to_owned(), [f[0] + 14.0, f[1] + text_y(HEADER_H)], 0xFFFFFF));
@@ -609,9 +614,9 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         let nw = game.sunset_text_width("Sunset") + 1.0;
         out.push(Shape::Text(super::sunset::VERSION.to_owned(), [f[0] + 14.0 + nw + 5.0, f[1] + text_y(HEADER_H)], MUTED));
         let profile = with_profile(s);
-        let room = SIDE - 24.0;
+        let room = SIDE - 26.0;
         for (n, line) in ["Profile".to_owned(), fit_to(game, &profile, room)].into_iter().enumerate() {
-            out.push(Shape::Text(line, [f[0] + 16.0, f[1] + f[3] - 30.0 + n as f32 * 11.0], if n == 0 { MUTED } else { 0xD4D4D8 }));
+            out.push(Shape::Text(line, [f[0] + 18.0, f[1] + f[3] - 30.0 + n as f32 * 11.0], if n == 0 { MUTED } else { 0xD4D4D8 }));
         }
     }
     // The search box: in the reworked style the same share of the header at every scale, the hints after it.
@@ -628,8 +633,14 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     // reworked style keeps them in the header at every scale; "Enter" only while a search lists something, and while a
     // bind waits only Esc and Backspace (its row says to press a key).
     let finds = view(|v| !v.listed.ids.is_empty());
-    let hint = super::sunset::gui_hint(binding, menu_open, !menu.search.trim().is_empty() && (legacy() || finds));
-    let hint = if legacy() { hint } else { hint.strip_prefix("Press a key or a mouse button   ").unwrap_or(hint) };
+    let searching = !menu.search.trim().is_empty();
+    let enter = legacy() || super::sunset::first_match(s).is_some();
+    let hint = super::sunset::gui_hint(binding, menu_open, searching && enter);
+    let hint = match (legacy(), searching && !finds && !binding && !menu_open) {
+        (true, _) => hint,
+        (false, true) => "Backspace: edit the search   Esc: close",
+        (false, false) => hint.strip_prefix("Press a key or a mouse button   ").unwrap_or(hint),
+    };
     if f[1] >= 15.0 && legacy() {
         let hint = fit_to(game, hint, menu.view_w - 16.0);
         let hw = game.sunset_text_width(&hint);
@@ -659,8 +670,6 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     // The categories: the one shown a capsule in the accent colour, and (not in the Legacy style) how many of each are
     // on, of how many it lists.
     let hidden = if legacy() { Vec::new() } else { super::sunset_extra_modules::hidden(&s.modules) };
-    // ClickGUI is on while this menu is open: it is not counted as a module turned on.
-    let counted = |m: &super::sunset::Module| m.on && m.name != "ClickGUI";
     for p in 1..=CATEGORIES.len() {
         let r = tab_rect(s, p);
         if p == page {
@@ -676,7 +685,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         out.push(if p == page { Shape::Plain(label, at, 0xFFFFFF, true) } else { Shape::Head(label, at, 0xD4D4D8) });
         if !legacy() {
             let listed = s.modules.iter().filter(|m| m.category == CATEGORIES[p - 1] && m.in_gui && !hidden.contains(&m.name));
-            let on = listed.filter(|m| counted(m)).count();
+            let on = listed.filter(|m| m.on).count();
             let count = format!("{on} on");
             let at = [r[0] + r[2] - 8.0 - game.sunset_text_width(&count), r[1] + text_y(r[3])];
             out.push(if p == page { Shape::Plain(count, at, 0xFFE8DC, true) } else { Shape::Text(count, at, MUTED) });
@@ -688,10 +697,15 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
     let band_y = list[1] - BAND_H;
     out.push(Shape::Head(title.to_owned(), [list[0] + 10.0, band_y + text_y(BAND_H)], 0xFFFFFF));
     // What the number counts: the category's modules, or the search's finds.
-    let on = view(|v| v.listed.ids.iter().filter(|&&i| if legacy() { s.modules[i].on } else { counted(&s.modules[i]) }).count());
+    let on = view(|v| v.listed.ids.iter().filter(|&&i| s.modules[i].on).count());
     let settings = view(|v| v.list.rows.iter().filter(|(_, hit)| matches!(hit, Hit::Setting(..))).count());
     let count = match (page, count) {
-        (0, n) if !legacy() && settings > 0 => format!("{n} {}, {settings} {}", if n == 1 { "module" } else { "modules" }, if settings == 1 { "setting" } else { "settings" }),
+        // The reworked style: what a search found in one form, and a category's size (its count of those on is by
+        // its name on the left).
+        (_, n) if !legacy() => {
+            let modules = format!("{n} {}", if n == 1 { "module" } else { "modules" });
+            if settings > 0 { format!("{modules}, {settings} {}", if settings == 1 { "setting" } else { "settings" }) } else { modules }
+        }
         (0, n) => format!("{n} found"),
         (_, 1) => format!("1 module, {on} on"),
         (_, n) => format!("{n} modules, {on} on"),
@@ -725,7 +739,7 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
                 let (label, name_w) = (m.category.label(), game.sunset_text_width(m.name));
                 let lw = game.sunset_text_width(label);
                 // Clear of the bound key, and of the row's switch in the reworked style.
-                let key_w = m.key.as_deref().map_or(0.0, |_| 34.0) + if legacy() { 0.0 } else { super::sunset::MODULE_SWITCH };
+                let key_w = m.key.as_deref().map_or(0.0, |_| 34.0) + if legacy() { 0.0 } else { super::sunset::MODULE_SWITCH + 8.0 };
                 if super::sunset::indent().max(6.0) + name_w + 10.0 + lw + key_w + 10.0 <= list[2] {
                     out.push(Shape::Text(label.to_owned(), [list[0] + list[2] - 10.0 - key_w - lw, y + text_y(module_h())], 0x6C6C74));
                 }
@@ -762,10 +776,12 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
         switch(out, t, m.on, lit);
     } else if pane[2] > 60.0 {
         // No module chosen (a new search, one that finds nothing): the pane says how one gets there.
+        // A search with no finds says so once, in the list.
         let nothing = !legacy() && page == 0 && view(|v| v.listed.ids.is_empty());
-        let text = if nothing { "Nothing to show: Backspace clears the search" } else { "Right click a module to see its settings here" };
-        let text = fit_to(game, text, pane[2] - 2.0 * CARD_M - 4.0);
-        out.push(Shape::Text(text, [pane[0] + CARD_M + 2.0, pane[1] + 6.0], MUTED));
+        if !nothing {
+            let text = fit_to(game, "Right click a module to see its settings here", pane[2] - 2.0 * CARD_M - 4.0);
+            out.push(Shape::Text(text, [pane[0] + CARD_M + 2.0, pane[1] + 6.0], MUTED));
+        }
     }
 
     // Its sections: a card each, with its title.
@@ -779,13 +795,15 @@ pub(super) fn back(s: &State, game: &Game<'_>, hover: Option<Hit>, px: f32, out:
             }
             out.push(Shape::Round([pane[0] + CARD_M, top, pane[2] - 2.0 * CARD_M, bottom - top], control_radius().max(4.0), pal().dash_card));
             if let Some(title) = card.title {
-                out.push(Shape::Text(title.to_owned(), [pane[0] + CARD_M + CARD_IN + super::sunset::indent() + 4.0, top + 3.0], MUTED));
+                // In capitals in the reworked style, so a section's name does not read as a setting.
+                let title = if legacy() { title.to_owned() } else { title.to_uppercase() };
+                out.push(Shape::Text(title, [pane[0] + CARD_M + CARD_IN + super::sunset::indent() + 4.0, top + 3.0], MUTED));
             }
         }
         // A module with nothing but its bind says so under it.
         if !legacy() && v.chosen.is_some() && v.cards.len() == 1 {
             let top = pane[1] + v.cards[0].bottom - pane_at + CARD_GAP + 4.0;
-            out.push(Shape::Text("No settings".to_owned(), [pane[0] + CARD_M + CARD_IN + super::sunset::indent() + 4.0, top], MUTED));
+            out.push(Shape::Text("Nothing else to set".to_owned(), [pane[0] + CARD_M + CARD_IN + super::sunset::indent() + 4.0, top], MUTED));
         }
         out.push(Shape::ClipEnd([pane[0], pane[1], pane[0] + pane[2], pane[1] + pane[3]]));
     });
