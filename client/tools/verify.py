@@ -14534,14 +14534,25 @@ def _():
 
 @test(".goto (stopping)")
 def _():
-    # 14 blocks east, stopped after 2 by: the inventory, the ClickGUI (a real ` press), A held (you walk left instead,
-    # at once) and .goto stop. Each must leave you standing (no keys held by the walk). Not Panic: it would stop Sunset
+    # 14 blocks east, stopped after 2 by: the inventory, the ClickGUI (a real ` press), A held (a real key too: you
+    # walk left instead, at once) and .goto stop. Each must leave you standing (no keys held by the walk). Not Panic: it would stop Sunset
     # for the rest of the run (all_off cancels the walk; the Panic test runs last).
     window = x_window()
+
+    def real(*key):
+        # A real key (xdotool), as x_press does it: the window raised over Bot1's and focused, a right click first (the
+        # first press after the chat only takes the cursor back). horizon-ctl's keys are a script's: Sunset's key hook
+        # never sees them.
+        env = {**os.environ, "DISPLAY": XDISPLAY}
+        for args in (("windowraise", window), ("windowfocus", "--sync", window), ("mousemove", "--window", window, "200", "150"),
+                     ("click", "3"), key):
+            subprocess.run(["xdotool", *args], env=env, capture_output=True)
+            time.sleep(0.15)
+
     stops = {
         "inventory": lambda: ctl("key", "e", "tap"),
-        "ClickGUI": (lambda: x_keys(window, "grave")) if window else None,
-        "A held": lambda: ctl("key", "a", "down"),
+        "ClickGUI": (lambda: real("key", "grave")) if window else None,
+        "A held": (lambda: real("keydown", "a")) if window else None,
         ".goto stop": lambda: say(".goto stop"),
     }
     got = {}
@@ -14551,7 +14562,9 @@ def _():
         reset()
         _, end, walked, drift, _ = goto_walk(14, Y + 1, 0, interrupt=stop)
         if name == "A held":
-            ctl("key", "a", "up")
+            subprocess.run(["xdotool", "keyup", "a"], env={**os.environ, "DISPLAY": XDISPLAY}, capture_output=True)
+        if name == "ClickGUI":
+            x_keys(window, "Escape")
         got[name] = (round(walked, 1), round(14.5 - (end[0] - X0), 1), round(drift, 2))
         if name in ("inventory", "ClickGUI"):
             ctl("key", "esc", "tap")
@@ -14559,7 +14572,7 @@ def _():
         if state().get("screen") not in ("playing", None):
             ctl("close")
     stopped = all(left > 3 and (drift > 0.5 if name == "A held" else drift < 0.2) for name, (_, left, drift) in got.items())
-    return stopped, f"(walked, blocks short, moved after: A held walks on by hand, the rest stand) {got}" + ("" if window else "; ClickGUI: no window")
+    return stopped, f"(walked, blocks short, moved after: A held walks on by hand, the rest stand) {got}" + ("" if window else "; ClickGUI and A held: no window (real keys)")
 
 
 # ---- .follow <player> [blocks]: .goto's walker aimed at a player, again each time they move on
