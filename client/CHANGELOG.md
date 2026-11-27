@@ -19,6 +19,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - Effects: Hide behind blocks covers Weather and Trails too (snow, rain, fireflies, embers and trail marks no longer show through walls), and trail marks fade with distance like the rest
 
 ### Fixed
+- **The Compass, Shield status, Armor HUD, Target HUD and Scaffold's block counter vanished while the chat was open, so the HUD layout editor (the chat's) could not move or size them.** They stay on screen with the chat open now and take a frame like the rest
 - **Entity Control's Anti fly kick could fail on a server that handled several of your ticks at once (a low frame rate, a jittery connection): the one-tick sink went unseen and the vehicle was kicked for floating.** The sink now lasts three ticks and the height is given back after it, so a hovering boat or mount also no longer drifts down
 - `.goto` says "Arrived." (or why it stopped) in the chat under its command: it was a toast, which Notifications off (the default) never showed
 - **Crystal Aura, Anchor Aura, Key Throw, Fast Use's Throwables and Anti Hunger's Ground no longer stand still for the rest of the session once you have dug at a block by hand**
