@@ -16882,6 +16882,65 @@ def _():
     return got["hidden"] < 30 and got["through"] > 150 and got["in view"] > 150, f"pink pixels of a jump circle: {got}"
 
 
+@test("Effects (weather and trails behind blocks)")
+def _():
+    # Weather and trail marks are tested against the blocks a share at a time (each keeps its last answer), so both
+    # ways are looked at: what a wall hides, and that it comes back. Counted as pixels in the Custom colour (pink).
+    # Weather: snow falls only under open sky, so under a roof with a wall across the view every flake is behind the
+    # wall. With Hide behind blocks none shows; without it they show on the wall; hidden again with it back on; the
+    # wall taken away they show (against the same frame with Weather off), and put back they are gone again.
+    pink = lambda img: sum(r - g > 12 and b - g > 4 for r, g, b in img.crop((0, 150, 1280, 560)).getdata())
+    roof = f"{X0 - 4} {Y + 5} {Z0 - 4} {X0 + 4} {Y + 5} {Z0 + 4}"
+    wall = f"{X0 - 9} {Y + 1} {Z0 + 3} {X0 + 9} {Y + 14} {Z0 + 3}"
+
+    def frame(name, settle=12):
+        clear_chat()
+        wait(settle)
+        return pink(colour_frame(f"effects-behind-{name}"))
+
+    reset()
+    for key, value in (("color", "Custom"), ("custom color", "Pink"), ("jump circles", "false"), ("weather", "true"),
+                       ("weather mode", "Snow"), ("density", "1500"), ("weather radius", "15"), ("hide behind blocks", "true")):
+        setting("effects", key, value)
+    cmd(f"fill {roof} minecraft:stone", f"fill {wall} minecraft:stone")
+    only("effects")
+    snow = {"hidden": frame("snow-hidden", 40)}
+    setting("effects", "hide behind blocks", "false")
+    snow["through"] = frame("snow-through")
+    setting("effects", "hide behind blocks", "true")
+    snow["hidden again"] = frame("snow-hidden-again")
+    cmd(f"fill {wall} minecraft:air")
+    snow["in view"] = frame("snow-in-view")
+    setting("effects", "weather", "false")
+    snow["no weather"] = frame("snow-none")
+    setting("effects", "weather", "true")
+    cmd(f"fill {wall} minecraft:stone")
+    snow["walled again"] = frame("snow-walled-again", 40)
+    only()
+    cmd(f"fill {wall} minecraft:air", f"fill {roof} minecraft:air")
+    ok = (snow["hidden"] < 30 and snow["hidden again"] < 30 and snow["walled again"] < 30 and snow["through"] > 300
+          and snow["in view"] > snow["no weather"] + 300)
+    # Trails: footsteps left on a walk, then seen from the far side of a wall (the marks last 5 s, so a walk a case).
+    wall = f"{X0 - 6} {Y + 1} {Z0 + 6} {X0 + 6} {Y + 5} {Z0 + 6}"
+    steps = {}
+    for name, hide, walled in (("hidden", "true", True), ("through", "false", True), ("in view", "true", False)):
+        reset()
+        for key, value in (("weather", "false"), ("trails", "true"), ("trail mode", "Footsteps"), ("trail size", "2"),
+                           ("trail duration (ms)", "5000"), ("hide behind blocks", hide)):
+            setting("effects", key, value)
+        only("effects")
+        if walled:
+            cmd(f"fill {wall} minecraft:stone")
+        walk(15)
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 8.5} 180 25")
+        steps[name] = frame(f"steps-{name.replace(' ', '-')}", 5)
+        only()
+        cmd(f"fill {wall} minecraft:air")
+    say(".reset effects")
+    ok = ok and steps["hidden"] < 30 and steps["through"] > 100 and steps["in view"] > 100
+    return ok, f"pink pixels of snow: {snow}; of footsteps: {steps}"
+
+
 @test("Effects (landing ripples and explosion shockwaves)")
 def _():
     only("Effects")

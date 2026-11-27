@@ -14,6 +14,7 @@ section of the version they build into the signed manifest, and the launcher sho
 - `.follow <player> [blocks]`: walks after a player in sight on `.goto`'s walker and stays 3 blocks from them (or the number you give); `.follow stop` or a movement key stops it, an open screen only holds it
 - HUD layout editor: with the chat open, the wheel over an element's frame sets its size too (up grows it, down shrinks it); over anything else the chat scrolls as before
 - HUD layout editor: the server's scoreboard sidebar has a size too (the handle at its frame's corner, or the wheel)
+- Effects: Hide behind blocks covers Weather and Trails too (snow, rain, fireflies, embers and trail marks no longer show through walls), and trail marks fade with distance like the rest
 
 ### Fixed
 - **Crystal Aura, Anchor Aura, Key Throw, Fast Use's Throwables and Anti Hunger's Ground no longer stand still for the rest of the session once you have dug at a block by hand**
