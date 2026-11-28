@@ -211,6 +211,28 @@ pub mod clock {
         /// (`tick_target_millis`, or what a mod made of it); returns the ticks to run (at most
         /// ten, or a sprint frame's worth).
         fn advance(&mut self, elapsed: std::time::Duration, target_millis: f32) -> u32 {
+            if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                fn sunset_timer_hook(
+                    this: &mut FixedStep,
+                    elapsed: std::time::Duration,
+                    target_millis: f32,
+                ) -> std::ops::ControlFlow<u32> {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    use std::sync::atomic::Ordering::Relaxed;
+                    let m = f32::from_bits(::sunset_core::timer::MULT.load(Relaxed));
+                    if m == 1.0 || ::sunset_core::timer::BUSY.swap(true, Relaxed) {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    let ticks = this.advance(elapsed.mul_f32(m), target_millis);
+                    ::sunset_core::timer::BUSY.store(false, Relaxed);
+                    std::ops::ControlFlow::Break(ticks)
+                }
+                sunset_timer_hook(&mut *self, elapsed, target_millis)
+            } {
+                return __horizon_mixins_return;
+            }
             self.now += elapsed;
             let now_ms = self.now_ms();
             if self.manager.is_sprinting() {
@@ -265,6 +287,22 @@ pub mod first_person {
         /// `(viewXRot - xBob) * 0.1` and `(viewYRot - yBob) * 0.1`, the bobs
         /// interpolated as `extractRenderState` does.
         fn rotation(&self, partial: f32, view_x_rot: f32, view_y_rot: f32) -> [f32; 2] {
+            if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+                fn sunset_sway() -> std::ops::ControlFlow<[f32; 2]> {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return std::ops::ControlFlow::Continue(());
+                    }
+                    if ::sunset_core::hand_view::NO_SWAY
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                    {
+                        return std::ops::ControlFlow::Break([0.0, 0.0]);
+                    }
+                    std::ops::ControlFlow::Continue(())
+                }
+                sunset_sway()
+            } {
+                return __horizon_mixins_return;
+            }
             let x_bob = crate::camera::lerp(partial, self.x_bob_o, self.x_bob);
             let y_bob = crate::camera::lerp(partial, self.y_bob_o, self.y_bob);
             [(view_x_rot - x_bob) * 0.1, wrap_degrees(view_y_rot - y_bob) * 0.1]
@@ -290,6 +328,21 @@ pub mod item_activation {
     impl __Fnr_ItemActivation_tick for ItemActivation {
         /// `ItemActivation.tick`: the item goes when the count reaches 0.
         fn tick(&mut self) {
+            {
+                fn sunset_totem_tick(this: &mut ItemActivation) {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return;
+                    }
+                    let extra = ::sunset_core::hand_view::TOTEM_EXTRA_TICKS
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    for _ in 0..extra {
+                        if this.ticks > 1 {
+                            this.ticks -= 1;
+                        }
+                    }
+                }
+                sunset_totem_tick(&mut *self)
+            };
             if self.ticks > 0 {
                 self.ticks -= 1;
                 if self.ticks == 0 {
@@ -323,12 +376,36 @@ pub mod item_activation {
         let x = off_x * 0.3 * aspect;
         let y = off_y * 0.3;
         let swing = (angle * 2.0).msin().abs();
-        Mat4::from_translation(
-            Vec3::new(x * swing, y * swing, -10.0 + 9.0 * angle.msin()),
-        ) * Mat4::from_scale(Vec3::splat(0.8))
-            * Mat4::from_rotation_y((900.0 * angle.msin().abs()).to_radians())
-            * Mat4::from_rotation_x((6.0 * (t * 8.0).mcos()).to_radians())
-            * Mat4::from_rotation_z((6.0 * (t * 8.0).mcos()).to_radians())
+        ({
+            fn sunset_totem_pose(value: Mat4, aspect: f32) -> Mat4 {
+                let _: fn(f32) -> f32 = <f32 as Mth>::msin;
+                if !::sunset_core::lifecycle::RUNTIME.running() {
+                    return value;
+                }
+                let Some(pop) = ::sunset_core::hand_view::TOTEM
+                    .read()
+                    .ok()
+                    .and_then(|t| *t) else {
+                    return value;
+                };
+                let [x, y] = ::sunset_core::hand_view::totem_shift(
+                    pop,
+                    -value.w_axis.z,
+                    aspect,
+                );
+                Mat4::from_translation(glam::Vec3::new(x, y, 0.0)) * value
+                    * Mat4::from_scale(glam::Vec3::splat(pop.scale))
+            }
+            sunset_totem_pose
+        })(
+            Mat4::from_translation(
+                Vec3::new(x * swing, y * swing, -10.0 + 9.0 * angle.msin()),
+            ) * Mat4::from_scale(Vec3::splat(0.8))
+                * Mat4::from_rotation_y((900.0 * angle.msin().abs()).to_radians())
+                * Mat4::from_rotation_x((6.0 * (t * 8.0).mcos()).to_radians())
+                * Mat4::from_rotation_z((6.0 * (t * 8.0).mcos()).to_radians()),
+            aspect,
+        )
     }
     #[doc(hidden)]
     pub fn __fnr_install_animation_pose() -> bool {
@@ -415,13 +492,56 @@ pub mod motion {
         /// horizontal displacement. The gate is this invocation's (arismoko/horizon#2414), armed
         /// here before the move's own handling, no-physics included.
         fn move_self(&mut self, gate: &mut MoveGate, movement: Vec3) -> Result<()> {
+            {
+                fn sunset_legacy_jump(world: &mut MotionWorld<'_, '_, '_>) {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return;
+                    }
+                    let across = ::sunset_core::motion::take_legacy_velocity();
+                    if let Some(scale) = ::sunset_core::motion::take_ballistic_jump() {
+                        let power = if scale.is_finite() && scale > 0.0 {
+                            horizon_world::living_motion::jump_power(world, scale as f32)
+                                .ok()
+                        } else {
+                            None
+                        };
+                        let Some(power) = power.filter(|p| p.is_finite() && *p > 0.0)
+                        else {
+                            ::sunset_core::motion::set_across(None);
+                            return;
+                        };
+                        world.player.velocity.y = f64::from(power);
+                        world.player.fall_distance = 0.0;
+                        world.player.needs_sync = true;
+                        ::sunset_core::motion::set_up(Some(f64::from(power)));
+                    }
+                    if let Some([x, z]) = across && x.is_finite() && z.is_finite() {
+                        world.player.velocity.x = x;
+                        world.player.velocity.z = z;
+                    }
+                }
+                sunset_legacy_jump(&mut *self)
+            };
             crate::move_gate::arm(
                 gate,
                 self.loop_context,
                 self.player.entity_id as u32,
                 "minecraft:player",
                 MoverType::SelfMovement,
-                movement,
+                ({
+                    fn sunset_self_move(value: Vec3) -> Vec3 {
+                        if !::sunset_core::lifecycle::RUNTIME.running() {
+                            return value;
+                        }
+                        let [x, y, z] = ::sunset_core::motion::self_move([
+                            value.x,
+                            value.y,
+                            value.z,
+                        ]);
+                        Vec3::new(x, y, z)
+                    }
+                    sunset_self_move
+                })(movement),
             );
             if gate.skipped() {
                 return Ok(());
@@ -525,6 +645,40 @@ pub mod net {
         _serial: u64,
         _counters: &Arc<Mutex<Option<Arc<Counters>>>>,
     ) -> Option<ClientBrandProvider> {
+        if let ::core::ops::ControlFlow::Break(__horizon_mixins_return) = {
+            fn sunset_client_brand(
+                address: &str,
+                serial: u64,
+                counters: &Arc<Mutex<Option<Arc<Counters>>>>,
+            ) -> std::ops::ControlFlow<Option<ClientBrandProvider>> {
+                let owner: std::sync::Arc<dyn Send + Sync> = counters.clone();
+                if !::sunset_core::lifecycle::RUNTIME.running()
+                    || !::sunset_core::client_brand::attach(
+                        address,
+                        serial,
+                        std::sync::Arc::downgrade(&owner),
+                    )
+                {
+                    return std::ops::ControlFlow::Continue(());
+                }
+                std::ops::ControlFlow::Break(
+                    Some(
+                        Box::new(move || {
+                            if !::sunset_core::lifecycle::RUNTIME.running() {
+                                return None;
+                            }
+                            let brand = ::sunset_core::client_brand::payload(serial)?;
+                            let mut writer = horizon_protocol::buf::Writer::new();
+                            writer.string(&brand);
+                            Some(writer.data)
+                        }),
+                    ),
+                )
+            }
+            sunset_client_brand(_address, _serial, _counters)
+        } {
+            return __horizon_mixins_return;
+        }
         None
     }
     #[doc(hidden)]
@@ -532,6 +686,23 @@ pub mod net {
         ::horizon_client_lib::net::__fnr_prepare_client_brand(prepare_client_brand)
     }
     pub fn receive_brand(payload: &cfg::CustomPayload, send: &ingress::Producer<Event>) {
+        {
+            fn sunset_server_scan_config_channel(
+                payload: &horizon_protocol::packets::configuration::CustomPayload,
+            ) {
+                if !::sunset_core::lifecycle::RUNTIME.running() {
+                    return;
+                }
+                if let Some(seen) = ::sunset_core::bridge::CONFIG_PAYLOAD.get() {
+                    seen(
+                        payload
+                            as *const horizon_protocol::packets::configuration::CustomPayload
+                            as *mut u8,
+                    );
+                }
+            }
+            sunset_server_scan_config_channel(payload)
+        };
         if payload.channel == "minecraft:brand"
             && let Ok(brand) = horizon_protocol::buf::Reader::new(&payload.data)
                 .string(32767)
@@ -579,6 +750,20 @@ pub mod player_sync {
             on_ground: bool,
             collision: bool,
         ) -> Option<S> {
+            {
+                fn sunset_sync(this: &mut PositionSender) {
+                    if !::sunset_core::lifecycle::RUNTIME.running() {
+                        return;
+                    }
+                    if ::sunset_core::sync::take() {
+                        this.reminder = 20;
+                    }
+                    if let Some(told) = ::sunset_core::sync::take_ground() {
+                        this.on_ground = told;
+                    }
+                }
+                sunset_sync(&mut *self)
+            };
             self.reminder += 1;
             let d: [f64; 3] = std::array::from_fn(|i| position[i] - self.position[i]);
             let moved = d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > 2.0e-4 * 2.0e-4
