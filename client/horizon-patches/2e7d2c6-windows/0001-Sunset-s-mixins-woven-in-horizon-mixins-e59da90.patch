@@ -1,6 +1,6 @@
-From 106542d2aaceaf67e118d58ac9a02cebe39adf5d Mon Sep 17 00:00:00 2001
+From 911b455c05f0f7c25976125ac1c3fa1472c6c57c Mon Sep 17 00:00:00 2001
 From: vstxx <106024432+vstxx@users.noreply.github.com>
-Date: Sat, 28 Nov 2026 00:22:02 +0100
+Date: Sat, 28 Nov 2026 01:02:14 +0100
 Subject: [PATCH 1/2] Sunset's mixins woven in (horizon-mixins e59da90)
 
 The source of horizon_patch.dll as shipped: sunset/package/horizon-mod.toml's mixins and support modules applied by horizon-mixins, and the launcher's entry module (horizon_patch.rs). Rust 1.99.1. A modified version of Horizon: LGPL-3.0-or-later, the woven-in code included.

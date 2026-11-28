@@ -11,7 +11,7 @@ c52c83a1a0dd06575633e2a68ff178811fd52daf mesher: show_hidden_at, places kept dra
 1d742e59af9062aeb62bfcba1635720e023c5465 net: capture the initial client brand for each session
 f93f4c31ef212a41964e3acadadbc156a18a9631 remote: absolute macro paths in remote_send_state_body
 9defaa04337e68d6f368842491834af7bc5727f9 gfx: stop_display_reader is public
-04c69f747acbff107314691cf479ee833c1eebcb Sunset 2.1.0: the .hmod package
-ce0a520a39e67de816f53f588f403c251aba3e5f Function-replacement crates of 2e7d2c6, as generated
-106542d2aaceaf67e118d58ac9a02cebe39adf5d Sunset's mixins woven in (horizon-mixins e59da90)
-504e1a568215d96ec70960e1abd2a7f8cebbf2ef Sunset: how this branch is built and licensed
+0b4380edca182f29754740da62776cfdebd61c4d Sunset 2.1.0: the .hmod package
+984ebf11adf7df302707a3d3dae861d68c02a946 Function-replacement crates of 2e7d2c6, as generated
+911b455c05f0f7c25976125ac1c3fa1472c6c57c Sunset's mixins woven in (horizon-mixins e59da90)
+6e0926cff770b15fa7ec16263134849b88199160 Sunset: how this branch is built and licensed
