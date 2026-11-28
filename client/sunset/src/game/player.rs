@@ -1962,7 +1962,7 @@ fn anti_afk(game: &mut Game<'_>, m: &Module) {
                     p.afk_index
                 })
             };
-            game.send_chat(messages[i]);
+            let _ = game.send_chat(messages[i]);
             ps(|p| p.afk_message = m.n("Delay (seconds)") as i32 * 20);
         }
     }
@@ -2007,7 +2007,7 @@ fn spam(game: &mut Game<'_>, m: &Module) {
         }
     }
     text.truncate(256);
-    game.send_chat(&text);
+    let _ = game.send_chat(&text);
     ps(|p| p.spam_timer = m.n("Delay (ticks)") as u32);
     // Once: one message (or /command) as it turns on, then off (a kit or warp on a key).
     if m.b("Once") {

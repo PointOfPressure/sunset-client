@@ -1098,7 +1098,7 @@ pub(super) fn say_server(game: &mut Game<'_>, text: &str) -> Result<(), String> 
     if game.remote.is_none() {
         return Err("Not connected: chat in a world only.".to_owned());
     }
-    game.send_chat(text);
+    let _ = game.send_chat(text);
     Ok(())
 }
 

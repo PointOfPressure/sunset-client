@@ -63,7 +63,7 @@ pub(super) fn tick(game: &mut Game<'_>, esp: Option<&Module>) {
     })
     .flatten()
     {
-        game.send_chat(&line);
+        let _ = game.send_chat(&line);
     }
     let names = game.remote_player_names();
     let found: Vec<(u32, String)> = game

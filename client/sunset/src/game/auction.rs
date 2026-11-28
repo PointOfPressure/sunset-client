@@ -187,7 +187,7 @@ fn sell(game: &mut Game<'_>, m: Option<&Module>) {
     };
     if game.inventory.get(slot).and_then(Option::as_ref) == Some(&snapshot) {
         hold(game, slot);
-        game.send_chat(&format!("/ah sell {:.0}", m.n("Price")));
+        let _ = game.send_chat(&format!("/ah sell {:.0}", m.n("Price")));
         state(|s| if let Some(sale) = &mut s.sell {
             sale.expected = slot;
             sale.next = game.ticks + (m.n("Delay (s)") * 20.0) as u64;
