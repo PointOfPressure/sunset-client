@@ -1,0 +1,17 @@
+# The companion's one crate (the launcher builds it with the mod): the MIT loader and ABI of the replaceable engine.
+# It never depends on the LGPL engine (client/baritone-engine), which is a library of its own the loader opens at run time.
+[package]
+name = "sunset-baritone-loader"
+version = "1.1.52"
+edition = "2024"
+publish = false
+license = "MIT"
+description = "Safe host-facing transport for the replaceable Sunset Baritone engine library"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+mod_api = { package = "horizon-mod-api", path = ".horizon/sdk/api/crates/horizon-mod-api" }
+libloading = "=0.8.9"
+serde_json = "=1.0.151"

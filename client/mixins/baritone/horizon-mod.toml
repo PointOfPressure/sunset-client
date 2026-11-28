@@ -1,0 +1,830 @@
+# Sunset's Baritone companion as an .hmod mod of its own beside Sunset: it registers horizon-baritone's runtime with
+# Sunset's Baritone module (client/sunset/src/game/api.rs register_baritone) and loads the separately built, replaceable
+# LGPL engine library (client/baritone-engine). horizon-baritone's code stays here, never in client/sunset.
+# The rows below are the 1.x companion's (horizon-mixin.toml at 9f42064) moved onto the 2e7d2c6 fork: modules all in the
+# game crate (support modules may not go below it now), hooks on the game's functions of this build.
+id = "sunset_baritone"
+name = "Sunset Baritone"
+version = "1.1.52"
+description = "horizon-baritone (LGPL-3.0) for Sunset's Baritone module: #goto, #mine and the rest of Baritone's commands."
+authors = ["luhnox (horizon-baritone)", "leijurv and contributors (Baritone)", "PointOfPressure"]
+api = "0.2"
+side = "client"
+capabilities = ["registries"]
+
+[native]
+game = "26.3"
+horizon = "9defaa04337e68d6f368842491834af7bc5727f9"
+mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
+
+[[native.module]]
+id = "registration"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone_companion"
+source = "src/game/register.rs"
+
+[[native.module]]
+id = "full_mod_utils"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_utils"
+source = "src/upstream/src/api/utils.rs"
+
+[[native.module]]
+id = "full_mod_costs"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_costs"
+source = "src/upstream/src/pathing/costs.rs"
+
+[[native.module]]
+id = "full_mod_goals"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_goals"
+source = "src/upstream/src/api/goals.rs"
+
+[[native.module]]
+id = "full_mod_bom"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_bom"
+source = "src/upstream/src/api/block_optional_meta.rs"
+
+[[native.module]]
+id = "full_mod_world_scanner"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_world_scanner"
+source = "src/upstream/src/cache/world_scanner.rs"
+
+[[native.module]]
+id = "full_mod_scanner"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_scanner"
+source = "src/upstream/src/game/scanner.rs"
+
+[[native.module]]
+id = "full_mod_builder_logic"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_builder_logic"
+source = "src/upstream/src/process/builder_logic.rs"
+
+[[native.module]]
+id = "full_mod_schematic_mask"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_schematic_mask"
+source = "src/upstream/src/schematic/mask.rs"
+
+[[native.module]]
+id = "full_mod_schematic_wrappers"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_schematic_wrappers"
+source = "src/upstream/src/schematic/wrappers.rs"
+
+[[native.module]]
+id = "full_mod_schematic_legacy"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_schematic_legacy"
+source = "src/upstream/src/schematic/legacy.rs"
+
+[[native.module]]
+id = "full_mod_notification"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_notification"
+source = "src/upstream/src/utils/notification.rs"
+
+[[native.module]]
+id = "full_mod_p_pause"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_p_pause"
+source = "src/upstream/src/process/pause.rs"
+
+[[native.module]]
+id = "full_mod_gui_click"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_gui_click"
+source = "src/upstream/src/utils/gui_click.rs"
+
+[[native.module]]
+id = "full_mod_state_ops"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_state_ops"
+source = "src/upstream/src/game/state_ops.rs"
+
+[[native.module]]
+id = "full_mod_elytra_chunk"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_chunk"
+source = "src/upstream/src/process/elytra/chunk.rs"
+
+[[native.module]]
+id = "full_mod_elytra_noise"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_noise"
+source = "src/upstream/src/process/elytra/noise.rs"
+
+[[native.module]]
+id = "full_mod_elytra_generator"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_generator"
+source = "src/upstream/src/process/elytra/chunk_generator_hell.rs"
+
+[[native.module]]
+id = "full_mod_elytra_path_node"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_path_node"
+source = "src/upstream/src/process/elytra/path_node.rs"
+
+[[native.module]]
+id = "full_mod_elytra_raytracer"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_raytracer"
+source = "src/upstream/src/process/elytra/raytracer.rs"
+
+[[native.module]]
+id = "full_mod_elytra_pathfinder"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_pathfinder"
+source = "src/upstream/src/process/elytra/nether_pathfinder.rs"
+
+[[native.module]]
+id = "full_mod_elytra_region"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_region"
+source = "src/upstream/src/process/elytra/region.rs"
+
+[[native.module]]
+id = "full_mod_elytra_search"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_search"
+source = "src/upstream/src/process/elytra/path_finder.rs"
+
+[[native.module]]
+id = "full_mod_elytra_segment"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_segment"
+source = "src/upstream/src/process/elytra/segment.rs"
+
+[[native.module]]
+id = "full_mod_elytra_behavior"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_behavior"
+source = "src/upstream/src/process/elytra/behavior.rs"
+
+[[native.module]]
+id = "full_mod_elytra_flight"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_flight"
+source = "src/upstream/src/process/elytra/flight.rs"
+
+[[native.module]]
+id = "full_mod_elytra_context"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_context"
+source = "src/upstream/src/process/elytra/context.rs"
+
+[[native.module]]
+id = "full_mod_elytra_build_limit"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_build_limit"
+source = "src/upstream/src/process/elytra/build_limit.rs"
+
+[[native.module]]
+id = "full_mod_elytra_path_manager"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_elytra_path_manager"
+source = "src/upstream/src/process/elytra/path_manager.rs"
+
+[[native.module]]
+id = "full_mod_cached_world"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_cached_world"
+source = "src/upstream/src/cache/cached_world.rs"
+
+[[native.module]]
+id = "full_mod_settings"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_settings"
+source = "src/upstream/src/api/settings.rs"
+
+[[native.module]]
+id = "full_mod_selection"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_selection"
+source = "src/upstream/src/selection/selection.rs"
+
+[[native.module]]
+id = "full_mod_schematic"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_schematic"
+source = "src/upstream/src/schematic/schematic.rs"
+
+[[native.module]]
+id = "full_mod_waypoints"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_waypoints"
+source = "src/upstream/src/cache/waypoints.rs"
+
+[[native.module]]
+id = "full_mod_argument"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_argument"
+source = "src/upstream/src/command/argument.rs"
+
+[[native.module]]
+id = "full_mod_toolset"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_toolset"
+source = "src/upstream/src/game/toolset.rs"
+
+[[native.module]]
+id = "full_mod_gworld"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_gworld"
+source = "src/upstream/src/game/world.rs"
+
+[[native.module]]
+id = "full_mod_block_state"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_block_state"
+source = "src/upstream/src/utils/block_state.rs"
+
+[[native.module]]
+id = "full_mod_block_state_interface"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_block_state_interface"
+source = "src/upstream/src/utils/block_state_interface.rs"
+
+[[native.module]]
+id = "full_mod_calculation_context"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_calculation_context"
+source = "src/upstream/src/pathing/movement/calculation_context.rs"
+
+[[native.module]]
+id = "full_mod_movement_helper"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_movement_helper"
+source = "src/upstream/src/pathing/movement/movement_helper.rs"
+
+[[native.module]]
+id = "full_mod_movement_traverse"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_movement_traverse"
+source = "src/upstream/src/pathing/movement/movements/traverse.rs"
+
+[[native.module]]
+id = "full_mod_movement_ascend"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_movement_ascend"
+source = "src/upstream/src/pathing/movement/movements/ascend.rs"
+
+[[native.module]]
+id = "full_mod_movement_descend"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_movement_descend"
+source = "src/upstream/src/pathing/movement/movements/descend.rs"
+
+[[native.module]]
+id = "full_mod_movement_diagonal"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_movement_diagonal"
+source = "src/upstream/src/pathing/movement/movements/diagonal.rs"
+
+[[native.module]]
+id = "full_mod_movement_downward"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_movement_downward"
+source = "src/upstream/src/pathing/movement/movements/downward.rs"
+
+[[native.module]]
+id = "full_mod_movement_parkour"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_movement_parkour"
+source = "src/upstream/src/pathing/movement/movements/parkour.rs"
+
+[[native.module]]
+id = "full_mod_movement_pillar"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_movement_pillar"
+source = "src/upstream/src/pathing/movement/movements/pillar.rs"
+
+[[native.module]]
+id = "full_mod_moves"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_moves"
+source = "src/upstream/src/pathing/movement/moves.rs"
+
+[[native.module]]
+id = "full_mod_movement"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_movement"
+source = "src/upstream/src/pathing/movement/movement.rs"
+
+[[native.module]]
+id = "full_mod_astar"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_astar"
+source = "src/upstream/src/pathing/calc/a_star.rs"
+
+[[native.module]]
+id = "full_mod_calc_path"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_calc_path"
+source = "src/upstream/src/pathing/calc/path.rs"
+
+[[native.module]]
+id = "full_mod_rotation"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_rotation"
+source = "src/upstream/src/utils/rotation.rs"
+
+[[native.module]]
+id = "full_mod_aim"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_aim"
+source = "src/upstream/src/behavior/aim.rs"
+
+[[native.module]]
+id = "full_mod_movement_state"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_movement_state"
+source = "src/upstream/src/behavior/movement_state.rs"
+
+[[native.module]]
+id = "full_mod_player_context"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_player_context"
+source = "src/upstream/src/behavior/player_context.rs"
+
+[[native.module]]
+id = "full_mod_movement_exec"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_movement_exec"
+source = "src/upstream/src/pathing/movement/movement_exec.rs"
+
+[[native.module]]
+id = "full_mod_avoidance"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_avoidance"
+source = "src/upstream/src/pathing/avoidance.rs"
+
+[[native.module]]
+id = "full_mod_sprint_jump"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_sprint_jump"
+source = "src/upstream/src/pathing/path/sprint_jump.rs"
+
+[[native.module]]
+id = "full_mod_executor"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_executor"
+source = "src/upstream/src/pathing/path/executor.rs"
+
+[[native.module]]
+id = "full_mod_pathing_behavior"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_pathing_behavior"
+source = "src/upstream/src/behavior/pathing_behavior.rs"
+
+[[native.module]]
+id = "full_mod_input"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_input"
+source = "src/upstream/src/behavior/input.rs"
+
+[[native.module]]
+id = "full_mod_look"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_look"
+source = "src/upstream/src/behavior/look.rs"
+
+[[native.module]]
+id = "full_mod_inventory"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_inventory"
+source = "src/upstream/src/behavior/inventory.rs"
+
+[[native.module]]
+id = "full_mod_state_factory"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_state_factory"
+source = "src/upstream/src/game/state_factory.rs"
+
+[[native.module]]
+id = "full_mod_unload_stash"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_unload"
+source = "src/upstream/src/game/unload_stash.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "full_mod_world_data"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_world_data"
+source = "src/upstream/src/game/world_data.rs"
+
+[[native.module]]
+id = "full_mod_game_ctx"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_game_ctx"
+source = "src/upstream/src/game/player_context.rs"
+
+[[native.module]]
+id = "full_mod_pathing"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_pathing"
+source = "src/upstream/src/behavior/pathing.rs"
+
+[[native.module]]
+id = "full_mod_p_backfill"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_p_backfill"
+source = "src/upstream/src/process/backfill.rs"
+
+[[native.module]]
+id = "full_mod_p_goal"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_p_goal"
+source = "src/upstream/src/process/goal.rs"
+
+[[native.module]]
+id = "full_mod_p_getto"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_p_getto"
+source = "src/upstream/src/process/getto.rs"
+
+[[native.module]]
+id = "full_mod_p_mine"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_p_mine"
+source = "src/upstream/src/process/mine.rs"
+
+[[native.module]]
+id = "full_mod_p_follow"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_p_follow"
+source = "src/upstream/src/process/follow.rs"
+
+[[native.module]]
+id = "full_mod_p_explore"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_p_explore"
+source = "src/upstream/src/process/explore.rs"
+
+[[native.module]]
+id = "full_mod_p_farm"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_p_farm"
+source = "src/upstream/src/process/farm.rs"
+
+[[native.module]]
+id = "full_mod_p_build"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_p_build"
+source = "src/upstream/src/process/build.rs"
+
+[[native.module]]
+id = "full_mod_p_elytra"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_p_elytra"
+source = "src/upstream/src/process/elytra.rs"
+
+[[native.module]]
+id = "full_mod_format"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_format"
+source = "src/upstream/src/schematic/format.rs"
+
+[[native.module]]
+id = "full_mod_command"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_command"
+source = "src/upstream/src/command/manager.rs"
+
+[[native.module]]
+id = "full_mod_cmd_nav"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_cmd_nav"
+source = "src/upstream/src/command/nav.rs"
+
+[[native.module]]
+id = "full_mod_cmd_work"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_cmd_work"
+source = "src/upstream/src/command/work.rs"
+
+[[native.module]]
+id = "full_mod_cmd_build"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_cmd_build"
+source = "src/upstream/src/command/build.rs"
+
+[[native.module]]
+id = "full_mod_cmd_meta"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_cmd_meta"
+source = "src/upstream/src/command/meta.rs"
+
+[[native.module]]
+id = "full_mod_render"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_render"
+source = "src/upstream/src/game/render.rs"
+
+[[native.module]]
+id = "full_mod_main"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone"
+source = "src/upstream/src/baritone.rs"
+
+[[native.module]]
+id = "full_mod_bridge"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_bridge"
+source = "src/upstream/src/game/bridge.rs"
+
+[[native.module]]
+id = "full_mod_lines_store"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_lines"
+source = "src/game/lines.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "full_mod_screen"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_screen"
+source = "src/upstream/src/ui/settings_screen.rs"
+
+[[native.module]]
+id = "full_mod_settings_ui"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_settings_ui"
+source = "src/upstream/src/game/settings_ui.rs"
+
+[[native.module]]
+id = "full_mod_suggest_bridge"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_suggest"
+source = "src/upstream/src/game/suggest_bridge.rs"
+visibility = "pub"
+
+[[native.module]]
+id = "full_mod_tab"
+file = "crates/horizon-client/src/game.rs"
+name = "baritone_tab"
+source = "src/upstream/src/command/tab.rs"
+
+[[native.module]]
+id = "full_runtime_bridge"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_baritone_full"
+source = "src/game/full.rs"
+
+[[native.mixin]]
+id = "register"
+target = "horizon_client::game::native_hooks::client_tick_post::Game<'_>::native_client_tick_post"
+kind = "HEAD"
+helper = "src/mixins/register_hook.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[native.mixin]]
+id = "full_unload"
+target = "horizon_client::game::remote::level_state::Game<'_>::forget_remote_columns_body"
+kind = "HEAD"
+helper = "src/mixins/unload.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "gone", ty = "&horizon_client::fast_hash::FxHashSet<(i32, i32)>", value = "&*gone" },
+]
+
+[[native.mixin]]
+id = "full_chat"
+target = "horizon_client::game::chat::Game<'_>::handle_chat_input"
+kind = "HEAD"
+cancellable = true
+helper = "src/upstream/hooks/chat.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "message", ty = "&str", value = "message" },
+]
+
+[[native.mixin]]
+id = "full_tick"
+target = "horizon_client::game::native_hooks::client_tick_post::Game<'_>::native_client_tick_post"
+kind = "HEAD"
+helper = "src/upstream/hooks/tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[native.mixin]]
+id = "full_command"
+target = "horizon_client::game::native_hooks::base::Game<'_>::native_command"
+kind = "HEAD"
+helper = "src/upstream/hooks/command.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "command", ty = "&str", value = "command" },
+  { name = "ran", ty = "&mut bool", value = "&mut *ran" },
+]
+
+# full_list (horizon_client::game::native_hooks::Game<'_>::native_mods) is left out on this build: see PORTING.md
+
+# full_settings (horizon_client::game::native_hooks::Game<'_>::native_settings) is left out on this build: see PORTING.md
+
+[[native.mixin]]
+id = "full_page_draw"
+target = "horizon_client::game::options::Game<'_>::draw_options"
+kind = "HEAD"
+cancellable = true
+helper = "src/upstream/hooks/page_draw.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+]
+
+[[native.mixin]]
+id = "full_page_mouse"
+target = "horizon_client::game::options::Game<'_>::options_mouse"
+kind = "HEAD"
+cancellable = true
+helper = "src/upstream/hooks/page_mouse.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+  { name = "right", ty = "bool", value = "right" },
+]
+
+[[native.mixin]]
+id = "full_page_drag"
+target = "horizon_client::game::options::Game<'_>::options_drag"
+kind = "HEAD"
+cancellable = true
+helper = "src/upstream/hooks/page_drag.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[native.mixin]]
+id = "full_page_wheel"
+target = "horizon_client::game::options::Game<'_>::options_scroll"
+kind = "HEAD"
+cancellable = true
+helper = "src/upstream/hooks/page_wheel.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "amount", ty = "f32", value = "amount" },
+]
+
+[[native.mixin]]
+id = "full_page_key"
+target = "horizon_client::game::options::Game<'_>::options_key"
+kind = "HEAD"
+cancellable = true
+helper = "src/upstream/hooks/page_key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "winit::keyboard::KeyCode", value = "key" },
+  { name = "text", ty = "Option<&str>", value = "text" },
+]
+
+[[native.mixin]]
+id = "full_page_text"
+target = "horizon_client::game::control::Game<'_>::type_chars_into_screen"
+kind = "HEAD"
+cancellable = true
+helper = "src/upstream/hooks/page_text.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "text", ty = "&str", value = "text" },
+]
+
+# full_click (horizon_client::game::native_hooks::Game<'_>::native_settings_click) is left out on this build: see PORTING.md
+
+[[native.mixin]]
+id = "full_lines"
+target = "horizon_client::game::debug_keys::Game<'_>::debug_gizmos"
+kind = "RETURN"
+helper = "src/mixins/lines.rs"
+bindings = [
+  { name = "value", ty = "Gizmos", value = "$value" },
+]
+
+[[native.mixin]]
+id = "full_keys_before"
+target = "horizon_client::game::Game<'_>::sync_player_body"
+kind = "HEAD"
+helper = "src/upstream/hooks/keys_before.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[native.mixin]]
+id = "full_keys_after"
+target = "horizon_client::game::fov::Game<'_>::tick_avatar"
+kind = "HEAD"
+helper = "src/upstream/hooks/keys_after.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[native.mixin]]
+id = "full_keys_tick"
+target = "horizon_client::game::Game<'_>::tick"
+kind = "HEAD"
+helper = "src/upstream/hooks/keys_tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[native.mixin]]
+id = "full_keys_remote"
+target = "horizon_client::game::remote::Game<'_>::tick_remote"
+kind = "HEAD"
+helper = "src/upstream/hooks/keys_remote.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[native.mixin]]
+id = "full_toast_draw"
+target = "horizon_client::game::Game<'_>::hud_layers"
+kind = "RETURN"
+helper = "src/mixins/toast_draw.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "value", ty = "HudBatch", value = "$value" },
+]
+
+[[native.mixin]]
+id = "full_goal_beam"
+target = "horizon_client::game::beacon::Game<'_>::beacon_geometry"
+kind = "HEAD"
+helper = "src/upstream/hooks/goal_beam.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "camera", ty = "glam::DVec3", value = "camera" },
+  { name = "alpha", ty = "f64", value = "alpha" },
+  { name = "out", ty = "&mut Vec<horizon_client::mesher::Vertex>", value = "&mut *out" },
+]
+
+[[native.mixin]]
+id = "full_set_back"
+target = "horizon_client::game::remote::Game<'_>::remote_teleport"
+kind = "HEAD"
+helper = "src/upstream/hooks/set_back.rs"
+bindings = [
+]
+
+[[native.mixin]]
+id = "full_block_change"
+target = "horizon_client::game::remote::Game<'_>::set_block"
+kind = "HEAD"
+helper = "src/upstream/hooks/block_change.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "pos", ty = "[i32; 3]", value = "pos" },
+  { name = "state", ty = "i32", value = "state" },
+]
+
+[[native.mixin]]
+id = "full_block_interact"
+target = "horizon_client::game::remote::interaction_prediction::Game<'_>::remote_use_item_on"
+kind = "HEAD"
+helper = "src/upstream/hooks/block_interact.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[native.mixin]]
+id = "full_click_press"
+target = "horizon_client::game::extras::sorting::Game<'_>::sort_mouse_press"
+kind = "HEAD"
+helper = "src/upstream/hooks/click_press.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[native.mixin]]
+id = "full_click_escape"
+target = "horizon_client::game::extras::sorting::Game<'_>::sort_key_press"
+kind = "HEAD"
+cancellable = true
+helper = "src/upstream/hooks/click_escape.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "winit::keyboard::KeyCode", value = "key" },
+]
+
+[[native.mixin]]
+id = "full_click_key"
+target = "horizon_client::game::play_input::Game<'_>::play_mouse"
+kind = "HEAD"
+helper = "src/mixins/click_mouse.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "button", ty = "winit::event::MouseButton", value = "button" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
+
+# full_suggest (horizon_client_render::chat::ChatScreen::update_command_info) is left out on this build: see PORTING.md
