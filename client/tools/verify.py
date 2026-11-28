@@ -7620,7 +7620,12 @@ def _():
     compiler = shutil.which("rustc") or shutil.which("rustc", path=os.path.expanduser("~/.cargo/bin"))
     if not compiler:
         return None, "needs rustc for the standalone repeat-clock scenarios"
-    source = pathlib.Path(__file__).resolve().parents[1] / "mixins" / "sunset" / "click_clock.rs"
+    # The live source (client/sunset), from this script's client folder or SUNSET_CLIENT where a copy runs elsewhere.
+    roots = [pathlib.Path(p) for p in (os.environ.get("SUNSET_CLIENT"), pathlib.Path(__file__).resolve().parents[1]) if p]
+    source = next((r / "sunset" / "src" / "game" / "click_clock.rs" for r in roots
+                   if (r / "sunset" / "src" / "game" / "click_clock.rs").is_file()), None)
+    if source is None:
+        return None, "needs the repo's client folder (run tools/verify.py in place, or set SUNSET_CLIENT)"
     with tempfile.TemporaryDirectory(prefix="sunset-click-clock-") as directory:
         wrapper = pathlib.Path(directory) / "tests.rs"
         wrapper.write_text("#![allow(dead_code)]\n#[path = " + json.dumps(source.as_posix()) + "]\nmod click_clock;\n")
