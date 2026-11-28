@@ -591,6 +591,24 @@ name = "sunset_goto"
 source = "src/game/goto.rs"
 
 [[native.module]]
+id = "mine"
+file = "crates/horizon-client/src/game/runtime/agent/mod.rs"
+name = "sunset_mine"
+source = "src/game/mine.rs"
+
+[[native.module]]
+id = "highway"
+file = "crates/horizon-client/src/game/runtime/agent/mod.rs"
+name = "sunset_highway"
+source = "src/game/highway.rs"
+
+[[native.module]]
+id = "excavate"
+file = "crates/horizon-client/src/game/runtime/agent/mod.rs"
+name = "sunset_excavate"
+source = "src/game/excavate.rs"
+
+[[native.module]]
 id = "fishing_hook"
 file = "crates/horizon-client/src/game/items/fishing.rs"
 name = "sunset_fishing"

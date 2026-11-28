@@ -85,7 +85,8 @@ Through Sunset's Horizon fork (18 Nov, `PointOfPressure/horizon` `sunset-hooks/0
   stops; at once when turned off; the water colours are asked again for 5 s after, as a server's reload brought back
   the old tint). Xray's Show placed blocks: `mesher::show_hidden_at` (0010).
 - Tab game modes and Streamer Mode in single player's tab list: `local_tab_players`'s return (no fork patch).
-- verify.py's probe as an .hmod (`client/tools/probe-hmod`, its AntiBot hooks not ported).
+- verify.py's probe as an .hmod (`client/tools/probe-hmod`; its Anti Bot fixture plays when the game is started with
+  `SUNSET_ANTIBOT_FIXTURE=<file>`, which verify.py looks for as `antibot.json` in the session folder).
 - Seen once, not chased: in single player with Streamer Mode, a spectator guest's " [S]" tab tag read "[Player 2]"
   (Streamer Mode's name replacement taking the tag for a name; the server path marks the same way).
 

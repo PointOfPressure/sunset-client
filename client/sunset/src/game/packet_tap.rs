@@ -484,6 +484,16 @@ pub fn seen(serial: u64, events: &[Item]) {
             }
             _ => {}
         }
+        // The block placers wait for the server's acknowledgement of a place (sunset_util::awaiting).
+        match event {
+            Event::Joined { .. } | Event::Reconfigured(_) => crate::game::sunset_util::block_acked(None),
+            Event::Packet(p) => {
+                if let C::BlockChangedAck(ack) = &**p {
+                    crate::game::sunset_util::block_acked(Some(ack.sequence));
+                }
+            }
+            _ => {}
+        }
         scan_seen(event, scan_active);
         debug_seen(event);
         crate::game::sunset_radar::locator_seen(event);

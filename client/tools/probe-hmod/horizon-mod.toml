@@ -1,7 +1,8 @@
 # verify.py's test probe as an .hmod package, built next to Sunset on the test machine only (never packed or shipped):
 # once a frame, just before the frame is drawn, it appends what the frame is drawn from to the file named by
 # SUNSET_PROBE; and each move packet, hit and end of a client tick as it goes on the wire (horizon_protocol's
-# observe_sent, Sunset's fork patch 0004). The .hnmod probe's AntiBot test hooks are not ported.
+# observe_sent, Sunset's fork patch 0004). With SUNSET_ANTIBOT_FIXTURE set it also plays verify.py's Anti Bot fixture
+# (src/game/antibot.rs): players only this client sees, for the Anti Bot tests.
 id = "probe"
 name = "Sunset test probe"
 version = "0.1.0"
@@ -34,3 +35,33 @@ target = "horizon_client::game::pad::Game<'_>::pad_look"
 kind = "HEAD"
 helper = "src/mixins/frame.rs"
 bindings = [{ name = "game", ty = "&crate::game::Game<'_>", value = "&*self" }]
+
+[[native.module]]
+id = "probe_antibot"
+file = "crates/horizon-client/src/game.rs"
+name = "sunset_probe_antibot"
+source = "src/game/antibot.rs"
+
+[[native.mixin]]
+id = "antibot_tick"
+target = "horizon_client::game::remote::Game<'_>::remote_handle_input"
+kind = "HEAD"
+helper = "src/mixins/antibot_tick.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "antibot_turn"
+target = "horizon_client::game::remote::Game<'_>::remote_send_state"
+kind = "HEAD"
+helper = "src/mixins/antibot_turn.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "antibot_after_tick"
+target = "horizon_client::game::native_hooks::client_tick_post::Game<'_>::native_client_tick_post"
+kind = "RETURN"
+helper = "src/mixins/antibot_after_tick.rs"
+bindings = [
+  { name = "value", ty = "()", value = "$value" },
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]

@@ -4,8 +4,9 @@
 // an explosion's centre) and Weather (rain, snow, fireflies or embers round you); Kill effect (a burst or a pillar of
 // light where what you hit dies), Crit sparks (stars off your critical hits), Break bursts (chips off a block as it
 // breaks) and Target aura (a ring or two lights round what you last hit). Drawn on the HUD as projected shapes;
-// nothing is sent. With Hide behind blocks an effect a block stands in front of is not drawn (trail marks and
-// weather are not tested: there are too many), and everything fades with distance. A dot too small to show its
+// nothing is sent. With Hide behind blocks an effect a block stands in front of is not drawn, and everything fades
+// with distance. Trail marks and weather are too many to test against the blocks every frame: each keeps its last
+// answer and a share of the ones on screen is asked again each frame (see Turns). A dot too small to show its
 // halo is one quad. Also the shield breaks and totem pops ESP and Nametags colour by.
 use super::Game;
 use super::sunset::{Camera, Canvas, Category, Module, accent, own_id, with};
@@ -250,6 +251,8 @@ struct Mark {
     shade: f32,
     born: Instant,
     life: f32,
+    // No block in front of it when it was last tested (false until the first test).
+    seen: bool,
 }
 
 struct Spark {
@@ -297,6 +300,37 @@ struct Drop {
     life: f32,
     phase: f32,
     shade: f32,
+    // As Mark's.
+    seen: bool,
+}
+
+// Whose turn it is to be tested against the blocks this frame: `left` of them, on from where the last frame
+// stopped, so every trail mark and weather drop on screen is asked again within a few frames whatever their number.
+struct Turns {
+    from: usize,
+    left: usize,
+    next: usize,
+}
+
+impl Turns {
+    // `dt` in ticks since the last frame: `rate` tests a tick, never under 16 or over `most` a frame.
+    fn new(from: usize, dt: f32, rate: f32, most: usize) -> Self {
+        Self { from, left: ((dt * rate) as usize).clamp(16, most), next: 0 }
+    }
+
+    fn take(&mut self, i: usize) -> bool {
+        let mine = i >= self.from && self.left > 0;
+        if mine {
+            self.left -= 1;
+            self.next = i + 1;
+        }
+        mine
+    }
+
+    // Where the next frame goes on: from the start again once this one reached the end.
+    fn end(self) -> usize {
+        if self.left > 0 { 0 } else { self.next }
+    }
 }
 
 #[derive(Default)]
@@ -310,6 +344,9 @@ struct Fx {
     explosions: VecDeque<Pulse>,
     sparks: Vec<Spark>,
     drops: Vec<Drop>,
+    // Where the block tests of the trail marks and of the weather go on next frame.
+    mark_turn: usize,
+    drop_turn: usize,
     weather_from: Option<[f64; 3]>,
     weather_mode: Option<&'static str>,
     frame: Option<Instant>,
@@ -383,19 +420,39 @@ fn hit_lately(fx: &Fx, id: u32, secs: f32) -> bool {
     fx.hits.iter().any(|(i, at)| *i == id && at.elapsed().as_secs_f32() <= secs)
 }
 
-// A block stands between the eye and a place (stepped through, a third of a block at a time, up to 48 blocks).
+// A block stands between the eye and a place: each block the line passes through is looked at once, up to 48
+// blocks. Not the eye's own block, and not the last two thirds of a block: an effect on the ground or on a block's
+// face is not behind that block.
 fn hidden(game: &Game<'_>, eye: [f64; 3], at: [f64; 3]) -> bool {
     let d = [at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]];
     let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-    if len > 48.0 {
+    if len.is_nan() || len > 48.0 {
         return true;
     }
-    let steps = (len / 0.33).ceil() as usize;
-    // Not the last steps: an effect on the ground or on a block's face is not behind that block.
-    (1..steps.saturating_sub(2)).any(|i| {
-        let t = i as f64 / steps as f64;
-        solid(game, [eye[0] + d[0] * t, eye[1] + d[1] * t, eye[2] + d[2] * t])
-    })
+    // Along the line, 0 at the eye and 1 at the place: where it stops, how far one block is on each axis, and
+    // where it next crosses into another block on each.
+    let end = 1.0 - 0.66 / len;
+    if end <= 0.0 {
+        return false;
+    }
+    let mut cell = eye.map(|v| v.floor() as i32);
+    let per = d.map(|v| if v == 0.0 { f64::INFINITY } else { (1.0 / v).abs() });
+    let mut next = [0, 1, 2].map(|k| {
+        let edge = if d[k] > 0.0 { f64::from(cell[k]) + 1.0 - eye[k] } else { eye[k] - f64::from(cell[k]) };
+        if d[k] == 0.0 { f64::INFINITY } else { edge * per[k] }
+    });
+    for _ in 0..160 {
+        let k = if next[0] <= next[1] && next[0] <= next[2] { 0 } else if next[1] <= next[2] { 1 } else { 2 };
+        if next[k] >= end {
+            return false;
+        }
+        cell[k] += if d[k] > 0.0 { 1 } else { -1 };
+        next[k] += per[k];
+        if !super::sunset_util::replaceable(game, cell) {
+            return true;
+        }
+    }
+    false
 }
 
 // Light falls off with distance: full to 20 blocks, gone at 44.
@@ -650,7 +707,7 @@ pub(super) fn tick(game: &Game<'_>) {
                                 let (s, c) = (f64::from(yaw.to_radians().sin()), f64::from(yaw.to_radians().cos()));
                                 let side = if left { -0.18 } else { 0.18 };
                                 let foot = [at[0] + c * side, at[1] + 0.02, at[2] + s * side];
-                                keep_recent(&mut fx.marks, Mark { at: foot, yaw, kind, vel: [0.0; 3], shade: 0.5, born: now, life }, 512);
+                                keep_recent(&mut fx.marks, Mark { at: foot, yaw, kind, vel: [0.0; 3], shade: 0.5, born: now, life, seen: false }, 512);
                             }
                             Trail::Spark => {
                                 for _ in 0..4 {
@@ -658,12 +715,12 @@ pub(super) fn tick(game: &Game<'_>) {
                                     let speed = 0.025 + random(fx) * 0.05;
                                     let vel = [a.cos() * speed, 0.05 + random(fx) * 0.05, a.sin() * speed];
                                     let shade = random(fx) as f32;
-                                    keep_recent(&mut fx.marks, Mark { at, yaw, kind, vel, shade, born: now, life }, 512);
+                                    keep_recent(&mut fx.marks, Mark { at, yaw, kind, vel, shade, born: now, life, seen: false }, 512);
                                 }
                             }
                             Trail::Ring => {
                                 let shade = random(fx) as f32;
-                                keep_recent(&mut fx.marks, Mark { at: [at[0], at[1] + 0.01, at[2]], yaw, kind, vel: [0.0; 3], shade, born: now, life }, 512);
+                                keep_recent(&mut fx.marks, Mark { at: [at[0], at[1] + 0.01, at[2]], yaw, kind, vel: [0.0; 3], shade, born: now, life, seen: false }, 512);
                             }
                         }
                         fx.steps[i] = (id, at, !left);
@@ -751,7 +808,7 @@ fn new_drop(game: &Game<'_>, fx: &mut Fx, mode: &str, around: [f64; 3], radius: 
         return None;
     }
     let (phase, shade) = ((random(fx) * std::f64::consts::TAU) as f32, random(fx) as f32);
-    Some(Drop { at, vel, age: (random(fx) * life * 0.5) as f32, life: life as f32, phase, shade })
+    Some(Drop { at, vel, age: (random(fx) * life * 0.5) as f32, life: life as f32, phase, shade, seen: false })
 }
 
 fn weather(game: &Game<'_>, fx: &mut Fx, m: &Module, dt: f32) {
@@ -837,9 +894,30 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
             }
         }
         let size = m.n("Trail size") as f32;
-        for k in &fx.marks {
+        let mut turns = Turns::new(fx.mark_turn, dt, 240.0, 256);
+        for (i, k) in fx.marks.iter_mut().enumerate() {
             let f = k.born.elapsed().as_secs_f32() / k.life;
-            let a = 1.0 - f * f;
+            // Where it is tested: a little over the ground it lies on (a spark, where it has flown to).
+            let t = if k.kind == Trail::Spark { f64::from(k.life * f * 20.0) } else { 0.0 };
+            let over = [k.at[0] + k.vel[0] * t, k.at[1] + k.vel[1] * t - 0.0009 * t * t + 0.1, k.at[2] + k.vel[2] * t];
+            let far = falloff(eye, over);
+            // One within reach of your feet is in view; the others are tested in turn while they are on screen.
+            if occlude && super::sunset_util::dist(eye, over) > 2.5 {
+                let on = far > 0.0
+                    && cam.project(over).zip(cam.pixels_per_block(over)).is_some_and(|(p, px)| cam.on_screen(p, px * size));
+                if !on {
+                    k.seen = false;
+                    continue;
+                }
+                if turns.take(i) {
+                    k.seen = !hidden(game, eye, over);
+                }
+                if !k.seen {
+                    continue;
+                }
+            }
+            let a = (1.0 - f * f) * far;
+            if a <= 0.0 { continue; }
             match k.kind {
                 Trail::Footstep => {
                     oval(cam, out, k.at, k.yaw, [0.25 * size, 0.42 * size], alpha(shade(rgb, -0.4), a * 0.45));
@@ -847,7 +925,6 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
                 }
                 Trail::Ring => ring(cam, out, k.at, (0.05 + 0.55 * ease(f)) * size, 0.018, 0.12, mix(dark, bright, k.shade), a),
                 Trail::Spark => {
-                    let t = f64::from(k.life * f * 20.0);
                     let at = [k.at[0] + k.vel[0] * t, k.at[1] + k.vel[1] * t - 0.0009 * t * t + 0.05, k.at[2] + k.vel[2] * t];
                     if let (Some(p), Some(px)) = (cam.project(at), cam.pixels_per_block(at)) {
                         glow(out, p, (1.6 - 0.5 * f) * 0.05 * size * px, alpha(mix(dark, bright, k.shade), a));
@@ -855,6 +932,7 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
                 }
             }
         }
+        fx.mark_turn = turns.end();
         let life = m.n("Particle lifespan (s)") as f32;
         let t = fx.epoch.get_or_insert(now).elapsed().as_secs_f32();
         for (i, s) in fx.sparks.iter().enumerate() {
@@ -947,8 +1025,10 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
         let mode = m.p("Weather mode");
         let wsize = m.n("Weather size") as f32 * 0.04;
         let reach = m.n("Weather radius") * 1.5;
-        for d in &fx.drops {
-            if super::sunset_util::dist(d.at, cam.eye()) > reach {
+        let mut turns = Turns::new(fx.drop_turn, dt, 300.0, 600);
+        for (i, d) in fx.drops.iter_mut().enumerate() {
+            if super::sunset_util::dist(d.at, eye) > reach {
+                d.seen = false;
                 continue;
             }
             let f = d.age / d.life;
@@ -959,14 +1039,22 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
                 _ => 1.0,
             };
             let tint = if m.p("Color") == "Custom" { rgb } else { mix(dark, bright, d.shade) };
-            let (Some(p), Some(px)) = (cam.project(d.at), cam.pixels_per_block(d.at)) else {
+            // Off screen: nothing to draw (most of the drops behind and beside you). Far ones are fainter.
+            a *= falloff(eye, d.at);
+            let on = if a > 0.0 { cam.project(d.at).zip(cam.pixels_per_block(d.at)) } else { None };
+            let Some((p, px)) = on.filter(|&(p, _)| cam.on_screen(p, 8.0)) else {
+                d.seen = false;
                 continue;
             };
-            // Off screen: nothing to draw (most of the drops behind and beside you). Far ones are fainter.
-            if !cam.on_screen(p, 8.0) {
-                continue;
+            // Behind a block: the answer of its last turn (a drop new on the screen waits for its first).
+            if occlude {
+                if turns.take(i) {
+                    d.seen = !hidden(game, eye, d.at);
+                }
+                if !d.seen {
+                    continue;
+                }
             }
-            a *= falloff(eye, d.at);
             match mode {
                 "Rain" => {
                     let w = (0.5 * wsize * px).max(1.0);
@@ -978,5 +1066,6 @@ pub(super) fn draw(game: &Game<'_>, cam: &Camera, mods: &[Module], out: &mut imp
                 _ => glow(out, p, 0.7 * wsize * px * 0.5, alpha(tint, a)),
             }
         }
+        fx.drop_turn = turns.end();
     });
 }

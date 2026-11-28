@@ -86,20 +86,24 @@ pub(crate) fn clear_destroy_delay(game: &mut Game<'_>, wait: u32) {
     }
 }
 
-// The block being broken by hand and how far it is (0 to 1), for Fast Break.
+// The block being broken by hand and how far it is (0 to 1), for Fast Break and for whatever waits for a dig to be
+// over. Only while the dig is going on (`is_destroying`): the game keeps the block of its last dig in `destroying`
+// after the dig has ended or was let go (vanilla's destroyBlockPos, so a held attack on a block put back there goes
+// on without a second START), and read alone that looked like a dig for the rest of the session.
 pub(crate) fn breaking(game: &Game<'_>) -> Option<([i32; 3], f32)> {
-    game.remote.as_ref()?.destroying.map(|(pos, _, done)| (pos, done))
+    let r = game.remote.as_ref().filter(|r| r.is_destroying)?;
+    r.destroying.map(|(pos, _, done)| (pos, done))
 }
 
 pub(crate) fn set_breaking(game: &mut Game<'_>, done: f32) {
-    if let Some((_, _, d)) = game.remote.as_mut().and_then(|r| r.destroying.as_mut()) {
+    if let Some((_, _, d)) = game.remote.as_mut().filter(|r| r.is_destroying).and_then(|r| r.destroying.as_mut()) {
         *d = done;
     }
 }
 
 // No Break Reset: the item in hand is no longer the one the break began with (the game would start it again).
 pub(crate) fn breaking_item_changed(game: &Game<'_>) -> bool {
-    game.remote.as_ref().is_some_and(|r| r.destroying.is_some() && r.destroying_item != game.main_hand_key())
+    game.remote.as_ref().is_some_and(|r| r.is_destroying && r.destroying.is_some() && r.destroying_item != game.main_hand_key())
 }
 
 // ...so the break goes on with the new one.

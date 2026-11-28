@@ -1910,7 +1910,7 @@ _.ends_session = True
 @test("Panic: lifecycle and stale work")
 def _():
     import pathlib, shutil, tempfile
-    compiler = shutil.which("rustc")
+    compiler = shutil.which("rustc") or shutil.which("rustc", path=os.path.expanduser("~/.cargo/bin"))
     if not compiler:
         return None, "needs rustc for the standalone lifecycle tests"
     source = pathlib.Path(__file__).resolve().parents[1] / "mixins" / "sunset" / "lifecycle.rs"
@@ -2606,12 +2606,18 @@ def open_picker(search, shot=None):
     screenshot to `shot` if given."""
     say(".menu xray")
     wait(5)
+    # For the typing below: a real click where no panel is (bottom right) and a Shift, as menu_enter does, before the
+    # picker is open (the first real input after the cursor was let go only takes it back).
+    if search:
+        menu_warm()
     ctl("click-at", *map(str, menu_row(3, 1)), "right")
     wait(3)
     ctl("click-at", *map(str, menu_row(3, 4)))
     wait(3)
-    for k in search:
-        ctl("key", k, "tap")
+    # Typed as the keyboard's where the game has a window for it (Sunset's menu never sees horizon-ctl's keys).
+    if not (search and real_key(search, "type", click=False)):
+        for k in search:
+            ctl("key", k, "tap")
     wait(3)
     if shot:
         ctl("screenshot", shot)
@@ -2639,6 +2645,85 @@ def menu_enter():
 
 
 REAL_KEYS = "needs real keys (OFFSCREEN=0): horizon-ctl's key never reaches Sunset's menu"
+_REAL_WINDOW = []
+
+
+def real_window():
+    """x_window(), looked up once a session: the game's window where it takes real keys, else None."""
+    if not _REAL_WINDOW:
+        _REAL_WINDOW.append(x_window())
+    return _REAL_WINDOW[0]
+
+
+def menu_warm():
+    """Before real keys go into Sunset's menu: a real click where no panel is (bottom right) and a Shift, as menu_enter
+    does (the first real input after the cursor was let go only takes it back). Call it with the menu open and nothing
+    a click outside would shut. False without a window that takes real keys."""
+    window = real_window()
+    if not window:
+        return False
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+    for args in (("windowraise", window), ("windowfocus", "--sync", window), ("mousemove", "--window", window, "1200", "650"),
+                 ("click", "1"), ("key", "shift")):
+        subprocess.run(["xdotool", *args], env=env, capture_output=True)
+        time.sleep(0.5)
+    wait(4)
+    return True
+
+
+def real_key(key, action="key", click=True, times=1):
+    """`key` as a real keyboard's (xdotool `action`: key, keydown, keyup or type), for what Sunset reads where the
+    window's key events arrive (its binds, typing in its menu): horizon-ctl's keys pass that by. With `click` the
+    pointer goes into the window and right clicks first, as x_press does (in the world the first press after a screen
+    only takes the cursor back); never with a menu open, where the click would land on it. False without a window
+    that takes real keys."""
+    window = real_window()
+    if not window:
+        return False
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+    steps = [("windowraise", window), ("windowfocus", "--sync", window)]
+    if click:
+        steps += [("mousemove", "--window", window, "200", "150"), ("click", "3")]
+    if action == "type":
+        # Into a menu: the pointer in the window where no panel is (bottom right) and a Shift first, as menu_enter
+        # does (the first key after the focus moved can be lost), then the text.
+        steps += [("mousemove", "--window", window, "1200", "650"), ("key", "shift"), ("type", "--delay", "120", key)]
+    elif times > 1:
+        steps.append((action, "--repeat", str(times), "--repeat-delay", "60", key))
+    else:
+        steps.append((action, key))
+    for args in steps:
+        subprocess.run(["xdotool", *args], env=env, capture_output=True)
+        time.sleep(0.2)
+    wait(3)
+    return True
+
+
+def real_drag(*points, across=None):
+    """A real left-button drag through `points` (GUI units, as horizon-ctl's drag-at takes them; `across` is the
+    screen's width in the units the points are in, the menu's by default), for what Sunset reads at the window's mouse
+    events with a game screen open (the HUD layout editor over the chat). False without a window that takes real
+    input."""
+    window = real_window()
+    if not window:
+        return False
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+    run = lambda *args: subprocess.run(["xdotool", *args], env=env, capture_output=True, text=True)
+    width = int(re.search(r"WIDTH=(\d+)", run("getwindowgeometry", "--shell", window).stdout).group(1))
+    k = width / (across or gui_size()[0])
+    at = lambda p: ("mousemove", "--window", window, str(round(p[0] * k)), str(round(p[1] * k)))
+    run("windowraise", window)
+    run("windowfocus", "--sync", window)
+    run(*at(points[0]))
+    time.sleep(0.3)
+    run("mousedown", "1")
+    for p in points[1:]:
+        time.sleep(0.3)
+        run(*at(p))
+    time.sleep(0.3)
+    run("mouseup", "1")
+    wait(4)
+    return True
 
 
 def real_keys_ready():
@@ -2672,7 +2757,7 @@ def close_menu():
 @test("ClickGUI Dashboard (look and frame cost)")
 def _():
     # Style Dashboard at GUI scale 2 (Theme OLED) and 4 (Theme Grey): screenshots (dash2.png, dash4.png), and its
-    # surface (#000000 in OLED, #121214 in Grey) fills the middle of the screen. Then the game thread's CPU ms a frame with the menu shut, open as panels and open as the
+    # surface (#000000 in OLED, #121214 in Grey) fills its categories' column under the last category. Then the game thread's CPU ms a frame with the menu shut, open as panels and open as the
     # Dashboard (the median of 4 samples of 2 s): the Dashboard should cost under 0.3 ms over the panels.
     from PIL import Image
     sock = os.path.join(session_dir(), "c.sock").encode()
@@ -2707,8 +2792,16 @@ def _():
         ctl("screenshot", f"{SHOTS}/dash{scale}.png")
         time.sleep(2)
         img = Image.open(f"{SHOTS}/dash{scale}.png").convert("RGB")
-        middle = img.crop((img.width // 2 - 40, img.height * 3 // 4, img.width // 2 + 40, img.height * 3 // 4 + 20))
-        surface[scale] = sum(1 for px in middle.getdata() if px == want) / (80 * 20)
+        # The categories' column under its last category, a strip 80 x 20 of the menu's units (Fit to screen is off
+        # in the tests: a unit is a GUI pixel); the window as dash_geometry() lays it out at this scale.
+        vw, vh = img.width / scale, img.height / scale
+        fw = math.floor(min(max(vw - 16, 0), max(610, min(vw * 0.8, 610 * 1.33))))
+        fh = math.floor(min(max(vh - 16, 0), max(420, min(vh * 0.82, 420 * 1.33))))
+        fx, fy = math.floor((vw - fw) / 2), math.floor((vh - fh) / 2)
+        # (above the profile's two lines at its foot)
+        box = (fx + 12, fy + fh - 60, fx + 92, fy + fh - 40)
+        strip = img.crop(tuple(int(c * scale) for c in box))
+        surface[scale] = sum(1 for px in strip.getdata() if px == want) / max(strip.width * strip.height, 1)
         close_menu()
     setting("clickgui", "theme", "Grey")
     ctl("options-set", "guiScale", "0")
@@ -2727,7 +2820,7 @@ def _():
     med = {k: sorted(v)[len(v) // 2] if v else None for k, v in ms.items()}
     extra = med["Dashboard"] - med["Dropdown"] if stat else None
     ok = all(v > 0.5 for v in surface.values()) and extra is not None and extra < 0.3
-    return ok, (f"surface share in the middle: {surface}; game thread ms a frame: shut {med['shut']:.3f}, panels "
+    return ok, (f"surface share under the categories: {surface}; game thread ms a frame: shut {med['shut']:.3f}, panels "
                 f"{med['Dropdown']:.3f}, Dashboard {med['Dashboard']:.3f} (Dashboard over panels {extra:+.3f})" if stat else "no game thread found")
 
 
@@ -2779,6 +2872,272 @@ def sidebar_shots(gw):
 
     return shot, share
 
+
+
+def dash_geometry(fit=True, legacy=False):
+    """The Dashboard's window in GUI pixels as dashboard.rs lays it out at the defaults (Panel width 120, Fit to screen
+    on): (k, fx, fy, fw, fh, lw), where k is the menu's units to GUI pixels (Fit to screen makes the menu smaller until
+    its window's 627 units fit, never under two screen pixels a unit; 1 with fit=False, for Fit to screen off), the
+    frame and the module list's width in the menu's units. Since the rework the window grows past 610 x 420 to 80% x 82%
+    of a roomy screen, a third more at most; its categories' column is 96 wide (DASH_SIDE; Legacy's 104) and its module
+    list 32% of the rest, 132 to 184 (Legacy's 42%, 150 to 270)."""
+    w, h = gui_size()
+    d = ctl("status")["display"]
+    scale = w and d["width"] / w
+    k = min(1.0, max(w / 627, 2 / scale)) if fit else 1.0
+    vw, vh = w / k, h / k
+    wanted, tall = 190 + 120 * 3.5, 420
+    most_w, most_h = max(wanted, min(vw * 0.8, wanted * 1.33)), max(tall, min(vh * 0.82, tall * 1.33))
+    fw, fh = math.floor(min(max(vw - 16, 0), most_w)), math.floor(min(max(vh - 16, 0), most_h))
+    fx, fy = math.floor((vw - fw) / 2), math.floor((vh - fh) / 2)
+    rest = fw - (104 if legacy else DASH_SIDE)
+    lw = math.floor(min(min(max(rest * 0.42, 150), 270), rest)) if legacy else math.floor(min(min(max(rest * 0.32, 132), 184), rest))
+    return k, fx, fy, fw, fh, lw
+
+
+# The reworked Dashboard: its categories' column, from the window's top to the settings' rows (the header's 28 and the
+# band's 46, the same for every module) and to the module list's (the header and the list's one line of 22), and a
+# module's row in the list.
+DASH_SIDE, DASH_TOP, DASH_LIST, DASH_ROW = 96, 74, 50, 16
+
+
+def dash_tab(page, fx, fy, fh):
+    """The middle of a view's tab down the reworked Dashboard's left: Enabled 0, then Combat 1 to Client 6 (a little
+    apart from it, and all of them shorter where the window has no room for 20 each over the profile)."""
+    h = min(max(math.floor((fh - 81) / 7) - 2, 11), 20)
+    return fx + 38, fy + 36 + page * (h + 2) + (5 if page else 0) + h / 2
+
+
+def modules_changed(base=None):
+    """The modules that are on, from .modules (ClickGUI left out: it is on while its menu is open), each with its
+    category; with `base` (an earlier answer), only those that differ from it (switched on since, or off)."""
+    mark = log_mark()
+    say(".modules")
+    wait(4)
+    now = {}
+    for line in sunset_said(mark):
+        if ":" in line:
+            category, names = line.split(":", 1)
+            now.update({n.strip()[:-1]: category.strip() for n in names.split(",") if n.strip().endswith("*") and n.strip() != "ClickGUI*"})
+    if base is None:
+        return now
+    return {n: c for n, c in {**base, **now}.items() if (n in base) != (n in now)}
+
+
+@test("ClickGUI Dashboard (one-line settings, picks side by side, a search's settings, Legacy)")
+def _():
+    # The reworked Dashboard: Aim Assist (Combat's first module, picked when the menu opens on Combat) shows its
+    # settings one to a line: a click a quarter along Horizontal speed's track (beside its name, its number at the row's
+    # end) sets about 3.2 of 1-10; Range shape's two options side by side are picked by a click on one (Mode's three
+    # can be too wide for their share with some fonts, and then a click steps them as in the Legacy style, where a
+    # click on Mode steps it to the next, Duelkit). A search for "stickiness" lists Aim Assist (modules only) and
+    # shows its settings from that setting on: a click three quarters along the first row there sets about 0.67 of
+    # 0-0.9.
+    import re
+    def num(line):
+        found = re.findall(r"[-0-9.]+", line.split(":", 1)[1]) if ":" in line else []
+        return float(found[0]) if found else None
+
+    def values():
+        # Read once the menu's clicks are done: the first click after the chat command only takes the pointer back.
+        return {c.split(":", 1)[0]: c.split(":", 1)[1].strip() for c in said_after(".settings aimassist") if ":" in c}
+
+    def click(x, y, k):
+        ctl("click-at", str(round(x * k, 1)), str(round(y * k, 1)))
+        wait(4)
+
+    say(".reset aimassist")
+    setting("clickgui", "style", "Dashboard")
+    # At the defaults, Fit to screen on (clean() turns it off for the other tests).
+    say(".set clickgui fit to screen true")
+    got = {}
+    say(".menu")
+    wait(8)
+    k, fx, fy, fw, fh, lw = dash_geometry()
+    click(*dash_tab(1, fx, fy, fh), k)
+    # The rows start under the header (28) and the band (46). The pane's rows: inset 10 from its sides; the bind's card
+    # (20), a gap (6), the first card's top (3).
+    top = fy + DASH_TOP
+    rx, rw = fx + DASH_SIDE + lw + 10, fw - DASH_SIDE - lw - 20
+    control, end = math.floor(rx + rw * 0.46), rx + rw - 7
+    track = end - 36 - control
+    click(control + track * 0.25, top + 29 + 14 * 2 + 7, k)
+    # Range shape (Sphere, Column), 15 rows under Mode: a click on Sphere (the one picked), then one on Column, leave
+    # Column, where two clicks that step would come back to Sphere.
+    share = math.floor((end - control) / 2)
+    click(end - share * 1.5, top + 29 + 14 * 15 + 7, k)
+    click(end - 3, top + 29 + 14 * 15 + 7, k)
+    now = values()
+    got["slider"], got["pick"] = num("x:" + now.get("Horizontal speed", "")), now.get("Range shape", "")
+    close_menu()
+    say(".reset aimassist")
+    say(".menu stickiness")
+    wait(8)
+    # Aim Assist is the find, shown at once; its settings (none in a section) start at Stickiness.
+    click(control + track * 0.75, top + 7, k)
+    got["search"] = num("x:" + values().get("Stickiness", ""))
+    close_menu()
+    say(".reset aimassist")
+    setting("clickgui", "style", "Dashboard (Legacy)")
+    say(".menu")
+    wait(8)
+    k, fx, fy, fw, fh, lw = dash_geometry(legacy=True)
+    click(fx + 38, fy + 36 + 10, k)
+    rx, rw = fx + 104 + lw + 10, fw - 104 - lw - 20
+    click(rx + rw - 10, fy + 62 + 29 + 7, k)
+    got["legacy pick"] = values().get("Mode", "")
+    close_menu()
+    say(".reset aimassist")
+    say(".reset clickgui")
+    say(".set clickgui fit to screen false")
+    ok = (got["slider"] is not None and 2.9 <= got["slider"] <= 3.6 and got["pick"].startswith("Column")
+          and got["search"] is not None and 0.6 <= got["search"] <= 0.75 and got["legacy pick"].startswith("Duelkit"))
+    return ok, f"{got}"
+
+
+@test("ClickGUI Dashboard (a click shows, a row's switch toggles, Enabled, sections fold)")
+def _():
+    # The reworked Dashboard's clicks. In Combat: a click on the second module's name turns nothing on and shows it (the
+    # switch over its settings then turns that one on: A); the switch at the third row's end turns that module on (B)
+    # and leaves A showing (the switch over the settings turns A off again). With a fourth on by its switch (C),
+    # Enabled (over the categories) lists them: B switched off there keeps its row (C's, under it, still switches C
+    # off; B's switches B on again). Kill Aura's settings: a click on General's title shuts it (a click where Version's
+    # 1.8 was changes nothing), another opens it (Auto disable's switch is back in its place); scrolled into
+    # Targeting, that title is held at the settings' top, and a click on it there shuts Targeting and brings Rotations
+    # up under it (a click on Rotate, its first setting, takes it off Always). "Fold all" under the bind then shuts
+    # every section (a click where General's first setting was changes nothing) and, as "Open all", opens them.
+    def click(x, y):
+        ctl("click-at", str(round(x, 1)), str(round(y, 1)))
+        wait(4)
+
+    def values():
+        return {c.split(":", 1)[0]: c.split(":", 1)[1].strip() for c in said_after(".settings killaura") if ":" in c}
+
+    def menu():
+        # (A chat command shuts the menu: opened again after each, it shows the view and the module it showed.)
+        say(".menu")
+        wait(8)
+
+    say(".reset killaura")
+    setting("clickgui", "style", "Dashboard")
+    k, fx, fy, fw, fh, lw = dash_geometry(fit=False)
+    top = fy + DASH_TOP
+    name_x, switch_x = fx + DASH_SIDE + 30, fx + DASH_SIDE + lw - 22
+    band, spare = (fx + fw - 24, fy + 37.5), (fx + 30, fy + 14)
+    row = lambda n: fy + DASH_LIST + DASH_ROW * n + DASH_ROW / 2
+    base = modules_changed()
+    got = {}
+    menu()
+    click(*dash_tab(1, fx, fy, fh))
+    click(name_x, row(1))
+    click(*band)
+    got["shown"] = modules_changed(base)
+    menu()
+    click(switch_x, row(2))
+    click(*band)
+    got["switch"] = modules_changed(base)
+    menu()
+    click(switch_x, row(3))
+    both = modules_changed(base)
+    # Enabled's rows: everything on, category by category (each one's name, 13 tall, over its modules A to Z); Combat
+    # is the first.
+    rows = sorted((n for n, c in {**base, **both}.items() if c == "Combat"), key=str.lower)
+    first = sorted(both, key=str.lower)
+    menu()
+    click(*dash_tab(0, fx, fy, fh))
+    if len(first) == 2:
+        b, c = (rows.index(n) for n in first)
+        click(switch_x, row(b) + 13)
+        click(switch_x, row(c) + 13)
+        click(switch_x, row(b) + 13)
+    ctl("screenshot", f"{SHOTS}/nav_enabled.png")
+    time.sleep(2)
+    got["enabled"] = modules_changed(base)
+    close_menu()
+    for name in got["enabled"]:
+        say(f".t {name.lower().replace(' ', '')}")
+    say(".menu kill aura")
+    wait(8)
+    rx, rw = fx + DASH_SIDE + lw + 10, fw - DASH_SIDE - lw - 20
+    end = rx + rw - 7
+    # Kill Aura's settings: the bind's card (20), "Fold all" (12), a gap (6), General's title (13) and its six rows of 14.
+    click(*spare)
+    click(rx + 30, top + 38 + 6)
+    click(end - 3, top + 51 + 4)
+    click(rx + 30, top + 38 + 6)
+    click(end - 7, top + 51 + 14 * 5 + 7)
+    for _ in range(5):
+        ctl("scroll-at", str(round(rx + 60)), str(round(top + 80)), "-1")
+        wait(3)
+    wait(10)
+    ctl("screenshot", f"{SHOTS}/nav_pinned.png")
+    time.sleep(2)
+    # Targeting's title, held at the top: shut from there, Targeting is 14 tall at the top and Rotations starts 6 under.
+    click(rx + 30, top + 6)
+    wait(6)
+    ctl("screenshot", f"{SHOTS}/nav_folded.png")
+    time.sleep(2)
+    click(end - 3, top + 14 + 6 + 13 + 7)
+    # (Open again for the tests after this one: a shut section stays shut while the game runs.)
+    click(rx + 30, top + 6)
+    # "Fold all" (the pane wheeled back to its top): with every section shut, where Preset's row was is General's shut
+    # card or the gap under it, and a click there changes nothing; "Open all" then opens them all for the next tests.
+    for _ in range(6):
+        ctl("scroll-at", str(round(rx + 60)), str(round(top + 80)), "1")
+        wait(3)
+    wait(10)
+    click(end - 10, top + 20 + 6)
+    wait(6)
+    click(end - 3, top + 51 + 14 + 10)
+    click(end - 10, top + 20 + 6)
+    now = values()
+    got["version"], got["auto disable"], got["rotate"] = now.get("Version", ""), now.get("Auto disable", ""), now.get("Rotate", "")
+    got["preset"] = now.get("Preset", "")
+    close_menu()
+    say(".reset killaura")
+    say(".reset clickgui")
+    one = lambda found: next(iter(found)) if len(found) == 1 else None
+    a, b2, left = one(got["shown"]), one(got["switch"]), one(got["enabled"])
+    ok = (a is not None and a != "Aim Assist" and got["shown"][a] == "Combat" and b2 is not None and b2 != a and len(both) == 2
+          and left == first[0] and got["version"].startswith("1.9+") and got["auto disable"].upper().startswith("ON")
+          and got["rotate"] != "" and not got["rotate"].startswith("Always") and got["preset"].startswith("Custom"))
+    return ok, f"{got}; before Enabled: {sorted(both)}"
+
+
+@test("ClickGUI Dashboard (keys: arrows, Space, Enter)")
+def _():
+    # The reworked Dashboard's keys, real ones (xdotool; a mapped window, OFFSCREEN=0). In Combat: Down then Space
+    # turns the second module on, Up then Space the first (Aim Assist); Right turns to Movement, where Space turns its
+    # first module on; "criticals" typed and Enter turns Criticals on. Those four are on at the end, and no other.
+    window = x_window()
+    if not window:
+        return None, REAL_KEYS
+    setting("clickgui", "style", "Dashboard")
+    k, fx, fy, fw, fh, lw = dash_geometry(fit=False)
+    base = modules_changed()
+    say(".menu")
+    wait(8)
+    d = ctl("status")["display"]
+    scale = d["width"] / gui_size()[0]
+    env = {**os.environ, "DISPLAY": XDISPLAY}
+    # As menu_enter: raised over Bot1's window, focused, the pointer in it and a click first (on the header, which does
+    # nothing), a key that does nothing to warm the keyboard up.
+    for args in (("windowraise", window), ("windowfocus", "--sync", window),
+                 ("mousemove", "--window", window, str(round((fx + 30) * scale)), str(round((fy + 14) * scale))), ("click", "1"), ("key", "shift")):
+        subprocess.run(["xdotool", *args], env=env, capture_output=True)
+        time.sleep(0.5)
+        wait(6)
+    ctl("click-at", *(str(round(v, 1)) for v in dash_tab(1, fx, fy, fh)))
+    wait(4)
+    x_keys(window, "Down", "space", "Up", "space", "Right", "space", "type:criticals", "Return")
+    found = modules_changed(base)
+    close_menu()
+    for name in found:
+        say(f".t {name.lower().replace(' ', '')}")
+    say(".reset clickgui")
+    combat = sorted(n for n, c in found.items() if c == "Combat")
+    ok = len(found) == 4 and "Aim Assist" in combat and "Criticals" in combat and len(combat) == 3 and "Movement" in found.values()
+    return ok, f"on after the keys: {sorted(found)}"
 
 @test("ClickGUI Sidebar (style, theme, accent, width, opacity)")
 def _():
@@ -3141,6 +3500,8 @@ def _():
         wait(4)
         return next((c for c in sunset_said(mark) if c.startswith("Blocks:")), "")
 
+    if not real_window():
+        return None, REAL_KEYS
     setting("clickgui", "settings", "Inline")
     setting("xray", "list", "Advanced")
     setting("xray", "blocks", "coal_ore")
@@ -4024,6 +4385,11 @@ def _():
     mark = log_mark()
     # Every line at once: the world's own builds (a server's test world has some) don't hold this one back.
     setting("basefinder", "message cooldown", "0")
+    # Placed blocks only: a server's test world has been loaded round the arena for days (Bot1 stands there), so its
+    # kelp and amethyst really have grown and Grown amethyst, Long plants and Hidden bases rightly say so. They have
+    # their own test (Base Finder signs, Hidden bases).
+    for name in ("grown amethyst", "long plants", "hidden bases", "reasons"):
+        setting("basefinder", name, "false")
     toggle("base finder", True)
     wait(40)
     ax, az = X0 >> 4, Z0 >> 4
@@ -4069,6 +4435,7 @@ def _():
     points_off = base_points()
     said_off = [line for line in sunset_said(mark3) if line.startswith("Base?")]
     say(".waypoint remove Base")
+    say(".reset basefinder")
     cmd(*build(X0 + 3, Y + 1, Z0 + 6))
     line = far[0] if far else ""
     off_ok = len(points_on) >= 2 and [p.split(":")[0] for p in points_off] == ["Base"] and not said_off
@@ -4988,14 +5355,18 @@ def _():
         button or the Enter or Esc key; then closes the menu and reads the setting."""
         say(".menu spam")
         wait(5)
+        menu_warm()
         if expand:
             ctl("click-at", *map(str, menu_row(2, 1)), "right")
             wait(3)
         ctl("click-at", *map(str, menu_row(2, 3)))
         wait(3)
+        # The keyboard's own keys: Sunset's editor never sees horizon-ctl's.
         for k in keys:
-            for _ in range(40 if k == "clear" else 1):
-                ctl("key", "backspace" if k == "clear" else k, "tap")
+            if k in ("clear", "backspace"):
+                real_key("BackSpace", click=False, times=40 if k == "clear" else 1)
+            else:
+                real_key(k, "type", click=False)
         wait(2)
         apply, cancel = editor_buttons()
         if finish in ("apply", "cancel"):
@@ -5003,12 +5374,14 @@ def _():
         elif finish == "esc":
             esc()
         else:
-            ctl("key", finish, "tap")
+            real_key("Return", click=False)
         wait(3)
         # Esc closes the editor first, the menu after.
         esc()
         return messages()
 
+    if not real_window():
+        return None, REAL_KEYS
     # The settings open in the panel (not their own window), where menu_row finds the rows.
     setting("clickgui", "settings", "Inline")
     before = messages()
@@ -5079,26 +5452,31 @@ def _():
     say(".t hud")
     wait(5)
     off = not watermark()
-    ctl("key", "j", "down")
-    wait(5)
-    held = watermark()
-    ctl("key", "j", "up")
-    wait(5)
-    let_go = not watermark()
-    # Held over a screen: the chat box opening ends the hold.
-    ctl("key", "j", "down")
-    wait(3)
-    ctl("key", "t", "tap")
-    wait(3)
-    ctl("key", "esc", "tap")
-    wait(3)
-    ended = not watermark()
-    ctl("key", "j", "up")
+    # The held key is the keyboard's (horizon-ctl's never reaches Sunset's binds): left out without a window for it.
+    keys = real_window() is not None
+    held = let_go = ended = True
+    if keys:
+        real_key("j", "keydown")
+        wait(5)
+        held = watermark()
+        real_key("j", "keyup", click=False)
+        wait(5)
+        let_go = not watermark()
+        # Held over a screen: the chat box opening ends the hold.
+        real_key("j", "keydown")
+        wait(3)
+        ctl("key", "t", "tap")
+        wait(3)
+        ctl("key", "esc", "tap")
+        wait(3)
+        ended = not watermark()
+        real_key("j", "keyup", click=False)
     say(".t hud")
     ok = (by_name == ["HUD: Mouse Back"] and chosen == ["HUD: Mouse Right"] and shown and middle_off and middle_on
           and off and held and let_go and ended)
     return ok, (f".bind mouse4: {by_name}; chosen with a right click: {chosen}; middle button toggles: {shown}, {middle_off}, "
-                f"{middle_on}; Hold: off {off}, on while held {held}, off when let go {let_go}, ended by a screen {ended}")
+                f"{middle_on}; Hold: off {off}, on while held {held}, off when let go {let_go}, ended by a screen {ended}"
+                + ("" if keys else " (the held key: no window, real keys)"))
 
 
 @test("Click GUI (settings window, typed numbers)")
@@ -5195,7 +5573,7 @@ def _():
     x, top = 2 + 3 * (panel + 3) + panel + 4, 32
     if x + ww > w - 2:
         x = 2 + 3 * (panel + 3) - 4 - ww
-    switch, close = (x + ww - 16 - 2 - 7, top + 8), (x + ww - 8, top + 8)
+    switch, close = (x + ww - 16 - 8 - 7, top + 8), (x + ww - 8, top + 8)
     setting("clickgui", "settings", "Window")
     was = is_on("Fullbright")
     seen = []
@@ -5346,17 +5724,48 @@ def _():
 
 @test("Auto Trap")
 def _():
+    # Bot1 stands still in the open; Auto Trap (Full top: the four sides of the head and the block over it) boxes him
+    # in and turns itself off, with Packet Order on (the default) and off, and with the Face top (the sides only). Every
+    # obsidian in the 5x5x5 around him is one of the shape's: a place clicked again before the server's answer came put
+    # a block on top of the first (7 to 9 obsidian for 5 in single player on a slow client, 27 Nov).
     if not CTL2:
         return None, "needs a second player"
-    cmd("gamemode survival Bot1", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5}")
-    slot(0, "obsidian", 32)
-    wait(10)
-    only("autotrap")
-    wait(60)
-    boxed = count(X0 - 1, Y + 1, Z0 + 1, X0 + 1, Y + 3, Z0 + 3, "obsidian")
-    off = turned_itself_off("autotrap", "Auto Trap")
-    only()
-    return boxed == 5 and off, f"{boxed} obsidian round Bot1's head (5 is the Full top); off after: {off}"
+    full = {(-1, 2, 2), (1, 2, 2), (0, 2, 1), (0, 2, 3), (0, 3, 2)}
+    face = full - {(0, 3, 2)}
+
+    def run(order, top):
+        only()
+        reset()
+        cmd(f"fill {X0 - 2} {Y + 1} {Z0} {X0 + 2} {Y + 5} {Z0 + 4} minecraft:air")
+        if is_on("Packet Order") != order:
+            say(".t packetorder")
+            wait(2)
+        say(".reset autotrap")
+        setting("autotrap", "top blocks", top)
+        cmd("gamemode survival Bot1", f"tp Bot1 {X0 + 0.5} {Y + 1} {Z0 + 2.5}")
+        slot(0, "obsidian", 32)
+        wait(10)
+        only("autotrap")
+        wait(60)
+        cells = {(x - X0, y - Y, z - Z0) for x in range(X0 - 2, X0 + 3) for y in range(Y + 1, Y + 6)
+                 for z in range(Z0, Z0 + 5) if count(x, y, z, x, y, z, "obsidian")}
+        off = turned_itself_off("autotrap", "Auto Trap")
+        only()
+        return cells, off
+
+    runs = {}
+    try:
+        runs["Full, Packet Order on"] = (run(True, "Full"), full)
+        runs["Full, Packet Order off"] = (run(False, "Full"), full)
+        runs["Face, Packet Order on"] = (run(True, "Face"), face)
+    finally:
+        if not is_on("Packet Order"):
+            say(".t packetorder")
+            wait(2)
+        say(".reset autotrap")
+    ok = all(cells == want and off for (cells, off), want in runs.values())
+    return ok, "; ".join(f"{name}: {len(cells)} obsidian of {len(want)}, missing {sorted(want - cells)}, extra "
+                         f"{sorted(cells - want)}, off after {off}" for name, ((cells, off), want) in runs.items())
 
 
 @test("Chest Swap")
@@ -6961,7 +7370,9 @@ def _():
     setting("triggerbot", "crits only", "false")
 
     ready()
-    tagged = "{NoAI:1b,PersistenceRequired:1b,Tags:[\"sticky_a\"]}"
+    # The first pig has health for many hits: on a slow rig a second hit lands on it before the look moves on, and a
+    # dead first pig is no target to stick to.
+    tagged = "{NoAI:1b,PersistenceRequired:1b,Tags:[\"sticky_a\"],Health:60f,attributes:[{id:\"minecraft:max_health\",base:60}]}"
     cmd(f"summon pig {X0 - 0.5} {Y + 1} {Z0 + 2.5} {tagged}", f"summon pig {X0 + 1.5} {Y + 1} {Z0 + 2.5} {NOAI}")
     wait(10)
     pigs = sorted(mobs("pig"), key=lambda e: e["pos"][0])
@@ -6980,7 +7391,7 @@ def _():
     after = health(second)
     only()
     setting("triggerbot", "sticky target", "false")
-    ok = standing == 10 and jumped < 10 and first_hit < 10 and held_off == 10 and after < 10
+    ok = standing == 10 and jumped < 10 and 0 < first_hit < 60 and held_off == 10 and after < 10
     return ok, (f"Crits only: pig at {standing} standing, {jumped} after jumps; Sticky target: first pig {first_hit}, "
                 f"second {held_off} while the first lived, {after} after it went")
 
@@ -7206,7 +7617,7 @@ def _():
 @test("Auto Clicker (clock simulations)")
 def _():
     import pathlib, shutil, tempfile
-    compiler = shutil.which("rustc")
+    compiler = shutil.which("rustc") or shutil.which("rustc", path=os.path.expanduser("~/.cargo/bin"))
     if not compiler:
         return None, "needs rustc for the standalone repeat-clock scenarios"
     source = pathlib.Path(__file__).resolve().parents[1] / "mixins" / "sunset" / "click_clock.rs"
@@ -8206,10 +8617,12 @@ def _():
         wait(5)
         return sunset_said(mark)
 
-    key = lambda: ctl("key", "k", "tap")
-    keyed_on = lines(key)
+    # The bind's key as the keyboard's (horizon-ctl's never reaches Sunset's binds): left out without a window for it.
+    keys = real_window() is not None
+    key = lambda: real_key("k")
+    keyed_on = lines(key) if keys else ["Fullbright on"]
     setting("notifications", "module toggles", "false")
-    keyed_off = lines(lambda: (key(), wait(3), key()))
+    keyed_off = lines(lambda: (key(), wait(3), key())) if keys else []
     typed = lines(lambda: say(".t fullbright"))
     say(".bind fullbright none")
     web_on = lines(lambda: toggle("selfweb", True))
@@ -8221,7 +8634,7 @@ def _():
     ok = keyed_on == ["Fullbright on"] and keyed_off == [] and len(typed) == 1 and typed[0].startswith("Fullbright") \
         and cobwebs(web_on) and not cobwebs(web_off)
     return ok, (f"key with Toggle messages on {keyed_on}, off {keyed_off}; .t {typed}; Self Web with Module messages on "
-                f"{cobwebs(web_on)}, off {cobwebs(web_off)}")
+                f"{cobwebs(web_on)}, off {cobwebs(web_off)}" + ("" if keys else "; the key: no window (real keys)"))
 
 
 @test("Friends list in the menu")
@@ -8841,12 +9254,36 @@ def _():
     # Simple with attack held, a husk on the crosshair: the mouse pulls away 20 counts a tick for a second. The view
     # goes the way you pull, tick after tick, never back toward the husk while you pull (pulling against you, the
     # assist flickered the view back and forth); once you stop it may pull you back.
+    # With the probe the pull is one second of mouse motion in every frame, as a hand gives it, judged frame by frame
+    # over the middle half of the pull. Without it, a burst a tick: between two bursts the mouse is still and the
+    # assist may rightly pull back, which on a slow control channel (several frames a burst) undid the whole pull.
     eid = aim_setup()
     say(".reset aimassist")
     face(eid, 0)
     only("aimassist")
     ctl("mouse", "left", "down")
     wait(10)
+    if probe_path():
+        mark = probe_mark()
+        ctl("turn", "60", "0", "--over", "1")
+        wait(2)
+        frames = probe_frames(mark)
+        ctl("mouse", "left", "up")
+        only()
+        aim_done()
+        steps = [wrap(b.yaw - a.yaw) for a, b in zip(frames, frames[1:])]
+        moving = [i for i, d in enumerate(steps) if abs(d) > 1e-6]
+        if len(moving) < 8:
+            return False, f"the view moved in {len(moving)} of {len(steps)} frames"
+        # The pull is the second after the first frame that moved; what the view does after it (the assist may turn
+        # you back once the mouse is still) is not judged, so the pull is counted to where the view got to.
+        t0, yaw0 = frames[moving[0]].t, frames[moving[0]].yaw
+        middle = [d for i, d in enumerate(steps) if t0 + 0.25 <= frames[i].t <= t0 + 0.75]
+        back = sum(1 for d in middle if d < -0.01)
+        pulled = max(wrap(f.yaw - yaw0) for f in frames)
+        ok = back == 0 and pulled > 40.0 and len(middle) >= 4
+        return ok, (f"a 60 degree pull over a second: the view went {pulled:.1f} deg, {back} of the {len(middle)} frames in its "
+                    f"middle half back toward the husk (least {min(middle, default=0):.2f}, most {max(middle, default=0):.2f} deg a frame)")
     yaws = []
     for _ in range(20):
         ctl("mouse-move", "20", "0")
@@ -8866,15 +9303,17 @@ def _():
 def _():
     if not CTL2:
         return None, "needs a second player"
-    bot_respawned()
-    cmd("gamemode survival Bot1")
+    # bot_ready(): survival and the teleport in one go (Bot1 put in survival where spectator left him, 30 blocks up,
+    # fell to his death before the next command moved him), 100 health and Resistance IV.
+    bot_ready(2.0, 180)
 
     def bot_hurt(seconds):
         # Resistance IV takes 80% off, so Bot1 lives through 3 s of sword hits and its health says what they did.
-        cmd("effect give Bot1 minecraft:instant_health 1 10 true", "effect give Bot1 minecraft:resistance 10 3 true",
-            f"tp Bot1 {X0+0.5} {Y+1} {Z0+2.0}")
+        cmd("effect give Bot1 minecraft:instant_health 1 28 true", f"tp Bot1 {X0+0.5} {Y+1} {Z0+2.0}")
+        wait(5)
+        before = bot_health()
         wait(seconds * 20)
-        return 20 - ctl2("state")["player"]["health"]
+        return round(before - bot_health(), 1)
 
     slot(0, "diamond_sword")
     ctl("key", "1", "tap")
@@ -8897,7 +9336,8 @@ def _():
     setting("killaura", "ignore teams", "false")
     hit = bot_hurt(3)
     only()
-    cmd("team remove sunsettest", "gamemode spectator Bot1", "gamerule natural_health_regeneration true")
+    cmd("team remove sunsettest")
+    bot_done()
     return real > 0 and friend == 0 and spared == 0 and hit > 0, f"player in the list hurt {real}, as a friend {friend}, as a teammate {spared}, teammate without Ignore teams {hit}"
 
 
@@ -9002,8 +9442,8 @@ ANTIBOT_DECOY, ANTIBOT_REAL = 900001, 900002
 
 @test("Anti Bot (combat settings)")
 def _():
-    modules = said_after(".modules")
-    settings = {name: said_after(f".settings {name}") for name in ("killaura", "aimassist", "triggerbot")}
+    modules = said_after(".modules", 8)
+    settings = {name: said_after(f".settings {name}", 8) for name in ("killaura", "aimassist", "triggerbot")}
     standalone = any("Anti Bot" in line for line in modules)
     embedded = all(any(line.startswith("Anti bot sensitivity:") for line in lines) for lines in settings.values())
     return not standalone and embedded, f"standalone={standalone}, sensitivity in combat settings={embedded}"
@@ -9012,10 +9452,16 @@ def _():
 @test("Anti Bot (classifier simulations)")
 def _():
     import pathlib, shutil, tempfile
-    compiler = shutil.which("rustc")
+    compiler = shutil.which("rustc") or shutil.which("rustc", path=os.path.expanduser("~/.cargo/bin"))
     if not compiler:
         return None, "needs rustc for the standalone classifier scenarios"
-    source = pathlib.Path(__file__).resolve().parents[1] / "mixins" / "sunset" / "antibot_state.rs"
+    # The classifier the game is built from (client/sunset; the frozen .hnmod copy where a checkout has only that), in
+    # the repo's client folder: this script's own, or SUNSET_CLIENT where a copy of the script is run from elsewhere.
+    clients = [pathlib.Path(p) for p in (os.environ.get("SUNSET_CLIENT"), pathlib.Path(__file__).resolve().parents[1]) if p]
+    source = next((c / rel for c in clients for rel in ("sunset/src/game/antibot_state.rs", "mixins/sunset/antibot_state.rs")
+                   if (c / rel).exists()), None)
+    if source is None:
+        return None, "needs the repo's client folder (run tools/verify.py in place, or set SUNSET_CLIENT)"
     with tempfile.TemporaryDirectory(prefix="sunset-antibot-") as directory:
         wrapper = pathlib.Path(directory) / "tests.rs"
         wrapper.write_text("#![allow(dead_code)]\n#[path = " + json.dumps(source.as_posix()) + "]\nmod antibot_state;\n")
@@ -9027,9 +9473,36 @@ def _():
         return result.returncode == 0, (result.stdout + result.stderr)[-1500:]
 
 
+def antibot_path():
+    """The Anti Bot fixture's command file: SUNSET_ANTIBOT_FIXTURE, or antibot.json in the session folder (where the
+    rig's runall points the game's SUNSET_ANTIBOT_FIXTURE)."""
+    path = os.environ.get("SUNSET_ANTIBOT_FIXTURE")
+    if path:
+        return path
+    try:
+        return os.path.join(session_dir(), "antibot.json")
+    except OSError:
+        return None
+
+
+def antibot_ready():
+    """Whether the probe in this game plays the fixture: it writes its state file each tick in a server's world."""
+    path = antibot_path()
+    if not path or not probe_path():
+        return False
+    for _ in range(3):
+        if os.path.exists(path + ".state"):
+            return True
+        wait(4)
+    return False
+
+
+ANTIBOT_NEEDS = "needs the test probe with its Anti Bot fixture (SUNSET_ANTIBOT_FIXTURE set for the game)"
+
+
 def antibot_fixture(entities, ticks=4, **control):
     """Only the separately staged probe reads this file; the shipped mod has no fixture controls."""
-    path = os.environ.get("SUNSET_ANTIBOT_FIXTURE")
+    path = antibot_path()
     if not path:
         raise RuntimeError("needs tools/probe and SUNSET_ANTIBOT_FIXTURE in game and verifier")
     revision = time.time_ns()
@@ -9053,7 +9526,7 @@ def antibot_fixture(entities, ticks=4, **control):
 
 
 def antibot_state():
-    path = os.environ["SUNSET_ANTIBOT_FIXTURE"] + ".state"
+    path = antibot_path() + ".state"
     for _ in range(10):
         try:
             with open(path) as f:
@@ -9107,8 +9580,8 @@ def antibot_only(*consumers):
 @test("Anti Bot (listed decoy and stationary player)")
 def _():
     # Removing either consumer's shared classifier check must expose the closer, fully listed decoy.
-    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
-        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    if not antibot_ready():
+        return None, ANTIBOT_NEEDS
     try:
         antibot_prepare()
         antibot_fixture([antibot_entity(motion="orbit"), antibot_entity(ANTIBOT_REAL, listed=False, scale=3.0)], 100)
@@ -9134,8 +9607,8 @@ def _():
 @test("Anti Bot (cached targets revalidated)")
 def _():
     # A target becoming a decoy must leave each consumer's cached target, without respawning it.
-    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
-        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    if not antibot_ready():
+        return None, ANTIBOT_NEEDS
     observations = {}
     try:
         antibot_prepare()
@@ -9180,8 +9653,8 @@ def _():
 @test("Anti Bot (consumer switches and sensitivity)")
 def _():
     # Each consumer's toggle and sensitivity control targeting without a master switch.
-    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
-        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    if not antibot_ready():
+        return None, ANTIBOT_NEEDS
     observed = {}
     try:
         antibot_prepare()
@@ -9210,8 +9683,8 @@ def _():
 @test("Anti Bot (Clicks only Silent aim and Hit flick)")
 def _():
     # The alternate click paths must not issue a hit at a rejected entity, and their opt-out must still work.
-    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
-        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    if not antibot_ready():
+        return None, ANTIBOT_NEEDS
     observed = {}
     try:
         antibot_prepare()
@@ -9246,10 +9719,16 @@ def _():
                     antibot_fixture([antibot_entity(motion="orbit")], 30)
                 observed[f"{path} protected={protected}"] = (antibot_hits(mark).count(ANTIBOT_DECOY), trace)
                 antibot_only()
-        ok = all((count == 0 and all(blocked for blocked, _ in trace)) if "=True" in key else count > 0
-                 for key, (count, trace) in observed.items())
-        counts = {key: count for key, (count, _) in observed.items()}
-        return ok, f"wire hits at rejected player: {counts}" + (f"; trace={observed}" if not ok else "")
+        # What is tested is the click path: no hit at the player while it is rejected. The pause each click needs can let
+        # its evidence run out on a slow machine (the pause lasts longer there), and a click in such a pause may hit:
+        # those clicks are left out, but most pauses must have kept it rejected for the case to count.
+        def protected_ok(trace):
+            rejected = [hits for blocked, hits in trace if blocked]
+            return len(rejected) >= 5 and not any(ANTIBOT_DECOY in hits for hits in rejected)
+
+        ok = all(protected_ok(trace) if "=True" in key else count > 0 for key, (count, trace) in observed.items())
+        counts = {key: (count, sum(1 for blocked, _ in trace if blocked)) for key, (count, trace) in observed.items()}
+        return ok, f"(wire hits at the player, clicks of 8 with it rejected): {counts}" + (f"; trace={observed}" if not ok else "")
     finally:
         only()
         antibot_fixture([])
@@ -9258,8 +9737,8 @@ def _():
 @test("Anti Bot (entity ID reuse clears rejection)")
 def _():
     # Reusing a rejected ID for a different real player must create a new identity and restore eligibility.
-    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
-        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    if not antibot_ready():
+        return None, ANTIBOT_NEEDS
     try:
         antibot_prepare()
         before = antibot_fixture([antibot_entity(motion="orbit")], 100)["entities"][0]
@@ -9279,8 +9758,8 @@ def _():
 
 @test("Anti Bot (world reset preserves player-info)")
 def _():
-    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
-        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    if not antibot_ready():
+        return None, ANTIBOT_NEEDS
     try:
         antibot_prepare()
         before = antibot_fixture([antibot_entity(motion="orbit")], 100)["entities"][0]
@@ -9296,8 +9775,8 @@ def _():
 
 @test("Anti Bot (Trigger Bot delayed target revalidated)")
 def _():
-    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
-        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    if not antibot_ready():
+        return None, ANTIBOT_NEEDS
     try:
         antibot_prepare()
         setting("triggerbot", "anti bot", "true")
@@ -9324,8 +9803,8 @@ def _():
 
 @test("Anti Bot (delayed Hit flick identity)")
 def _():
-    if not os.environ.get("SUNSET_ANTIBOT_FIXTURE") or not probe_path():
-        return None, "needs the test probe and SUNSET_ANTIBOT_FIXTURE"
+    if not antibot_ready():
+        return None, ANTIBOT_NEEDS
     try:
         antibot_prepare()
         setting("aimassist", "mode", "Clicks only")
@@ -9401,10 +9880,15 @@ class Frame:
 
 def probe_frames(mark):
     with open(probe_path()) as f:
-        f.seek(mark)
-        lines = f.read().split("\n")[:-1]
+        f.seek(max(mark - 1, 0))
+        text = f.read()
+    # A mark taken while the game was part way through a line: what is left of that line is not a frame (its first
+    # field can still be a number, and a short one was an IndexError that failed the test).
+    lines = text.split("\n")[:-1]
+    if mark > 0:
+        lines = lines[1:]
     # The frame lines start with the time; the wire probe's "send" lines share the file.
-    return [Frame(line.split()) for line in lines if line[:1].isdigit()]
+    return [Frame(w) for w in (line.split() for line in lines if line[:1].isdigit()) if len(w) >= 8]
 
 
 def wrap(d):
@@ -10078,6 +10562,99 @@ def _():
         f"{name}: {late} of {n} actions after the move packet, {moved} ticks moved, most {most} moves a tick, done {done}"
         for name, (late, n, moved, most, done) in runs.items())
 
+@test("BlockIn (an end crystal in the way)")
+def _():
+    # An end crystal keeps blocks out of its 2x2x2 box, so the server refuses a place there. One stood over BlockIn's
+    # east side (that box also takes the north and south sides): BlockIn places the west side once and leaves the
+    # others alone while the crystal stands, so the hotbar is free for Crystal Aura to break it (it sent a place into
+    # the crystal every tick, and PvP Bot never hit on Paper). Once the crystal is gone the other three go in.
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    ring = (X0 - 1, Y + 1, Z0 - 1, X0 + 1, Y + 2, Z0 + 1)
+    only()
+    reset()
+    cmd(f"fill {' '.join(map(str, ring))} minecraft:air", "kill @e[type=end_crystal]")
+    say(".reset blockin")
+    slot(0, "diamond_sword")
+    slot(2, "obsidian", 64)
+    ctl("key", "1", "tap")
+    cmd(f"summon minecraft:end_crystal {X0 + 1.5} {Y + 1} {Z0 + 0.5} {{ShowBottom:0b}}")
+    wait(10)
+    mark = probe_mark()
+    only("blockin")
+    wait(40)
+    blocked = count(*ring, "obsidian")
+    sends = sum(1 for t in probe_ticks(mark) for line in t if line == f"pkt {USE_ITEM_ON}")
+    west = count(X0 - 1, Y + 1, Z0, X0 - 1, Y + 1, Z0, "obsidian")
+    cmd("kill @e[type=end_crystal]")
+    wait(30)
+    after = count(*ring, "obsidian")
+    only()
+    ok = blocked == 1 and west == 1 and sends == 1 and after == 4
+    return ok, (f"with the crystal: {blocked} obsidian (west side {west}), {sends} place packets in 2 s; "
+                f"after it was gone: {after} of 4")
+
+
+@test("BlockIn (each block placed once, Packet Order on and off)")
+def _():
+    # place_block does not click a spot again while the server's answer to its last click there is on its way (2 ticks
+    # plus the ping). The .hmod port lost that: with Packet Order on (the default: a place waits for the next tick's
+    # start, so its block shows a tick later) every place went out twice, and at one block a tick BlockIn took twice
+    # as long. Each case: the obsidian placed, the place packets sent, and the ticks from the first to the last of
+    # them. Then a side taken away with BlockIn still on is put back (a spot is only left alone for a moment).
+    if not probe_path():
+        return None, "needs the probe (tools/probe)"
+    ring = (X0 - 1, Y + 1, Z0 - 1, X0 + 1, Y + 2, Z0 + 1)
+
+    def run(order, per_tick, double=False, rotate=True):
+        only()
+        reset()
+        cmd(f"fill {' '.join(map(str, ring))} minecraft:air")
+        say(".reset blockin")
+        setting("blockin", "blocks per tick", per_tick)
+        setting("blockin", "double height", "true" if double else "false")
+        setting("blockin", "rotate", "true" if rotate else "false")
+        if is_on("Packet Order") != order:
+            say(".t packetorder")
+            wait(2)
+        slot(0, "diamond_sword")
+        slot(2, "obsidian", 64)
+        ctl("key", "1", "tap")
+        wait(5)
+        mark = probe_mark()
+        only("blockin")
+        wait(30)
+        placed = count(*ring, "obsidian")
+        ticks = probe_ticks(mark)
+        at = [i for i, t in enumerate(ticks) for line in t if line == f"pkt {USE_ITEM_ON}"]
+        return placed, len(at), (at[-1] - at[0] + 1) if at else 0
+
+    cases = {}
+    try:
+        cases["on, 1 a tick"] = (run(True, 1), 4, 5)
+        cases["on, 4 a tick"] = (run(True, 4), 4, 2)
+        cases["on, 1 a tick, no Rotate"] = (run(True, 1, rotate=False), 4, 5)
+        cases["on, 2 a tick, Double height"] = (run(True, 2, double=True), 8, 12)
+        # Still on, one side goes: it is placed again.
+        cmd(f"setblock {X0 + 1} {Y + 1} {Z0} minecraft:air")
+        wait(20)
+        back = count(*ring, "obsidian")
+        only()
+        cases["off, 1 a tick"] = (run(False, 1), 4, 5)
+        cases["off, 4 a tick"] = (run(False, 4), 4, 2)
+    finally:
+        only()
+        if not is_on("Packet Order"):
+            say(".t packetorder")
+            wait(2)
+        say(".reset blockin")
+        cmd(f"fill {' '.join(map(str, ring))} minecraft:air")
+    ok = back == 8 and is_on("Packet Order") and all(
+        placed == want and places == want and span <= most for (placed, places, span), want, most in cases.values())
+    return ok, ("(obsidian, place packets, ticks first to last): " + "; ".join(f"{k}: {v[0]}" for k, v in cases.items())
+                + f"; a side taken away: {back} of 8 after a second")
+
+
 # ---- sweeps: every mode of every module that talks to the server, through the same short stretch of play, and every
 # render mode once in single player. On a server each one counts, from the probe's wire log, the move packets in a
 # tick (never two) and the times the server put the player back (a teleport accepted); a kick fails it with the
@@ -10291,9 +10868,13 @@ def blast_done():
 def bot_respawned():
     """Bot1 back from the death screen (a server keeps a player who died in an earlier run dead when they join), with
     PvP on (a single player world opened to LAN may have it off)."""
-    if CTL2 and ctl2("state").get("screen") == "dead":
-        ctl2("click-button", "Respawn")
-        wait(20)
+    # As ensure_alive() does for you: the death screen, or no health left (an earlier test's crystals).
+    for _ in range(3 if CTL2 else 0):
+        st = ctl2("state")
+        if st.get("screen") != "dead" and (st.get("player") or {}).get("health", 0) > 0:
+            break
+        ctl2("click", "respawn")
+        wait(30)
     cmd("gamerule pvp true", "gamerule natural_health_regeneration false")
 
 
@@ -10428,6 +11009,83 @@ def _():
                 f"with a totem and limit 6: {safe['used']['respawn_anchor']} anchors, you {safe['taken']:.0f}, "
                 f"{safe['pops']} totems popped, alive {safe['alive']}; most move packets in a tick {fast['most']}; "
                 f"{fast['fps']:.0f} fps; holding {fast['held']} after")
+
+
+@test("Anchor Aura (after a dig by hand)")
+def _():
+    # The game keeps the block of its last dig after the dig is over, and Sunset took that for a dig still going: once
+    # you had dug at anything by hand, Anchor Aura and Crystal Aura (and Key Throw, Fast Use's Throwables, Anti Hunger's
+    # Ground) stood still until you joined again. Anchors used in 5 s after a dig that was let go, and after a block
+    # broken by hand; and none while a dig really is going on (the button held on obsidian).
+    if not CTL2:
+        return None, "needs a second player (CTL2)"
+    reset()
+    blast_arena()
+    cmd("effect give @s minecraft:fire_resistance 300 0 true")
+    setting("anchoraura", "max self damage", "20")
+    items = [("respawn_anchor", 64), ("glowstone", 64)]
+    # A block beside you (west), away from Bot1 (south).
+    spot = (X0 - 2, Y + 1, Z0)
+
+    def dig(block, ticks):
+        """The block there after the button was held on it for `ticks` with an empty hand (1 still there, 0 broken)."""
+        cmd(f"setblock {spot[0]} {spot[1]} {spot[2]} minecraft:{block}")
+        ctl("key", "1", "tap")
+        wait(5)
+        ctl("look-at", str(spot[0] + 0.5), str(spot[1] + 0.5), str(spot[2] + 0.5))
+        ctl("mouse", "left", "down")
+        wait(ticks)
+        ctl("mouse", "left", "up")
+        wait(5)
+        left = count(*spot, *spot, block)
+        cmd(f"setblock {spot[0]} {spot[1]} {spot[2]} minecraft:air")
+        ctl("look", "0", "0")
+        return left
+
+    def anchors(ticks=100):
+        got = blast_run("anchoraura", items, ticks, health=200)["used"]["respawn_anchor"]
+        ensure_alive()
+        blast_bot()
+        cmd("effect give @s minecraft:fire_resistance 300 0 true")
+        return got
+
+    cmd("clear @s minecraft:respawn_anchor", "clear @s minecraft:glowstone")
+    let_go = dig("obsidian", 8)
+    after_let_go = anchors()
+    cmd("clear @s minecraft:respawn_anchor", "clear @s minecraft:glowstone", "clear @s minecraft:diamond_sword")
+    broken = dig("dirt", 40)
+    after_broken = anchors()
+    # A dig going on: the button stays down on obsidian while Anchor Aura is on. The game's own word on the dig is
+    # read all the way through (a command of the test's can let the button go): the anchors count against it only
+    # where the dig was seen going at every look.
+    for i, (item, n) in enumerate(items):
+        slot(i, item, n)
+    cmd(f"setblock {spot[0]} {spot[1]} {spot[2]} minecraft:obsidian")
+    ctl("key", "9", "tap")
+    wait(5)
+    # Anchor Aura is on before the button goes down (a typed toggle lets a held button go), and nothing is typed
+    # while it is held.
+    toggle("anchoraura", True)
+    wait(20)
+    ctl("look-at", str(spot[0] + 0.5), str(spot[1] + 0.5), str(spot[2] + 0.5))
+    ctl("mouse", "left", "down")
+    wait(6)
+    had = ctl("inventory").get("counts", {}).get("minecraft:respawn_anchor", 0)
+    looks = [state().get("mining") is not None for _ in range(12) if wait(5) is None]
+    during = had - ctl("inventory").get("counts", {}).get("minecraft:respawn_anchor", 0)
+    ctl("mouse", "left", "up")
+    toggle("anchoraura", False)
+    wait(5)
+    cmd(f"setblock {spot[0]} {spot[1]} {spot[2]} minecraft:air")
+    ensure_alive()
+    blast_done()
+    only()
+    held_through = all(looks)
+    ok = (let_go == 1 and broken == 0 and after_let_go > 0 and after_broken > 0 and (during == 0 or not held_through)
+          and sum(looks) >= 6)
+    return ok, (f"anchors used in 5 s after a dig that was let go ({let_go} block still there): {after_let_go}; after a "
+                f"block broken by hand ({broken} left): {after_broken}; in 3 s with the button held on obsidian: {during} "
+                f"(the dig seen going at {sum(looks)} of {len(looks)} looks)")
 
 
 @test("Crystal Aura (Grim)")
@@ -11730,7 +12388,7 @@ def _():
         return None, "servers only"
     tap = BrandTap()
     relay = f"127.0.0.1:{tap.port}"
-    got, said, laby, sends = {}, [], False, {}
+    got, said, laby, sends, laby_said, laby_streams = {}, [], False, {}, [], []
     try:
         for name, mods, settings in (
                 ("off", (), ()),
@@ -11741,14 +12399,18 @@ def _():
             only(*mods)
             for k, v in settings:
                 setting("clientspoofer", k, v)
-            before, mark = len(tap.brands), log_mark()
+            before, mark, opened = len(tap.brands), log_mark(), len(tap.streams)
             join(relay)
             got[name] = tap.brands[before] if len(tap.brands) > before else None
             sends[name] = len(tap.brands) - before
             if name == "Fabric":
                 said = [line for line in sunset_said(mark) if "Client Spoofer" in line]
             if name == "LabyMod":
-                laby = b"\x0blabymod:neo\x00\x064.2.60" in bytes(tap.streams[-1])
+                wait(20)
+                # Every connection this join made: the game can open another (a status ping) after the play one.
+                laby = any(b"\x0blabymod:neo\x00\x064.2.60" in bytes(s) for s in tap.streams[opened:])
+                laby_streams = [(len(s), b"labymod:neo" in bytes(s)) for s in tap.streams[opened:]]
+                laby_said = [line for line in sunset_said(mark) if "Client Spoofer" in line]
     finally:
         only()
         join(SERVER)
@@ -11757,7 +12419,7 @@ def _():
     # One brand per connection, the spoofed one in the configuration phase (never a second one after joining).
     ok = got == want and laby and any('"fabric" (Fabric' in line for line in said) and set(sends.values()) == {1}
     return ok, (f"brands the server got: {got}; brand packets per join {sends}; LabyMod's version packet: {laby}; "
-                f"Diagnostics: {said[:1]}")
+                f"Diagnostics: {said[:1]}, with LabyMod: {laby_said[:3]}; its connections (bytes, labymod:neo in them): {laby_streams}")
 
 
 @test("Velocity (knockback delay)")
@@ -12299,19 +12961,33 @@ def vehicle_moves_a_tick(mark):
     return max(most, now)
 
 
+def ridden_speed(ticks=20, warm=0):
+    """Blocks a second across the ground with W held, by the game's own tick count (a slow rig's wait runs long)."""
+    ctl("key", "w", "down")
+    wait(warm)
+    a = state()
+    wait(ticks)
+    b = state()
+    ctl("key", "w", "up")
+    return flat(a["player"]["position"], b["player"]["position"]) / max(b["ticks"] - a["ticks"], 1) * 20
+
+
 @test("Entity Control (boat)")
 def _():
     # An oak boat on the platform, ridden with a right click, driven with W for 1 s: blocks a second without Entity
     # Control, with Speed 10 and 20 (where you look, east; each from the middle so it stays on the platform). Fly: Jump for 1 s lifts it (Vertical speed 6 = 0.3 a
-    # tick), then 6 s with no key holds the height (Anti fly kick sinks 0.0313 every 40 ticks; vanilla kicks a vehicle
+    # tick), then 6 s with no key holds the height (Anti fly kick sinks 0.0313 for three ticks every 40 and gives it back; vanilla kicks a vehicle
     # floating for 80), Sprint brings it down,
     # and landing costs no health. A rubber band (the server putting the boat back) shows as lost distance or height.
     # The probe: one MoveVehicle a tick at most; no kick.
     kicked = len(kicks)
     mark = probe_mark()
 
-    def boat():
+    # Settings go in before each ride, on the platform: a ride that ended over its edge must not eat them.
+    def boat(*settings):
         reset("survival")
+        for key, value in settings:
+            setting("entitycontrol", key, value)
         cmd("gamerule naturalRegeneration false", f"summon oak_boat {X0+0.5} {Y+1} {Z0+0.5}")
         wait(10)
         b = next(o for o in ctl("status")["objects"] if o["kind"].endswith("boat"))
@@ -12324,10 +13000,7 @@ def _():
         return ctl("status").get("riding") is not None
 
     def speed(ticks=20):
-        a = pos()
-        held_keys(["w"], ticks)
-        b = pos()
-        return flat(a, b) * 20 / ticks
+        return ridden_speed(ticks)
 
     def leave():
         ctl("key", "shift", "down")
@@ -12339,17 +13012,14 @@ def _():
     rode = boat()
     plain = speed()
     leave()
-    setting("entitycontrol", "horizontal speed", "10")
+    rode = boat(("horizontal speed", "10")) and rode
     toggle("entity control", True)
-    rode = boat() and rode
-    ten = speed()
+    ten = speed(12)
     leave()
-    setting("entitycontrol", "horizontal speed", "20")
-    rode = boat() and rode
-    twenty = speed()
+    rode = boat(("horizontal speed", "20")) and rode
+    twenty = speed(8)
     leave()
-    setting("entitycontrol", "fly", "true")
-    rode = boat() and rode
+    rode = boat(("fly", "true")) and rode
     y0 = pos()[1]
     held_keys(["space"], 20)
     y1 = pos()[1]
@@ -12369,6 +13039,149 @@ def _():
     return ok, (f"blocks a second {plain:.1f} off, {ten:.1f} at Speed 10, {twenty:.1f} at 20; Fly: up {y1 - y0:.2f} in 1 s, "
                 f"held {y2 - y1:+.3f} over 6 s, down to {y3 - y0:+.2f}, {lost:g} health lost landing; most MoveVehicle in "
                 f"a tick {most}; kicks {len(kicks) - kicked}")
+
+
+@test("Entity Control (mount)")
+def _():
+    # A saddled horse (speed attribute 0.1: about 4.3 blocks a second at its own gallop), ridden with /ride and driven
+    # with W looking east: as a horse without Entity Control, at Speed 10 and 20 with it, as a horse again with
+    # Mounts off, and at Speed 10 over a block one high (the horse's own step). Fly: Jump for 1 s lifts it (Vertical
+    # speed 6 = 0.3 a tick), 6 s with no key holds the height (Anti fly kick sinks three ticks every 40 and gives the height back), Sprint
+    # brings it down, and landing from there costs you no health. The probe: one MoveVehicle a tick at most; no kick.
+    # Settings go in before each ride, on the platform: a ride that ended over its edge must not eat them.
+    kicked = len(kicks)
+    mark = probe_mark()
+    step = f"{X0 + 4} {Y + 1} {Z0 - 2} {X0 + 7} {Y + 1} {Z0 + 2}"
+
+    def horse(*settings):
+        reset("survival")
+        for key, value in settings:
+            setting("entitycontrol", key, value)
+        cmd("gamerule naturalRegeneration false",
+            f"summon horse {X0 + 0.5} {Y + 1} {Z0 + 0.5} {{Tame:1b,PersistenceRequired:1b,Silent:1b,"
+            'equipment:{saddle:{id:"minecraft:saddle",count:1}},attributes:[{id:"minecraft:movement_speed",base:0.1d}]}')
+        wait(10)
+        cmd("ride @s mount @e[type=horse,limit=1,sort=nearest]")
+        wait(10)
+        ctl("look", "-90", "0")
+        wait(2)
+        return ctl("status").get("riding") is not None
+
+    def leave():
+        ctl("key", "shift", "down")
+        wait(5)
+        ctl("key", "shift", "up")
+        cmd("kill @e[type=!player]")
+        wait(5)
+
+    rode = horse()
+    plain = ridden_speed(20, 3)
+    leave()
+    rode = horse(("boats", "true"), ("mounts", "true"), ("speed", "true"), ("horizontal speed", "10"), ("fly", "false")) and rode
+    toggle("entity control", True)
+    ten = ridden_speed(12, 3)
+    leave()
+    rode = horse(("horizontal speed", "20")) and rode
+    twenty = ridden_speed(6, 3)
+    leave()
+    rode = horse(("mounts", "false")) and rode
+    off = ridden_speed(20, 3)
+    leave()
+    cmd(f"fill {step} minecraft:stone")
+    rode = horse(("mounts", "true"), ("horizontal speed", "10")) and rode
+    stepped = ridden_speed(12, 3)
+    leave()
+    cmd(f"fill {step} minecraft:air")
+    rode = horse(("fly", "true")) and rode
+    y0 = pos()[1]
+    held_keys(["space"], 20)
+    y1 = pos()[1]
+    wait(120)
+    y2 = pos()[1]
+    before = hp()
+    held_keys(["ctrl"], int((y2 - y0) / 0.3) + 20)
+    wait(20)
+    y3 = pos()[1]
+    lost = health_lost(before)
+    most = vehicle_moves_a_tick(mark)
+    leave()
+    only()
+    reset()
+    say(".reset entitycontrol")
+    cmd("gamerule naturalRegeneration true")
+    ok = (rode and 1.5 < plain < 6 and 9 < ten < 10.6 and 18 < twenty < 21 and 1.5 < off < 6 and stepped > 8.5
+          and y1 - y0 > 4.5 and -0.2 < y2 - y1 <= 0.01 and y3 - y0 < 0.6 and lost == 0 and most == 1 and len(kicks) == kicked)
+    return ok, (f"blocks a second {plain:.1f} off, {ten:.1f} at Speed 10, {twenty:.1f} at 20, {off:.1f} with Mounts off, "
+                f"{stepped:.1f} over a step; Fly: up {y1 - y0:.2f} in 1 s, held {y2 - y1:+.3f} over 6 s, down to {y3 - y0:+.2f}, "
+                f"{lost:g} health lost landing; most MoveVehicle in a tick {most}; kicks {len(kicks) - kicked}")
+
+
+@test("Entity Control (other mounts, an unsaddled horse, a wall)")
+def _():
+    # Entity Control at Speed 10 on what else your client moves, and off what it does not: a saddled camel; a
+    # saddled pig while you hold its carrot on a stick, and the same pig once you hold nothing (the server moves it
+    # again: left alone); a tame horse with no saddle (never yours to move); and a saddled horse into a wall two
+    # high, where it stops and stays (no put-back, no kick). The probe: one MoveVehicle a tick at most.
+    kicked = len(kicks)
+    mark = probe_mark()
+    saddle = 'equipment:{saddle:{id:"minecraft:saddle",count:1}}'
+    wall = f"{X0 + 5} {Y + 1} {Z0 - 2} {X0 + 5} {Y + 3} {Z0 + 2}"
+
+    def ride(kind, tags, rod=False):
+        reset("survival")
+        for key, value in (("boats", "true"), ("mounts", "true"), ("speed", "true"), ("horizontal speed", "10"), ("fly", "false")):
+            setting("entitycontrol", key, value)
+        only("entity control")
+        if rod:
+            slot(0, "carrot_on_a_stick")
+        ctl("key", "1", "tap")
+        cmd(f"summon {kind} {X0 + 0.5} {Y + 1} {Z0 + 0.5} {{PersistenceRequired:1b,Silent:1b,{tags}}}")
+        wait(10)
+        cmd(f"ride @s mount @e[type={kind},limit=1,sort=nearest]")
+        wait(10)
+        ctl("look", "-90", "0")
+        wait(2)
+        return ctl("status").get("riding") is not None
+
+    def leave():
+        ctl("key", "shift", "down")
+        wait(5)
+        ctl("key", "shift", "up")
+        cmd("kill @e[type=!player]")
+        wait(5)
+
+    got, rode = {}, {}
+    rode["camel"] = ride("camel", f"Tame:1b,{saddle}")
+    got["camel"] = ridden_speed(12, 3)
+    leave()
+    rode["pig"] = ride("pig", saddle, rod=True)
+    got["pig with its rod"] = ridden_speed(12, 3)
+    ctl("key", "2", "tap")
+    wait(10)
+    got["pig, empty hand"] = ridden_speed(12, 3)
+    leave()
+    rode["bare horse"] = ride("horse", "Tame:1b")
+    got["horse, no saddle"] = ridden_speed(12, 3)
+    leave()
+    cmd(f"fill {wall} minecraft:stone")
+    rode["horse"] = ride("horse", f"Tame:1b,{saddle}")
+    held_keys(["w"], 25)
+    a = pos()
+    held_keys(["w"], 15)
+    b = pos()
+    still_riding = ctl("status").get("riding") is not None
+    most = vehicle_moves_a_tick(mark)
+    leave()
+    cmd(f"fill {wall} minecraft:air")
+    only()
+    reset()
+    say(".reset entitycontrol")
+    stopped = a[0] < X0 + 5 and flat(a, b) < 0.05
+    ok = (all(rode.values()) and 9 < got["camel"] < 10.6 and 9 < got["pig with its rod"] < 10.6 and got["pig, empty hand"] < 3
+          and got["horse, no saddle"] < 3 and stopped and still_riding and most == 1 and len(kicks) == kicked)
+    return ok, (f"blocks a second at Speed 10: { {k: round(v, 1) for k, v in got.items()} }; at the wall x {a[0] - X0:.2f} (wall at 5), "
+                f"moved {flat(a, b):.3f} held against it, riding {still_riding}; rode {rode}; most MoveVehicle in a tick {most}; "
+                f"kicks {len(kicks) - kicked}")
 
 
 @test("Fast Use (Throw modes)")
@@ -13402,18 +14215,18 @@ def _():
         wait(5)
         before, mark = hp(), probe_mark()
         cmd(f"summon minecraft:fireball {X0 + 0.5} {Y + 1.8} {Z0 + z} {{Motion:[0.0,0.0,{motion}],acceleration_power:0.0d,ExplosionPower:0b}}")
-        wait(40)
+        # The lowest health while it flies: reset()'s saturation heals a hit back within the 40 ticks.
+        lowest = min(poll(40, 2, hp) + [hp()])
         hits = sum(1 for t in probe_ticks(mark) for line in t if line == "order attack")
         only()
         cmd("kill @e[type=minecraft:fireball]")
-        lost = before - hp()
-        return hits, round(lost, 1)
+        return hits, round(before - lowest, 1)
 
     # Hurting projectiles keep 95% of their speed a tick: 0.6 a tick from 6.5 blocks arrives in about 12 ticks.
     on, off, away = shot(True, 6.5, -0.6), shot(False, 6.5, -0.6), shot(True, 2.0, 0.6)
     reset()
     ok = on[0] >= 1 and on[1] == 0 and off[0] == 0 and off[1] > 0 and away[0] == 0
-    return ok, f"(attacks, health lost): coming with Projectiles {on}, without {off}; going away {away}"
+    return ok, f"(attacks, most health lost): coming with Projectiles {on}, without {off}; going away {away}"
 
 
     return ok, f"(tick the pearl took you, highest you got, wind charges used): off {got['off']}, on {got['on']}"
@@ -13464,6 +14277,8 @@ def _():
         wait(4)
         return sunset_said(mark)
 
+    if not real_window():
+        return None, REAL_KEYS
     reset()
     only("loadouts")
     cmd("clear @s", 'item replace entity @s hotbar.0 with minecraft:diamond_sword[custom_name="Duel"]')
@@ -13474,7 +14289,7 @@ def _():
     w, h = gui_size()
     top = max(20, h / 2 - 40 / 2 - 10)
     row = (w / 2 - 91 + 12 + 40, top + 20)
-    ctl("key", "k", "down")
+    real_key("k", "keydown")
     wait(5)
     ctl("screenshot", f"{SHOTS}/loadouts.png")
     time.sleep(2)
@@ -13485,15 +14300,15 @@ def _():
     picked = (item(4), item(9))
     ctl("click-at", *map(str, row), "right")
     wait(5)
-    ctl("key", "k", "up")
+    real_key("k", "keyup", click=False)
     wait(5)
     after_delete = listed()
-    ctl("key", "k", "down")
+    real_key("k", "keydown")
     wait(5)
     top = max(20, h / 2 - 10)
     ctl("click-at", str(w / 2), str(top + 2 + 7))
     wait(5)
-    ctl("key", "k", "up")
+    real_key("k", "keyup", click=False)
     saved = listed()
     say(".loadout delete 1")
     only()
@@ -14301,14 +15116,25 @@ def _():
 
 @test(".goto (stopping)")
 def _():
-    # 14 blocks east, stopped after 2 by: the inventory, the ClickGUI (a real ` press), A held (you walk left instead,
-    # at once) and .goto stop. Each must leave you standing (no keys held by the walk). Not Panic: it would stop Sunset
+    # 14 blocks east, stopped after 2 by: the inventory, the ClickGUI (a real ` press), A held (a real key too: you
+    # walk left instead, at once) and .goto stop. Each must leave you standing (no keys held by the walk). Not Panic: it would stop Sunset
     # for the rest of the run (all_off cancels the walk; the Panic test runs last).
     window = x_window()
+
+    def real(*key):
+        # A real key (xdotool), as x_press does it: the window raised over Bot1's and focused, a right click first (the
+        # first press after the chat only takes the cursor back). horizon-ctl's keys are a script's: Sunset's key hook
+        # never sees them.
+        env = {**os.environ, "DISPLAY": XDISPLAY}
+        for args in (("windowraise", window), ("windowfocus", "--sync", window), ("mousemove", "--window", window, "200", "150"),
+                     ("click", "3"), key):
+            subprocess.run(["xdotool", *args], env=env, capture_output=True)
+            time.sleep(0.15)
+
     stops = {
         "inventory": lambda: ctl("key", "e", "tap"),
-        "ClickGUI": (lambda: x_keys(window, "grave")) if window else None,
-        "A held": lambda: ctl("key", "a", "down"),
+        "ClickGUI": (lambda: real("key", "grave")) if window else None,
+        "A held": (lambda: real("keydown", "a")) if window else None,
         ".goto stop": lambda: say(".goto stop"),
     }
     got = {}
@@ -14318,7 +15144,9 @@ def _():
         reset()
         _, end, walked, drift, _ = goto_walk(14, Y + 1, 0, interrupt=stop)
         if name == "A held":
-            ctl("key", "a", "up")
+            subprocess.run(["xdotool", "keyup", "a"], env={**os.environ, "DISPLAY": XDISPLAY}, capture_output=True)
+        if name == "ClickGUI":
+            x_keys(window, "Escape")
         got[name] = (round(walked, 1), round(14.5 - (end[0] - X0), 1), round(drift, 2))
         if name in ("inventory", "ClickGUI"):
             ctl("key", "esc", "tap")
@@ -14326,8 +15154,768 @@ def _():
         if state().get("screen") not in ("playing", None):
             ctl("close")
     stopped = all(left > 3 and (drift > 0.5 if name == "A held" else drift < 0.2) for name, (_, left, drift) in got.items())
-    return stopped, f"(walked, blocks short, moved after: A held walks on by hand, the rest stand) {got}" + ("" if window else "; ClickGUI: no window")
+    return stopped, f"(walked, blocks short, moved after: A held walks on by hand, the rest stand) {got}" + ("" if window else "; ClickGUI and A held: no window (real keys)")
 
+
+# ---- .follow <player> [blocks]: .goto's walker aimed at a player, again each time they move on
+
+def follow_settle(limit=25, still=1.5):
+    """Waits until you have stood still (no walk running, not moving) for `still` seconds; where you are then, and
+    how far you walked meanwhile."""
+    trail, t0, quiet = [pos()], time.time(), None
+    while time.time() - t0 < limit:
+        time.sleep(0.1)
+        st = state()
+        trail.append(st["player"]["position"])
+        if st.get("busy") or flat(trail[-2], trail[-1]) > 0.02:
+            quiet = None
+        elif quiet is None:
+            quiet = time.time()
+        elif time.time() - quiet >= still:
+            break
+    return trail[-1], sum(flat(a, b) for a, b in zip(trail, trail[1:]))
+
+
+def follow_bot(x, z=0.5, yaw=90):
+    cmd(f"tp Bot1 {X0 + x} {Y + 1} {Z0 + z} {yaw} 0")
+    wait(5)
+    return [X0 + x, Y + 1, Z0 + z]
+
+
+@test(".follow (a player)")
+def _():
+    # Bot1 moved about the arena: you walk after him and stand about 3 blocks off (6 when asked), stay put while he is
+    # near, go round a wall, keep up while he walks, and send one move packet a tick with no server teleport.
+    if not CTL2:
+        return None, "needs a second player"
+    got = {}
+    goto_clear()
+    reset()
+    bot_ready(2.5)
+    mark = log_mark()
+    say(".follow bot1")
+    wait(10)
+    started = any("Following Bot1, staying 3 blocks away" in line for line in sunset_said(mark))
+    wire = probe_mark() if probe_path() and SERVER else None
+    end, walked = follow_settle(limit=4)
+    got["near already"] = (round(walked, 1), round(flat(end, follow_bot(0.5, 2.5)), 1))
+    at = follow_bot(10.5)
+    end, walked = follow_settle()
+    got["10 east"] = (round(walked, 1), round(flat(end, at), 1))
+    # A wall between you and where he goes next: the path goes round its end.
+    cmd(f"fill {X0+5} {Y+1} {Z0-3} {X0+5} {Y+3} {Z0+3} minecraft:stone")
+    at = follow_bot(0.5)
+    end, walked = follow_settle()
+    got["behind a wall"] = (round(walked, 1), round(flat(end, at), 1))
+    past_wall = end[0] < X0 + 5
+    goto_clear()
+    # He walks east for 2.5 s: you keep up and end near him.
+    before = pos()
+    ctl2("look", "-90", "0")
+    ctl2("key", "w", "down")
+    time.sleep(2.5)
+    ctl2("key", "w", "up")
+    wait(10)
+    his = ctl2("state")["player"]["position"]
+    end, _ = follow_settle()
+    got["he walks"] = (round(flat(before, end), 1), round(flat(end, his), 1))
+    he_walked = his[0] - (X0 + 0.5)
+    stats = wire_stats(wire) if wire is not None else None
+    mark = log_mark()
+    say(".follow Bot1 6")
+    wait(10)
+    six = any("Following Bot1, staying 6 blocks away" in line for line in sunset_said(mark))
+    at = follow_bot(his[0] - X0 - 11 if his[0] - X0 > 6 else his[0] - X0 + 11, 0.5)
+    end, walked = follow_settle()
+    got["6 blocks"] = (round(walked, 1), round(flat(end, at), 1))
+    say(".follow stop")
+    wait(5)
+    bot_done()
+    health = hp()
+    reset()
+    near = lambda k, lo, hi: lo <= got[k][1] <= hi
+    ok = (started and six and got["near already"][0] < 0.5 and near("10 east", 1.5, 3.9) and got["10 east"][0] > 5
+          and near("behind a wall", 1.5, 3.9) and past_wall and got["behind a wall"][0] > 7 and he_walked > 4
+          and near("he walks", 1.0, 3.9) and got["he walks"][0] > he_walked - 4.5 and near("6 blocks", 4.0, 6.9)
+          and (stats is None or (stats[1] <= 1 and stats[2] == 0)) and health == 20)
+    return ok, (f"(walked (he walks: moved), blocks from Bot1 at the end) {got}; past the wall: {past_wall}; he walked {he_walked:.1f}; "
+                f"said following: {started}, at 6: {six}; health {health}; "
+                + (f"{stats[0]} ticks, at most {stats[1]} move packets in one, {stats[2]} server teleports" if stats else "no probe"))
+
+
+@test(".follow (stops, screens, out of sight)")
+def _():
+    # What ends a follow (.follow stop, .goto stop, a .goto of its own, half a minute out of sight, and with a mapped
+    # window a real A press) and what only holds it (the inventory open; out of sight for a few seconds); names and
+    # distances it refuses.
+    if not CTL2:
+        return None, "needs a second player"
+    got, said = {}, {}
+    goto_clear()
+    reset()
+    bot_ready(2.5)
+
+    def after(line, ticks=10):
+        mark = log_mark()
+        say(line)
+        wait(ticks)
+        return sunset_said(mark)
+
+    has = lambda lines, text: any(text in line for line in lines)
+    said["nobody"] = has(after(".follow Nobody"), "No player called Nobody here.")
+    said["40 blocks"] = has(after(".follow Bot1 40"), "40 is not a distance from 1 to 16 blocks.")
+    said["not following"] = has(after(".follow stop"), "Not following anyone.") and has(after(".follow"), "Use .follow <player>")
+    for stop, line in ((".follow stop", "Stopped following Bot1."), (".goto stop", "Stopped following Bot1."),
+                       (f".goto {X0 + 2} {Y + 1} {Z0 - 3}", "Stopped following Bot1: a new walking goal started.")):
+        reset()
+        follow_bot(0.5, 2.5)
+        said[stop.split(" ")[0] + (" stop" if stop.endswith("stop") else " x y z") + ": following"] = has(after(".follow Bot1"), "Following Bot1")
+        said[stop.split(" ")[0] + (" stop" if stop.endswith("stop") else " x y z")] = has(after(stop), line)
+        follow_settle(limit=8)
+        say(".goto stop")
+        wait(5)
+        here = pos()
+        follow_bot(10.5)
+        wait(40)
+        got[stop.split(" ")[0] + (" stop" if stop.endswith("stop") else " x y z")] = round(flat(here, pos()), 2)
+    # The inventory open: he moves off, you stand; shut, you go after him.
+    reset()
+    follow_bot(0.5, 2.5)
+    after(".follow Bot1")
+    ctl("key", "e", "tap")
+    wait(5)
+    here = pos()
+    at = follow_bot(10.5)
+    wait(40)
+    held = flat(here, pos())
+    ctl("key", "esc", "tap")
+    wait(3)
+    if state().get("screen") not in ("playing", None):
+        ctl("close")
+    end, walked = follow_settle()
+    got["inventory"] = (round(held, 2), round(walked, 1), round(flat(end, at), 1))
+    # Out of sight for a few seconds, then back: said once, and the follow goes on.
+    mark = log_mark()
+    cmd(f"tp Bot1 {X0 + 400} {Y + 40} {Z0}")
+    time.sleep(6)
+    at = follow_bot(0.5)
+    end, walked = follow_settle()
+    lines = sunset_said(mark)
+    said["out of sight"] = sum("Bot1 is out of sight; waiting half a minute for them." in line for line in lines) == 1
+    got["back in sight"] = (round(walked, 1), round(flat(end, at), 1))
+    # Gone for good: half a minute later the follow is over, and his coming back moves nobody.
+    mark = log_mark()
+    cmd(f"tp Bot1 {X0 + 400} {Y + 40} {Z0}")
+    t0 = time.time()
+    while time.time() - t0 < 60 and not has(sunset_said(mark), "Stopped following Bot1: out of sight for half a minute."):
+        time.sleep(2)
+    said["gone"] = has(sunset_said(mark), "Stopped following Bot1: out of sight for half a minute.")
+    gone_after = time.time() - t0
+    here = pos()
+    follow_bot(10.5)
+    wait(40)
+    got["after gone"] = round(flat(here, pos()), 2)
+    # A real movement key (xdotool: a mapped window, OFFSCREEN=0) ends it, standing by him or on the way to him.
+    window = x_window()
+    for name, off in ((("a key, standing", 0), ("a key, walking", 14.5)) if window else ()):
+        reset()
+        follow_bot(0.5, 2.5)
+        after(".follow Bot1")
+        subprocess.run(["xdotool", "windowraise", window], env={**os.environ, "DISPLAY": XDISPLAY}, capture_output=True)
+        at = follow_bot(off) if off else None
+        mark = log_mark()
+        pressed = x_press("a")
+        wait(10)
+        if not pressed:
+            say(".follow stop")
+            wait(5)
+            continue
+        said[name] = has(sunset_said(mark), "Stopped following Bot1: you moved.")
+        if at:
+            follow_settle(limit=6)
+            got[name] = round(flat(pos(), at), 1)
+            said[name] = said[name] and got[name] > 4.5
+    bot_done()
+    health = hp()
+    reset()
+    ok = (all(said.values()) and all(got[k] < 0.3 for k in (".follow stop", ".goto stop", "after gone"))
+          and got["inventory"][0] < 0.3 and got["inventory"][1] > 5 and 1.5 <= got["inventory"][2] <= 3.9
+          and got["back in sight"][0] > 3 and 1.5 <= got["back in sight"][1] <= 3.9 and 25 < gone_after < 60 and health == 20)
+    return ok, (f"said: {said}; blocks moved after a stop, (held behind the inventory, walked after, from Bot1), "
+                f"(walked, from Bot1) once back: {got}; gone said after {gone_after:.0f} s; health {health}"
+                + ("" if window else "; a real movement key: no window"))
+
+
+# ---- .mine <block> [count]: .goto's walker up to uncovered blocks of a kind, the game's own dig on each (mine.rs)
+
+MINE_END = ("Mined ", "Stopped mining", " in sight within 32 blocks (covered", "is not a number of blocks", "Not mining anything", "Use .mine")
+
+
+def mine_run(line, limit=120):
+    """Types a .mine line and waits for the line that ends it (Mined ..., Stopped mining ..., a refusal): Sunset's
+    lines since."""
+    mark = log_mark()
+    say(line)
+    t0 = time.time()
+    while time.time() - t0 < limit:
+        time.sleep(1)
+        lines = sunset_said(mark)
+        if any(end in text for text in lines for end in MINE_END):
+            break
+    wait(5)
+    return sunset_said(mark)
+
+
+def mine_place(block, *spots):
+    for x, y, z in spots:
+        cmd(f"setblock {X0 + x} {y} {Z0 + z} minecraft:{block}")
+    wait(5)
+
+
+def mine_count(block):
+    return count(X0 - 4, Y, Z0 - 5, X0 + 16, Y + 9, Z0 + 5, block)
+
+
+@test(".mine (ores in sight)")
+def _():
+    # Five diamond ores about the arena with a pickaxe in hand: one on the floor 4 east, two stacked 7 east (the upper
+    # one opens the lower), one set in the floor, one 8 up in the air that nothing reaches. All but the high one are
+    # mined and their diamonds picked up; then ".mine diamond 2" of four more ends at two. One move packet a tick.
+    goto_clear()
+    reset()
+    cmd("clear @s")
+    slot(0, "diamond_pickaxe")
+    ctl("key", "1", "tap")
+    # The floor is one block thick: a block under the ore set in it, or its diamond falls out of the arena.
+    was = lambda y: next(iter(ctl("blocks", *map(str, (X0 + 5, y, Z0 - 2, X0 + 5, y, Z0 - 2))).get("counts", {})), "minecraft:air")
+    floor, under = was(Y), was(Y - 1)
+    cmd(f"setblock {X0 + 5} {Y - 1} {Z0 - 2} minecraft:stone")
+    mine_place("diamond_ore", (4, Y + 1, 0), (7, Y + 1, 2), (7, Y + 2, 2), (5, Y, -2), (6, Y + 8, 0))
+    wire = probe_mark() if probe_path() and SERVER else None
+    lines = mine_run(".mine diamond")
+    stats = wire_stats(wire) if wire is not None else None
+    seen = any("Mining diamond: 5 in sight" in text for text in lines)
+    ended = next((text.split("[Sunset] ")[-1].strip() for text in lines if "Mined " in text), None)
+    all_left, diamonds = mine_count("diamond_ore"), items_of("diamond")
+    lying = [[round(v - o, 1) for v, o in zip(e.get("pos") or [0, 0, 0], (X0, Y, Z0))] for e in ctl("entities").get("entities", [])
+             if "diamond" in str(e) and "item" in str(e.get("kind", "")) + str(e.get("type", ""))]
+    cmd(f"setblock {X0 + 5} {Y} {Z0 - 2} {floor}", f"setblock {X0 + 5} {Y - 1} {Z0 - 2} {under}")
+    reset()
+    mine_place("diamond_ore", (3, Y + 1, 2), (6, Y + 1, -2), (9, Y + 1, 2), (12, Y + 1, -2))
+    lines = mine_run(".mine diamond 2")
+    two = any("Mining up to 2 diamond" in text for text in lines) and any("Mined 2 diamond" in text for text in lines)
+    two_left = mine_count("diamond_ore")
+    health = hp()
+    cmd(f"fill {X0-4} {Y+1} {Z0-5} {X0+16} {Y+9} {Z0+5} minecraft:air", "clear @s")
+    reset()
+    ok = (seen and ended == "Mined 4 diamond; 1 more in sight could not be reached." and all_left == 1 and diamonds == 4
+          and two and two_left == 3 and (stats is None or (stats[1] <= 1 and stats[2] == 0)) and health == 20)
+    return ok, (f"5 in sight said: {seen}; ended: {ended!r}; ores left {all_left} (the high one), diamonds picked up {diamonds}"
+                + (f" (left lying at x, y, z from the arena's corner: {lying})" if lying else "") + "; "
+                f"'2' of four more: {two}, ores left {two_left} (2 and the high one); health {health}; "
+                + (f"{stats[0]} ticks, at most {stats[1]} move packets in one, {stats[2]} server teleports" if stats else "no probe"))
+
+
+@test(".mine (kinds, stops, the wrong tool)")
+def _():
+    # By hand: "log" takes an oak and a birch log; nothing of a kind, a bad count and no job are said; an open
+    # inventory holds the job and it ends once shut; .mine stop ends it with logs left; obsidian by hand is given up
+    # after 20 s.
+    said, got = {}, {}
+    goto_clear()
+    reset()
+    cmd("clear @s")
+    has = lambda lines, text: any(text in line for line in lines)
+    said["nothing there"] = has(mine_run(".mine emerald", 10), "No emerald in sight within 32 blocks")
+    said["count 0"] = has(mine_run(".mine diamond 0", 10), "0 is not a number of blocks from 1 to 1024.")
+    said["no job"] = has(mine_run(".mine stop", 10), "Not mining anything.") and has(mine_run(".mine", 10), "Use .mine <block>")
+    mine_place("oak_log", (4, Y + 1, 1))
+    mine_place("birch_log", (7, Y + 1, -1))
+    said["log"] = has(mine_run(".mine log"), "Mined 2 log.")
+    got["logs left"] = mine_count("oak_log") + mine_count("birch_log")
+    got["logs picked up"] = items_of("oak_log") + items_of("birch_log")
+    # Three logs: the inventory opened after the first holds the job (no log goes while it is open), shut it ends.
+    reset()
+    mine_place("oak_log", (3, Y + 1, 2), (8, Y + 1, -2), (13, Y + 1, 2))
+    mark = log_mark()
+    say(".mine oak_log")
+    t0 = time.time()
+    while time.time() - t0 < 40 and mine_count("oak_log") == 3:
+        time.sleep(0.5)
+    ctl("key", "e", "tap")
+    wait(10)
+    before = mine_count("oak_log")
+    time.sleep(8)
+    got["held behind the inventory"] = (before, mine_count("oak_log"))
+    ctl("key", "esc", "tap")
+    wait(3)
+    if state().get("screen") not in ("playing", None):
+        ctl("close")
+    t0 = time.time()
+    while time.time() - t0 < 60 and not has(sunset_said(mark), "Mined "):
+        time.sleep(1)
+    said["after the inventory"] = has(sunset_said(mark), "Mined 3 oak_log.")
+    got["after the inventory"] = mine_count("oak_log")
+    # .mine stop after the first of three: said, and the other two stay.
+    reset()
+    mine_place("oak_log", (3, Y + 1, 2), (8, Y + 1, -2), (13, Y + 1, 2))
+    say(".mine oak_log")
+    t0 = time.time()
+    while time.time() - t0 < 40 and mine_count("oak_log") == 3:
+        time.sleep(0.5)
+    said[".mine stop"] = has(mine_run(".mine stop", 10), "Stopped mining oak_log after 1.")
+    before = mine_count("oak_log")
+    time.sleep(8)
+    got["after .mine stop"] = (before, mine_count("oak_log"))
+    cmd(f"fill {X0-4} {Y+1} {Z0-5} {X0+16} {Y+9} {Z0+5} minecraft:air", "clear @s")
+    # Obsidian with an empty hand: 20 s, then it says what did not break.
+    reset()
+    mine_place("obsidian", (3, Y + 1, 0))
+    lines = mine_run(".mine obsidian", 45)
+    said["wrong tool"] = has(lines, "Stopped mining obsidian after 0") and has(lines, "did not break in 20 s with what you hold")
+    got["obsidian left"] = mine_count("obsidian")
+    health = hp()
+    cmd(f"fill {X0-4} {Y+1} {Z0-5} {X0+16} {Y+9} {Z0+5} minecraft:air", "clear @s")
+    reset()
+    held = got["held behind the inventory"]
+    stopped = got["after .mine stop"]
+    ok = (all(said.values()) and got["logs left"] == 0 and got["logs picked up"] == 2 and held[0] == held[1] and 1 <= held[0] <= 2
+          and got["after the inventory"] == 0 and stopped[0] == stopped[1] and 1 <= stopped[0] <= 2 and got["obsidian left"] == 1
+          and health == 20)
+    return ok, f"said: {said}; {got}; health {health}"
+
+
+
+# ---- .highway <width> [height] [length] [rails] [nofloor]: a straight tunnel on .goto's walker, a slice and a step
+# at a time (highway.rs)
+
+HIGHWAY_END = ("Highway done", "Stopped the highway", " is not a ", "No highway is being built", "Use .highway")
+
+
+def highway_run(line, limit=180):
+    """Types a .highway line and waits for the line that ends it (Highway done ..., Stopped the highway ..., a
+    refusal): Sunset's lines since."""
+    mark = log_mark()
+    say(line)
+    t0 = time.time()
+    while time.time() - t0 < limit:
+        time.sleep(1)
+        lines = sunset_said(mark)
+        if any(end in text for text in lines for end in HIGHWAY_END):
+            break
+    wait(5)
+    return sunset_said(mark)
+
+
+def highway_ground():
+    """The platform whole again and nothing on it."""
+    cmd(f"fill {X0-16} {Y+1} {Z0-16} {X0+16} {Y+6} {Z0+16} minecraft:air", f"fill {X0-16} {Y} {Z0-16} {X0+16} {Y} {Z0+16} minecraft:stone",
+        "kill @e[type=item]")
+    wait(5)
+
+
+def highway_blocks(x1, y1, z1, x2, y2, z2):
+    """The blocks in a box that are not air."""
+    counts = ctl("blocks", *map(str, (X0 + x1, y1, Z0 + z1, X0 + x2, y2, Z0 + z2))).get("counts", {})
+    return sum(n for name, n in counts.items() if name != "minecraft:air")
+
+
+def highway_end(lines):
+    return next((text.split("[Sunset] ")[-1].strip() for text in lines if "Highway done" in text or "Stopped the highway" in text), None)
+
+
+@test(".highway (a tunnel through stone, a gap floored)")
+def _():
+    # East from the arena's middle, 3 wide and 3 high for 8 blocks with a pickaxe in hand: through a stone block 6 deep
+    # that is wider and higher than the tunnel (only the tunnel's 54 blocks go), over a gap in the floor 2 long and 5
+    # wide (its 6 cells under the tunnel are floored with obsidian, taken before the cobblestone a slot earlier; the
+    # 4 beside the tunnel stay open). One move packet a tick.
+    highway_ground()
+    reset()
+    cmd("clear @s")
+    slot(0, "diamond_pickaxe")
+    slot(1, "cobblestone", 64)
+    slot(2, "obsidian", 64)
+    ctl("key", "1", "tap")
+    cmd(f"fill {X0+2} {Y+1} {Z0-3} {X0+7} {Y+4} {Z0+3} minecraft:stone", f"fill {X0+4} {Y} {Z0-2} {X0+5} {Y} {Z0+2} minecraft:air")
+    wait(5)
+    ctl("look", "-90", "0")
+    wire = probe_mark() if probe_path() and SERVER else None
+    lines = highway_run(".highway 3 3 8", 300)
+    stats = wire_stats(wire) if wire is not None else None
+    started = any("Building a highway east: 3 wide, 3 high, 8 long. .highway stop stops." in text for text in lines)
+    ended = highway_end(lines)
+    tunnel = highway_blocks(0, Y + 1, -1, 8, Y + 3, 1)
+    wall = count(X0 + 2, Y + 1, Z0 - 3, X0 + 7, Y + 4, Z0 + 3, "stone")
+    floored = count(X0 + 4, Y, Z0 - 1, X0 + 5, Y, Z0 + 1, "obsidian")
+    beside = highway_blocks(4, Y, -2, 5, Y, -2) + highway_blocks(4, Y, 2, 5, Y, 2)
+    here = pos()
+    at = [round(v - o, 1) for v, o in zip(here, (X0, Y, Z0))]
+    # In the highway's last cell: the walk's last step may carry you a little past the cell's middle.
+    cell = [math.floor(v) - o for v, o in zip(here, (X0, Y, Z0))]
+    health = hp()
+    highway_ground()
+    reset()
+    ok = (started and ended == "Highway done: 8 blocks east (dug 54, placed 6)." and tunnel == 0 and wall == 114 and floored == 6
+          and beside == 0 and cell == [8, 1, 0] and abs(at[2] - 0.5) < 0.35
+          and (stats is None or (stats[1] <= 1 and stats[2] == 0)) and health == 20)
+    return ok, (f"started said: {started}; ended: {ended!r}; blocks left in the tunnel {tunnel}, stone left round it {wall} (114), "
+                f"obsidian in the gap under it {floored} (6), blocks in the gap beside it {beside}; stands at {at} from the arena's "
+                f"corner (8.5, 1, 0.5); health {health}; "
+                + (f"{stats[0]} ticks, at most {stats[1]} move packets in one, {stats[2]} server teleports" if stats else "no probe"))
+
+
+@test(".highway (words, rails, out of blocks)")
+def _():
+    # What it refuses is said and starts nothing. South, 1 wide and 2 high for 4 with rails: two blocks in the lane
+    # and one over a rail go, a rail's place that already holds stone is left as it is, the other nine get obsidian.
+    # With nothing to build with (an empty hotbar, then only sand, which would fall) the first rail ends it.
+    said, got = {}, {}
+    highway_ground()
+    reset()
+    cmd("clear @s")
+    has = lambda lines, text: any(text in line for line in lines)
+    said["usage"] = has(highway_run(".highway", 10), "Use .highway <width 1-5> [height 2-5] [length] [rails] [nofloor] or .highway stop.")
+    said["width 9"] = has(highway_run(".highway 9", 10), "9 is not a width from 1 to 5.")
+    said["height 1"] = has(highway_run(".highway 3 1", 10), "1 is not a height from 2 to 5.")
+    said["length 0"] = has(highway_run(".highway 3 3 0", 10), "0 is not a length from 1 to 10000.")
+    said["rails before a width"] = has(highway_run(".highway rails", 10), "Use .highway <width 1-5>")
+    said["a fourth number"] = has(highway_run(".highway 3 3 5 2", 10), "Use .highway <width 1-5>")
+    said["no job"] = has(highway_run(".highway stop", 10), "No highway is being built.")
+    wait(20)
+    got["moved by the refusals"] = round(flat(pos(), (X0 + 0.5, 0, Z0 + 0.5)), 1)
+    slot(0, "diamond_pickaxe")
+    slot(1, "obsidian", 64)
+    ctl("key", "1", "tap")
+    cmd(f"fill {X0} {Y+1} {Z0+2} {X0} {Y+2} {Z0+2} minecraft:stone", f"setblock {X0+1} {Y+1} {Z0+3} minecraft:stone",
+        f"setblock {X0-1} {Y+2} {Z0+1} minecraft:stone")
+    wait(5)
+    lines = highway_run(".highway 1 2 4 rails")
+    said["rails start"] = has(lines, "Building a highway south: 1 wide, 2 high, 4 long, with rails. .highway stop stops.")
+    got["rails ended"] = highway_end(lines)
+    got["rails"] = (count(X0 + 1, Y + 1, Z0, X0 + 1, Y + 1, Z0 + 4, "obsidian"), count(X0 - 1, Y + 1, Z0, X0 - 1, Y + 1, Z0 + 4, "obsidian"))
+    got["the stone rail"] = count(X0 + 1, Y + 1, Z0 + 3, X0 + 1, Y + 1, Z0 + 3, "stone")
+    got["left in the lane and over the rails"] = highway_blocks(0, Y + 1, 0, 0, Y + 2, 4) + highway_blocks(-1, Y + 2, 0, 1, Y + 2, 4)
+    got["stands at z"] = round(pos()[2] - Z0, 1)
+    in_last = math.floor(pos()[2]) - Z0 == 4
+    for name, item in (("empty hotbar", None), ("only sand", "sand")):
+        highway_ground()
+        reset()
+        cmd("clear @s")
+        if item:
+            slot(1, item, 64)
+        lines = highway_run(".highway 1 2 3 rails", 30)
+        got[name] = highway_end(lines)
+        said[name] = got[name] == f"Stopped the highway after 0 blocks south (dug 0, placed 0): no whole block left in the hotbar for {X0 + 1} {Y + 1} {Z0}."
+    health = hp()
+    highway_ground()
+    reset()
+    ok = (all(said.values()) and got["moved by the refusals"] < 0.3 and got["rails ended"] == "Highway done: 4 blocks south (dug 3, placed 9)."
+          and got["rails"] == (4, 5) and got["the stone rail"] == 1 and got["left in the lane and over the rails"] == 0
+          and in_last and health == 20)
+    return ok, f"said: {said}; {got}; in the last cell: {in_last}; health {health}"
+
+
+@test(".highway (what stops it: water, a stop, a screen, no floor, the wrong tool, the platform's edge)")
+def _():
+    # South each time. Water in the lane ends it before the water; .highway stop and .goto stop end it with blocks
+    # left; an open inventory only holds it; nofloor ends at a hole (a floor is not put down); obsidian by hand is given
+    # up after 20 s; with no length and nothing to build with it walks to the platform's edge and ends there; a
+    # .goto takes over from it.
+    said, got = {}, {}
+    has = lambda lines, text: any(text in line for line in lines)
+    box = f"fill {X0-2} {Y+1} {Z0+2} {X0+2} {Y+4} {Z0+12} minecraft:stone"
+    stone = lambda: count(X0 - 2, Y + 1, Z0 + 2, X0 + 2, Y + 4, Z0 + 12, "stone")
+
+    def fresh(*blocks):
+        highway_ground()
+        reset()
+        cmd("clear @s")
+        slot(0, "diamond_pickaxe")
+        ctl("key", "1", "tap")
+        if blocks:
+            cmd(*blocks)
+            wait(5)
+
+    def until_dug(n, limit=60):
+        t0 = time.time()
+        while time.time() - t0 < limit and stone() > 220 - n:
+            time.sleep(0.5)
+
+    fresh(f"setblock {X0} {Y+1} {Z0+4} minecraft:water")
+    got["water"] = highway_end(highway_run(".highway 1 2 8", 60))
+    got["water: stands at z"] = round(pos()[2] - Z0, 1)
+    said["water"] = "water in the way at" in (got["water"] or "") and got["water: stands at z"] < 4
+    # .highway stop after the first blocks of an endless one: said, and nothing more goes.
+    fresh(box)
+    say(".highway 3")
+    until_dug(3)
+    said[".highway stop"] = has(highway_run(".highway stop", 10), "Stopped the highway after ")
+    before = stone()
+    time.sleep(8)
+    got["after .highway stop"] = (before, stone())
+    # .goto stop ends it too.
+    say(".highway 3")
+    until_dug(220 - before + 3)
+    lines = highway_run(".goto stop", 10)
+    said[".goto stop"] = has(lines, "Stopped the highway after ")
+    before = stone()
+    time.sleep(8)
+    got["after .goto stop"] = (before, stone())
+    # The inventory opened after the first blocks holds it; shut, it ends.
+    fresh(box)
+    mark = log_mark()
+    say(".highway 3 3 6")
+    until_dug(3)
+    ctl("key", "e", "tap")
+    wait(10)
+    before = stone()
+    time.sleep(8)
+    got["held behind the inventory"] = (before, stone())
+    ctl("key", "esc", "tap")
+    wait(3)
+    if state().get("screen") not in ("playing", None):
+        ctl("close")
+    t0 = time.time()
+    while time.time() - t0 < 240 and not highway_end(sunset_said(mark)):
+        time.sleep(1)
+    got["after the inventory"] = highway_end(sunset_said(mark))
+    got["tunnel after the inventory"] = highway_blocks(-1, Y + 1, 0, 1, Y + 3, 6)
+    said["after the inventory"] = (got["after the inventory"] or "").startswith("Highway done: 6 blocks south (dug 45, placed 0)")
+    # nofloor: a hole three wide two blocks on ends it at the hole, and nothing is put in it.
+    fresh(f"fill {X0-1} {Y} {Z0+2} {X0+1} {Y} {Z0+2} minecraft:air")
+    slot(1, "obsidian", 64)
+    got["nofloor"] = highway_end(highway_run(".highway 1 2 5 nofloor", 60))
+    said["nofloor"] = got["nofloor"] == "Stopped the highway after 1 block south (dug 0, placed 0): no way on to the next block (the floor is left as it is)."
+    got["nofloor: put in the hole"] = highway_blocks(-1, Y, 2, 1, Y, 2)
+    # Obsidian by hand: 20 s, then it says what did not break and where.
+    fresh(f"fill {X0} {Y+1} {Z0+2} {X0} {Y+2} {Z0+2} minecraft:obsidian")
+    cmd("clear @s")
+    got["wrong tool"] = highway_end(highway_run(".highway 1 2 4", 60))
+    said["wrong tool"] = "did not break in 20 s with what you hold" in (got["wrong tool"] or "") and "obsidian" in (got["wrong tool"] or "")
+    # No length, nothing to build with: to the platform's edge, 16 blocks on, and the first floor block it lacks.
+    fresh()
+    cmd("clear @s")
+    got["edge"] = highway_end(highway_run(".highway 1 2", 120))
+    said["edge"] = got["edge"] == f"Stopped the highway after 16 blocks south (dug 0, placed 0): no whole block left in the hotbar for {X0} {Y} {Z0 + 17}."
+    # A .goto while one is going: the highway says it stopped for it, and the walk is made.
+    fresh()
+    cmd("clear @s")
+    mark = log_mark()
+    say(".highway 1 2")
+    time.sleep(3)
+    say(f".goto {X0 - 6} {Y + 1} {Z0}")
+    t0 = time.time()
+    while time.time() - t0 < 40 and not has(sunset_said(mark), "Arrived."):
+        time.sleep(1)
+    lines = sunset_said(mark)
+    said["a .goto takes over"] = has(lines, "Stopped the highway after ") and has(lines, "a new walking goal started.") and has(lines, "Arrived.")
+    got["after the .goto"] = [round(v - o, 1) for v, o in zip(pos(), (X0, Y, Z0))]
+    health = hp()
+    highway_ground()
+    reset()
+    stop, goto_stop, held = got["after .highway stop"], got["after .goto stop"], got["held behind the inventory"]
+    ok = (all(said.values()) and stop[0] == stop[1] and 0 < stop[0] < 220 and goto_stop[0] == goto_stop[1] and goto_stop[0] < stop[0]
+          and held[0] == held[1] and 0 < held[0] < 220 and got["tunnel after the inventory"] == 0 and got["nofloor: put in the hole"] == 0
+          and abs(got["after the .goto"][0] + 5.5) < 0.8 and health == 20)
+    return ok, f"said: {said}; {got}; health {health}"
+
+
+# ---- .excavate <x1> <y1> <z1> <x2> <y2> <z2>: a box emptied with .mine's dig on .goto's walker (excavate.rs)
+
+EXCAVATE_END = ("Excavated ", "Stopped excavating", "Nothing to dig", "Use .excavate", "Not excavating", "on a side.",
+                "blocks away;", "is not loaded", "outside the world", ".excavate takes up to")
+
+
+def excavate_run(line, limit=240):
+    """Types an .excavate line and waits for the line that ends it: Sunset's lines since."""
+    mark = log_mark()
+    say(line)
+    t0 = time.time()
+    while time.time() - t0 < limit:
+        time.sleep(1)
+        lines = sunset_said(mark)
+        if any(end in text for text in lines for end in EXCAVATE_END):
+            break
+    wait(5)
+    return sunset_said(mark)
+
+
+def excavate_end(lines):
+    return next((text.split("[Sunset] ")[-1].strip() for text in lines if "Excavated " in text or "Stopped excavating" in text), None)
+
+
+def excavate_box(x1, y1, z1, x2, y2, z2):
+    """The command's corners for a box given from the arena's corner."""
+    return f"{X0 + x1} {y1} {Z0 + z1} {X0 + x2} {y2} {Z0 + z2}"
+
+
+@test(".excavate (a box beside you, a pit under you)")
+def _():
+    # A diamond pickaxe in hand. Beside: 4x3x3 of stone east of you, inside a stone block 6x4x5 that it is part of;
+    # only its 36 go, from the top, walking in as it opens. Under: 3x3x3 west of you down from the platform's own
+    # layer, on a stone base; its 27 go and you come down into the pit (falls of one block, no harm), the base
+    # under it stays. One move packet a tick.
+    got = {}
+    highway_ground()
+    reset()
+    cmd("clear @s")
+    slot(0, "diamond_pickaxe")
+    ctl("key", "1", "tap")
+    cmd(f"fill {X0+2} {Y+1} {Z0-2} {X0+7} {Y+4} {Z0+2} minecraft:stone")
+    wait(5)
+    wire = probe_mark() if probe_path() and SERVER else None
+    lines = excavate_run(".excavate " + excavate_box(2, Y + 1, -1, 5, Y + 3, 1), 300)
+    stats = wire_stats(wire) if wire is not None else None
+    got["beside: started"] = any(f"Excavating 4x3x3 from {X0 + 2} {Y + 1} {Z0 - 1} to {X0 + 5} {Y + 3} {Z0 + 1}: 36 blocks to dig." in t for t in lines)
+    got["beside: ended"] = excavate_end(lines)
+    got["beside: left in the box"] = highway_blocks(2, Y + 1, -1, 5, Y + 3, 1)
+    got["beside: stone round it"] = count(X0 + 2, Y + 1, Z0 - 2, X0 + 7, Y + 4, Z0 + 2, "stone")
+    got["beside: health"] = hp()
+    highway_ground()
+    reset()
+    cmd("clear @s")
+    slot(0, "diamond_pickaxe")
+    ctl("key", "1", "tap")
+    cmd(f"fill {X0-6} {Y-3} {Z0-3} {X0-1} {Y-1} {Z0+3} minecraft:stone")
+    wait(5)
+    lines = excavate_run(".excavate " + excavate_box(-4, Y - 2, -1, -2, Y, 1), 300)
+    got["pit: started"] = any("3x3x3" in t and "27 blocks to dig." in t for t in lines)
+    got["pit: ended"] = excavate_end(lines)
+    got["pit: left in the box"] = highway_blocks(-4, Y - 2, -1, -2, Y, 1)
+    got["pit: base under it"] = count(X0 - 4, Y - 3, Z0 - 1, X0 - 2, Y - 3, Z0 + 1, "stone")
+    got["pit: feet at"] = round(pos()[1] - Y, 1)
+    got["pit: health"] = hp()
+    cmd(f"fill {X0-6} {Y-3} {Z0-3} {X0-1} {Y-1} {Z0+3} minecraft:air")
+    highway_ground()
+    reset()
+    ok = (got["beside: started"] and got["beside: ended"] == "Excavated 36 blocks." and got["beside: left in the box"] == 0
+          and got["beside: stone round it"] == 84 and got["beside: health"] == 20
+          and got["pit: started"] and got["pit: ended"] == "Excavated 27 blocks." and got["pit: left in the box"] == 0
+          and got["pit: base under it"] == 9 and got["pit: feet at"] == -2 and got["pit: health"] == 20
+          and (stats is None or (stats[1] <= 1 and stats[2] == 0)))
+    return ok, f"{got}; " + (f"{stats[0]} ticks, at most {stats[1]} move packets in one, {stats[2]} server teleports" if stats else "no probe")
+
+
+@test(".excavate (words, what is left)")
+def _():
+    # What it refuses is said and starts nothing. Then 3x2x3 of stone east with bedrock in it (not counted, not
+    # dug), a water source shut in glass against one of its blocks and gravel on top of another: those two are left
+    # and counted, the other 15 go, and the water and the gravel stay where they are.
+    said, got = {}, {}
+    highway_ground()
+    reset()
+    cmd("clear @s")
+    has = lambda lines, text: any(text in line for line in lines)
+    before = pos()
+    said["usage"] = has(excavate_run(".excavate", 10), "Use .excavate <x1> <y1> <z1> <x2> <y2> <z2> or .excavate stop.")
+    said["three numbers"] = has(excavate_run(".excavate 1 2 3", 10), "Use .excavate <x1> <y1> <z1> <x2> <y2> <z2> (two corners")
+    said["a word"] = has(excavate_run(f".excavate {X0} {Y} {Z0} {X0 + 2} {Y} here", 10), "Use .excavate <x1> <y1> <z1> <x2> <y2> <z2> (two corners")
+    said["too long"] = has(excavate_run(".excavate " + excavate_box(0, Y + 1, 0, 64, Y + 1, 0), 10), "A box is at most 64 blocks on a side.")
+    said["too big"] = has(excavate_run(".excavate " + excavate_box(0, Y + 1, 0, 40, Y + 40, 40), 10), "takes up to 32768.")
+    said["out of the world"] = has(excavate_run(".excavate " + excavate_box(0, 318, 0, 1, 330, 1), 10), "That is outside the world.")
+    said["nothing there"] = has(excavate_run(".excavate " + excavate_box(2, Y + 1, 2, 4, Y + 3, 4), 10), "Nothing to dig in that box.")
+    said["far"] = has(excavate_run(".excavate " + excavate_box(200, Y, 0, 202, Y, 2), 10), "blocks away; .excavate starts within 64.")
+    said["no job"] = has(excavate_run(".excavate stop", 10), "Not excavating anything.")
+    got["moved by the refusals"] = round(flat(before, pos()), 2)
+    slot(0, "diamond_pickaxe")
+    ctl("key", "1", "tap")
+    cmd(f"fill {X0+2} {Y+1} {Z0-1} {X0+4} {Y+2} {Z0+1} minecraft:stone", f"setblock {X0+3} {Y+1} {Z0+1} minecraft:bedrock",
+        f"setblock {X0+5} {Y+1} {Z0-1} minecraft:glass", f"setblock {X0+5} {Y+1} {Z0+1} minecraft:glass",
+        f"setblock {X0+6} {Y+1} {Z0} minecraft:glass", f"setblock {X0+5} {Y+1} {Z0} minecraft:water",
+        f"setblock {X0+2} {Y+3} {Z0-1} minecraft:gravel")
+    wait(10)
+    lines = excavate_run(".excavate " + excavate_box(2, Y + 1, -1, 4, Y + 2, 1), 240)
+    said["17 to dig"] = has(lines, ": 17 blocks to dig.")
+    got["ended"] = excavate_end(lines)
+    got["left: by the water, under the gravel"] = (count(X0 + 4, Y + 1, Z0, X0 + 4, Y + 1, Z0, "stone"), count(X0 + 2, Y + 2, Z0 - 1, X0 + 2, Y + 2, Z0 - 1, "stone"))
+    got["bedrock"] = count(X0 + 3, Y + 1, Z0 + 1, X0 + 3, Y + 1, Z0 + 1, "bedrock")
+    got["stone left in the box"] = count(X0 + 2, Y + 1, Z0 - 1, X0 + 4, Y + 2, Z0 + 1, "stone")
+    got["gravel"] = count(X0 + 2, Y + 3, Z0 - 1, X0 + 2, Y + 3, Z0 - 1, "gravel")
+    got["water"] = count(X0 - 4, Y + 1, Z0 - 4, X0 + 8, Y + 2, Z0 + 4, "water")
+    health = hp()
+    highway_ground()
+    reset()
+    ok = (all(said.values()) and got["moved by the refusals"] < 0.3
+          and got["ended"] == "Excavated 15 blocks; 2 blocks are left: no way or line to them, or not safe to dig (a drop under, sand or gravel over, lava or water beside)."
+          and got["left: by the water, under the gravel"] == (1, 1) and got["bedrock"] == 1 and got["stone left in the box"] == 2
+          and got["gravel"] == 1 and got["water"] == 1 and health == 20)
+    return ok, f"said: {said}; {got}; health {health}"
+
+
+@test(".excavate (what stops it: a stop, a screen, the wrong tool, a .goto)")
+def _():
+    # East each time, 3x3x5 of dirt dug by hand. .excavate stop and .goto stop end it with blocks left; an open
+    # inventory only holds it and shut, it ends with the box empty; obsidian by hand is given up after 20 s; a .goto
+    # takes over from it.
+    said, got = {}, {}
+    has = lambda lines, text: any(text in line for line in lines)
+    box = excavate_box(2, Y + 1, -1, 6, Y + 3, 1)
+    dirt = lambda: count(X0 + 2, Y + 1, Z0 - 1, X0 + 6, Y + 3, Z0 + 1, "dirt")
+
+    def fresh():
+        highway_ground()
+        reset()
+        cmd("clear @s", f"fill {X0+2} {Y+1} {Z0-1} {X0+6} {Y+3} {Z0+1} minecraft:dirt")
+        wait(5)
+
+    def started(line, limit=60):
+        mark = log_mark()
+        say(line)
+        t0 = time.time()
+        while time.time() - t0 < limit and dirt() > 40:
+            time.sleep(0.5)
+        return mark
+
+    for stop in (".excavate stop", ".goto stop"):
+        fresh()
+        started(".excavate " + box)
+        lines = excavate_run(stop, 10)
+        said[stop] = has(lines, "Stopped excavating after ")
+        before = dirt()
+        time.sleep(8)
+        got[f"after {stop}"] = (before, dirt())
+    fresh()
+    mark = started(".excavate " + box)
+    ctl("key", "e", "tap")
+    wait(10)
+    before = dirt()
+    time.sleep(8)
+    got["held behind the inventory"] = (before, dirt())
+    ctl("key", "esc", "tap")
+    wait(3)
+    if state().get("screen") not in ("playing", None):
+        ctl("close")
+    t0 = time.time()
+    while time.time() - t0 < 240 and not any("Excavated " in t or "Stopped excavating" in t for t in sunset_said(mark)):
+        time.sleep(1)
+    got["after the inventory"] = excavate_end(sunset_said(mark))
+    got["dirt after the inventory"] = dirt()
+    highway_ground()
+    reset()
+    cmd("clear @s", f"setblock {X0+3} {Y+1} {Z0} minecraft:obsidian")
+    wait(5)
+    lines = excavate_run(".excavate " + excavate_box(3, Y + 1, 0, 3, Y + 1, 0), 60)
+    got["wrong tool"] = excavate_end(lines)
+    said["wrong tool"] = got["wrong tool"] == f"Stopped excavating after 0 blocks: obsidian at {X0 + 3} {Y + 1} {Z0} did not break in 20 s with what you hold."
+    fresh()
+    started(".excavate " + box)
+    mark = log_mark()
+    say(f".goto {X0 - 5} {Y + 1} {Z0}")
+    wait(10)
+    said["a .goto takes over"] = has(sunset_said(mark), "Stopped excavating after ") and has(sunset_said(mark), "a new walking goal started")
+    t0 = time.time()
+    while time.time() - t0 < 30 and flat(pos(), (X0 - 4.5, 0, Z0 + 0.5)) > 0.6:
+        time.sleep(1)
+    got["after the .goto"] = [round(v - o, 1) for v, o in zip(pos(), (X0, Y, Z0))]
+    health = hp()
+    highway_ground()
+    reset()
+    ok = (all(said.values()) and all(a == b and 0 < 45 - a for a, b in (got["after .excavate stop"], got["after .goto stop"]))
+          and got["held behind the inventory"][0] == got["held behind the inventory"][1]
+          and got["after the inventory"] == "Excavated 45 blocks." and got["dirt after the inventory"] == 0
+          and flat(got["after the .goto"], (-4.5, 0, 0.5)) < 0.7 and health == 20)
+    return ok, f"said: {said}; {got}; health {health}"
 
 
 # The Grim alerts of Sayer's two screenshots (3 Nov), the earlier one first: what the report's table must count.
@@ -14400,7 +15988,8 @@ def _():
     ctl("key", "w", "down")
     wait(4)
     ctl("key", "w", "up")
-    wait(3)
+    # A command inside the packet log's 40 ticks: the ones above are older than that on a slow rig.
+    cmd("time query daytime")
     line, text = debug_report(lambda: say(".debug 60"))
     if text is None:
         return False, f"no report file: {line}"
@@ -14412,7 +16001,7 @@ def _():
     esp = next((l for l in text.splitlines() if l.startswith("- ESP")), "")
     esp_ok = "Fill opacity = 0.5 (default 0.3)" in esp and "Mode =" not in esp
     packets = text.split("## Packets sent", 1)[-1].split("## Chat", 1)[0]
-    wire = ("PlayerInput 0x01 (forward)" in packets and "ChatCommand (x" in packets and "MovePos" in packets
+    wire = ("PlayerInput 0x01 (forward)" in packets and "ChatCommand" in packets and "MovePos" in packets
             and "Last PlayerInput sent: 0x00 (none) at tick" in text)
     chat = text.split("## Chat", 1)[-1]
     chat_ok = "[player] <" in chat and "sgudpi" in chat and "[server] Grim آ» pointofpressure failed Simulation" in chat
@@ -15657,6 +17246,9 @@ def _():
     setting("trajectories", "pearls in flight", "true")
     reset()
     ctl("look", "0", "-10")
+    # The chat (reset()'s command lines) sits over the band counted below the crosshair and darkens the paths.
+    chat_scale = ctl("options-get", "chatScale")["options"]["chatScale"]["value"]
+    ctl("options-set", "chatScale", "0")
     accent = lambda r, g, b: r > 200 and 60 < g < 140 and b < 60
     got = {}
     for name, item in (("single", "crossbow[charged_projectiles=[{id:arrow}]]"),
@@ -15686,6 +17278,7 @@ def _():
         only()
         bot_done()
     setting("trajectories", "pearls in flight", "false")
+    ctl("options-set", "chatScale", str(chat_scale))
     ok = got["single"] > 0 and got["multishot"] > got["single"] * 1.5 and (pearl is None or pearl > 0)
     return ok, f"accent pixels: one arrow {got['single']}, multishot {got['multishot']}, a flying pearl {pearl}"
 
@@ -15698,10 +17291,13 @@ def _():
     # A grey wall gives every shot a visible landing marker. At vertical FOV 90 the focal length is h/2.
     wall = f"{X0-22} {Y+1} {Z0+12} {X0+22} {Y+9} {Z0+16}"
     fov = ctl("options-get", "fov")["options"]["fov"]["value"]
+    chat_scale = ctl("options-get", "chatScale")["options"]["chatScale"]["value"]
     observed = {}
     try:
         cmd(f"fill {wall} minecraft:light_gray_concrete")
         ctl("options-set", "fov", "90")
+        # The chat (reset()'s command lines) covers the band the markers are looked for in.
+        ctl("options-set", "chatScale", "0")
         setting("trajectories", "mode", "Potato")
         only("trajectories")
         for level, count, angles in ((5, 0, []), (0, 1, [0]), (1, 3, [-10, 0, 10]),
@@ -15728,6 +17324,7 @@ def _():
     finally:
         only()
         ctl("options-set", "fov", str(fov))
+        ctl("options-set", "chatScale", str(chat_scale))
         cmd(f"fill {wall} minecraft:air")
     return True, f"landing marker columns by (level, loaded): {observed}"
 
@@ -16247,6 +17844,119 @@ def _():
                 + (f"at {handle}: dragged to (size, position) {dragged}, after a right click {righted}" if window else "needs real presses (OFFSCREEN=0)"))
 
 
+@test("HUD layout editor (the wheel over a frame)")
+def _():
+    # With the chat open the wheel over the Coordinates' frame sets its size, a twentieth a notch: four notches up 1.2
+    # at a place of its own (Custom) and saved once the chat is shut; the wheel beside it (over no frame) and the wheel
+    # with the chat shut leave it alone; forty notches down stop at the smallest (0.5), eighty up at the largest (3).
+    reset()
+    for key, value in (("watermark", "false"), ("module list", "false"), ("fps", "false"), ("speed", "false"), ("facing", "false"),
+                       ("totems", "false"), ("coordinates", "true"), ("coordinates position", "Top left"), ("coordinates size", "1")):
+        setting("hud", key, value)
+    w, h = hud_size()
+
+    def coordinates():
+        rows = said_after(".settings hud", 6)
+        got = [r.split(": ", 1)[1] for key in ("Coordinates size", "Coordinates position") for r in rows if r.startswith(key + ":")]
+        return (float(got[0]), got[1]) if len(got) == 2 else (None, None)
+
+    def wheel(x, y, notches, chat=True, shot=None):
+        if chat:
+            ctl("key", "t", "tap")
+            wait(6)
+        # One notch a turn: a turn of several is cut to four.
+        for _ in range(abs(notches)):
+            ctl("scroll-at", str(x), str(y), "1" if notches > 0 else "-1")
+            wait(1)
+        wait(4)
+        if shot:
+            colour_frame(shot)
+        if chat:
+            ctl("key", "esc", "tap")
+            wait(4)
+        return coordinates()
+
+    start = coordinates()
+    beside = wheel(w / 2, h / 2, 4)
+    shut = wheel(8, 6, 4, chat=False)
+    up = wheel(8, 6, 4, shot="hud-wheel-up")
+    wait(12)
+    saved = next((v for k, v in saved_config().items() if k.lower().replace(" ", "").replace("_", "").endswith("coordinatessize")), None)
+    least = wheel(8, 6, -40)
+    most = wheel(8, 6, 80)
+    say(".reset hud")
+    ok = (start == (1.0, "Top left") and beside == start and shut == start and up[0] is not None and abs(up[0] - 1.2) < 0.001
+          and up[1] == "Custom" and saved is not None and abs(float(saved) - 1.2) < 0.001 and least[0] == 0.5 and most[0] == 3.0)
+    return ok, (f"(size, position) at first {start}, the wheel beside it {beside}, with the chat shut {shut}, four notches up "
+                f"{up} (saved {saved}), forty down {least}, eighty up {most}")
+
+
+@test("HUD layout editor (scoreboard size)")
+def _():
+    # The server's scoreboard sidebar (the game draws it) has a size too. Looking at the floor, the box of pixels it
+    # changes: at size 2 about twice as wide and tall with the same right edge and middle (it is in the game's own
+    # place), at 0.5 about half, at 1 again as at first; at a place of its own at size 3 it is whole on the screen; with
+    # the chat open four notches of the wheel over it make it 1.2 at a place of its own, and .reset puts it back.
+    from PIL import ImageChops
+    reset()
+    ctl("look", "0", "80")
+    only("fullbright")
+    for key, value in (("watermark", "false"), ("module list", "false"), ("coordinates", "false"), ("fps", "false"), ("speed", "false"),
+                       ("facing", "false"), ("totems", "false"), ("scoreboard position", "Default"), ("scoreboard size", "1")):
+        setting("hud", key, value)
+    cmd("gamerule send_command_feedback false", "scoreboard objectives add sunsetsize dummy", "scoreboard players set Sunset sunsetsize 7")
+
+    def frame_of(name):
+        clear_chat()
+        wait(6)
+        return colour_frame(f"hud-board-{name}")
+
+    bare = frame_of("off")
+    cmd("scoreboard objectives setdisplay sidebar sunsetsize")
+    wait(10)
+
+    def box(name, **settings):
+        for key, value in settings.items():
+            setting("hud", "scoreboard " + key, value)
+        return ImageChops.difference(bare, frame_of(name)).getbbox() or (0, 0, 0, 0)
+
+    def board():
+        rows = said_after(".settings hud", 6)
+        got = [r.split(": ", 1)[1] for key in ("Scoreboard size", "Scoreboard position") for r in rows if r.startswith(key + ":")]
+        return (float(got[0]), got[1]) if len(got) == 2 else (None, None)
+
+    one, two, half, again = box("1", size="1"), box("2", size="2"), box("0.5", size="0.5"), box("1b", size="1")
+    own = box("3", size="3", position="Custom", x="1", y="0.4")
+    for key, value in (("position", "Default"), ("size", "1")):
+        setting("hud", "scoreboard " + key, value)
+    k = hud_scale()
+    at = ((one[0] + one[2]) / 2 / k, (one[1] + one[3]) / 2 / k)
+    ctl("key", "t", "tap")
+    wait(6)
+    for _ in range(4):
+        ctl("scroll-at", str(at[0]), str(at[1]), "1")
+        wait(1)
+    wait(4)
+    ctl("key", "esc", "tap")
+    wait(4)
+    wheeled = board()
+    say(".reset hud")
+    wait(4)
+    back = board()
+    cmd("scoreboard objectives remove sunsetsize", "gamerule send_command_feedback true")
+    only()
+    wide, tall = (lambda b: b[2] - b[0]), (lambda b: b[3] - b[1])
+    full = bare.size
+    ok = (wide(one) > 20 and tall(one) > 10
+          and 1.7 < wide(two) / wide(one) < 2.3 and 1.7 < tall(two) / tall(one) < 2.3
+          and abs(two[2] - one[2]) <= 2 * k and abs((two[1] + two[3]) - (one[1] + one[3])) <= 4 * k
+          and 0.35 < wide(half) / wide(one) < 0.7 and all(abs(a - b) <= 1 for a, b in zip(again, one))
+          and 2.6 < wide(own) / wide(one) < 3.4 and own[0] >= 0 and own[2] <= full[0] and own[3] <= full[1]
+          and wheeled == (1.2, "Custom") and back == (1.0, "Default"))
+    return ok, (f"the sidebar's box at size 1 {one}, 2 {two}, 0.5 {half}, 1 again {again}, at 3 in a place of its own {own} "
+                f"of {full}; after four notches of the wheel {wheeled}, after .reset {back}")
+
+
 @test("Effects (kill, crit sparks, break bursts, target aura)")
 def _():
     # Each new effect in a colour the scene has none of (Custom, Purple), in front of a wall, counted as purple pixels
@@ -16337,6 +18047,65 @@ def _():
         cmd(f"fill {X0 - 3} {Y + 1} {Z0 + 2} {X0 + 3} {Y + 4} {Z0 + 2} minecraft:air")
     say(".reset effects")
     return got["hidden"] < 30 and got["through"] > 150 and got["in view"] > 150, f"pink pixels of a jump circle: {got}"
+
+
+@test("Effects (weather and trails behind blocks)")
+def _():
+    # Weather and trail marks are tested against the blocks a share at a time (each keeps its last answer), so both
+    # ways are looked at: what a wall hides, and that it comes back. Counted as pixels in the Custom colour (pink).
+    # Weather: snow falls only under open sky, so under a roof with a wall across the view every flake is behind the
+    # wall. With Hide behind blocks none shows; without it they show on the wall; hidden again with it back on; the
+    # wall taken away they show (against the same frame with Weather off), and put back they are gone again.
+    pink = lambda img: sum(r - g > 12 and b - g > 4 for r, g, b in img.crop((0, 150, 1280, 560)).getdata())
+    roof = f"{X0 - 4} {Y + 5} {Z0 - 4} {X0 + 4} {Y + 5} {Z0 + 4}"
+    wall = f"{X0 - 9} {Y + 1} {Z0 + 3} {X0 + 9} {Y + 14} {Z0 + 3}"
+
+    def frame(name, settle=12):
+        clear_chat()
+        wait(settle)
+        return pink(colour_frame(f"effects-behind-{name}"))
+
+    reset()
+    for key, value in (("color", "Custom"), ("custom color", "Pink"), ("jump circles", "false"), ("weather", "true"),
+                       ("weather mode", "Snow"), ("density", "1500"), ("weather radius", "15"), ("hide behind blocks", "true")):
+        setting("effects", key, value)
+    cmd(f"fill {roof} minecraft:stone", f"fill {wall} minecraft:stone")
+    only("effects")
+    snow = {"hidden": frame("snow-hidden", 40)}
+    setting("effects", "hide behind blocks", "false")
+    snow["through"] = frame("snow-through")
+    setting("effects", "hide behind blocks", "true")
+    snow["hidden again"] = frame("snow-hidden-again")
+    cmd(f"fill {wall} minecraft:air")
+    snow["in view"] = frame("snow-in-view")
+    setting("effects", "weather", "false")
+    snow["no weather"] = frame("snow-none")
+    setting("effects", "weather", "true")
+    cmd(f"fill {wall} minecraft:stone")
+    snow["walled again"] = frame("snow-walled-again", 40)
+    only()
+    cmd(f"fill {wall} minecraft:air", f"fill {roof} minecraft:air")
+    ok = (snow["hidden"] < 30 and snow["hidden again"] < 30 and snow["walled again"] < 30 and snow["through"] > 300
+          and snow["in view"] > snow["no weather"] + 300)
+    # Trails: footsteps left on a walk, then seen from the far side of a wall (the marks last 5 s, so a walk a case).
+    wall = f"{X0 - 6} {Y + 1} {Z0 + 6} {X0 + 6} {Y + 5} {Z0 + 6}"
+    steps = {}
+    for name, hide, walled in (("hidden", "true", True), ("through", "false", True), ("in view", "true", False)):
+        reset()
+        for key, value in (("weather", "false"), ("trails", "true"), ("trail mode", "Footsteps"), ("trail size", "2"),
+                           ("trail duration (ms)", "5000"), ("hide behind blocks", hide)):
+            setting("effects", key, value)
+        only("effects")
+        if walled:
+            cmd(f"fill {wall} minecraft:stone")
+        walk(15)
+        cmd(f"tp @s {X0 + 0.5} {Y + 1} {Z0 + 8.5} 180 25")
+        steps[name] = frame(f"steps-{name.replace(' ', '-')}", 5)
+        only()
+        cmd(f"fill {wall} minecraft:air")
+    say(".reset effects")
+    ok = ok and steps["hidden"] < 30 and steps["through"] > 100 and steps["in view"] > 100
+    return ok, f"pink pixels of snow: {snow}; of footsteps: {steps}"
 
 
 @test("Effects (landing ripples and explosion shockwaves)")
@@ -17142,16 +18911,22 @@ def hud_frame(name, *settings, colour=False):
 def _():
     # The watermark in the bottom right corner leaves the top left for there; at Custom 0.5/0.5 it is mid-screen. The
     # module list (Sprint on) at Bottom leaves the top right for the bottom right; back at Top it is where it was.
+    # In colour, with the colours and the list held still: the default list colour fades between white and the accent,
+    # which read as "not back where it was" at Top and, as grey on the hand in the bottom corner, as "not there". (A
+    # new home's tutorial toast covers the top right corner as well: the rig starts with the tutorial done.)
     hud_scene()
     only("Sprint")
+    for name, value in (("list color mode", "Static"), ("watermark color mode", "Static"), ("list animations", "false")):
+        setting("hud", name, value)
     w, h = hud_size()
     tl, tr, br = hud_box(0, 0, 110, 28), hud_box(w - 90, 0, w, 40), hud_box(w - 110, h - 40, w, h)
     mid = hud_box(w / 2 - 10, h / 2 - 6, w / 2 + 90, h / 2 + 22)
-    base = hud_frame("hp_base")
-    corner = hud_frame("hp_wm_br", ("watermark position", "Bottom right"))
-    custom = hud_frame("hp_wm_custom", ("watermark position", "Custom"), ("watermark x", "0.5"), ("watermark y", "0.5"))
-    listed = hud_frame("hp_list_bottom", ("watermark position", "Top left"), ("module list position", "Bottom"))
-    back = hud_frame("hp_list_top", ("module list position", "Top"))
+    changed = lambda a, b, box: recoloured(a.crop(box), b.crop(box))
+    base = hud_frame("hp_base", colour=True)
+    corner = hud_frame("hp_wm_br", ("watermark position", "Bottom right"), colour=True)
+    custom = hud_frame("hp_wm_custom", ("watermark position", "Custom"), ("watermark x", "0.5"), ("watermark y", "0.5"), colour=True)
+    listed = hud_frame("hp_list_bottom", ("watermark position", "Top left"), ("module list position", "Bottom"), colour=True)
+    back = hud_frame("hp_list_top", ("module list position", "Top"), colour=True)
     wm = (changed(base, corner, tl), changed(base, corner, br), changed(base, custom, tl), changed(base, custom, mid))
     ml = (changed(base, listed, tr), changed(base, listed, br), changed(base, back, tr))
     ok = wm[0] > 50 and wm[1] > 50 and wm[2] > 50 and wm[3] > 50 and ml[0] > 30 and ml[1] > 30 and ml[2] < 10
@@ -18056,6 +19831,10 @@ def _():
 def _():
     # With the chat open, Coordinates (top left), Compass (top middle) and the Armor HUD (by the hotbar) are dragged to
     # the middle of the screen, the left and the top right: afterwards each draws there, no longer where it was.
+    # The drags are a real mouse's: Sunset reads them where the window's mouse events arrive while the chat is open,
+    # which horizon-ctl's drag-at passes by.
+    if not real_window():
+        return None, "needs a real mouse (OFFSCREEN=0): horizon-ctl's drag never reaches the editor over the chat"
     hud_scene()
     w, h = hud_size()
     wear()
@@ -18073,7 +19852,7 @@ def _():
     ctl("key", "t", "tap")
     wait(5)
     for (x0, y0), (x1, y1), _, _ in places.values():
-        ctl("drag-at", str(x0), str(y0), str((x0 + x1) / 2), str((y0 + y1) / 2), str(x1), str(y1))
+        real_drag((x0, y0), ((x0 + x1) / 2, (y0 + y1) / 2), (x1, y1), across=w)
         wait(4)
     ctl("key", "esc", "tap")
     after = hud_frame("le_after")
@@ -18995,7 +20774,7 @@ def _():
         f"fill {vx - 1} {Y + 1} {vz - 1} {vx + 1} {Y + 3} {vz + 1} minecraft:glass",
         f"fill {vx} {Y + 1} {vz} {vx} {Y + 2} {vz} minecraft:air",
         f"setblock {lectern[0]} {lectern[1]} {lectern[2]} minecraft:air",
-        f"item replace entity @s hotbar.0 with minecraft:netherite_axe", f"item replace entity @s hotbar.1 with minecraft:lectern 4",
+        f"item replace entity @s hotbar.0 with minecraft:netherite_axe", f"item replace entity @s hotbar.1 with minecraft:lectern 64",
         f'summon minecraft:villager {vx + 0.5} {Y + 1} {vz + 0.5} {{VillagerData:{{profession:"minecraft:none",level:1,type:"minecraft:plains"}},PersistenceRequired:1b}}')
     ctl("key", "1", "tap")
     wait(10)
@@ -19150,7 +20929,7 @@ def _():
     setting("usetracker", "chat", "true")
     setting("usetracker", "own throws", "false")
     slot(0, "ender_pearl", 8)
-    slot(1, 'splash_potion[potion_contents={potion:"minecraft:water"}]', 4)
+    slot(1, 'splash_potion[potion_contents={potion:"minecraft:water"}]', 1)
     ctl("key", "1", "tap")
 
     def lines(mark, what):
@@ -19158,7 +20937,7 @@ def _():
 
     def throw(key="1", pitch="-10"):
         slot(0, "ender_pearl", 8)
-        slot(1, 'splash_potion[potion_contents={potion:"minecraft:water"}]', 4)
+        slot(1, 'splash_potion[potion_contents={potion:"minecraft:water"}]', 1)
         wait(2)
         ctl("key", key, "tap")
         ctl("look", "0", pitch)

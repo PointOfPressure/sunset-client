@@ -103,7 +103,11 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     }
     // Target HUD (a module of its own since 2.1; once HUD's): by the crosshair, drawn there, then slid to its dragged
     // place and made its size.
-    if let Some(target) = get("Target HUD").filter(|_| get("Kill Aura").is_some() && game.native_playing()) {
+    // What shows only while you play shows with the chat open too: the layout editor is the chat's, and it can only
+    // take what is drawn (with "no screen" alone the Compass, Shield status, Armor HUD, Target HUD and block counter
+    // went as the chat opened and could never be dragged or sized there).
+    let live = game.native_playing() || game.screen == Screen::Chat;
+    if let Some(target) = get("Target HUD").filter(|_| get("Kill Aura").is_some() && live) {
         let from = shapes.len();
         super::sunset_aura::draw_target(game, w, h, target.p("Mode") == "Potato", &mut shapes);
         super::sunset_hud_bars::editable(game, &mut shapes, from, target, "Target HUD", w, h);
@@ -189,14 +193,21 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
         if let Some((nx, ny, nw, nh)) = crate::game::sunset_scoreboard_pos::natural() {
             let (nxf, nyf, nwf, nhf) = (nx as f32, ny as f32, nw as f32, nh as f32);
             let custom = hud.p("Scoreboard position") == "Custom";
+            // Its size from the layout editor: the box it covers then.
+            let size = super::sunset_hud_bars::size_of(hud, "Scoreboard");
+            let sized = (size - 1.0).abs() > 0.001;
+            let (sw, sh) = (nwf * size, nhf * size);
             let (x, y) = if custom {
-                let [x, y] = super::sunset_hud_place::custom([hud.n("Scoreboard x"), hud.n("Scoreboard y")], [nwf, nhf], [w, h], false);
+                let [x, y] = super::sunset_hud_place::custom([hud.n("Scoreboard x"), hud.n("Scoreboard y")], [sw, sh], [w, h], false);
                 (x, y)
+            } else if sized {
+                // In the game's own place a sized sidebar keeps its right edge and its middle, whole on the screen.
+                ((nxf + nwf - sw).max(0.0), (nyf + (nhf - sh) / 2.0).clamp(0.0, (h - sh).max(0.0)))
             } else {
                 (nxf, nyf)
             };
-            super::sunset_hud_bars::place("Scoreboard", [x, y, nwf, nhf], w, h);
-            crate::game::sunset_scoreboard_pos::set_offset(custom, (x - nxf) as i32, (y - nyf) as i32);
+            super::sunset_hud_bars::place("Scoreboard", [x, y, sw, sh], w, h);
+            crate::game::sunset_scoreboard_pos::set_offset(custom || sized, (x - nxf) as i32, (y - nyf) as i32, size);
         }
         let coordinates = game.native_player().filter(|_| hud.b("Coordinates")).map(|p| {
             let (x, y, z) = (p.x.floor(), p.y.floor(), p.z.floor());
@@ -291,7 +302,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
             }
         }
         // After the corners' text, so a corner keeps that at its edge.
-        if game.native_playing() {
+        if live {
             super::sunset_hud_bars::draw(game, hud, w, h, corners, &mut shapes);
         }
         super::sunset_hud_list::case_shapes(hud, &mut shapes[hud_from..]);
@@ -301,7 +312,7 @@ pub(super) fn hud(game: &mut Game<'_>, batch: &mut HudBatch, corners: &mut Corne
     // Scaffold's block counter: a number and a word above the hotbar, clear of the hearts, armour and item name (or where
     // it was dragged).
     if let Some(m) = get("Scaffold").filter(|m| m.b("Block counter"))
-        && game.native_playing()
+        && live
         && game.player.is_some()
         && !game.spectator()
     {

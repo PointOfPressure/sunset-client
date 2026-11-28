@@ -552,6 +552,7 @@ impl Module {
             }
             "Entity Control" => match name {
                 "Horizontal speed" | "Only on ground" | "In water" => self.b("Speed"),
+                "Lock yaw" => self.b("Boats"),
                 "Vertical speed" | "Fall speed" | "Anti fly kick" => self.b("Fly"),
                 "Delay" => self.b("Fly") && self.b("Anti fly kick"),
                 _ => true,

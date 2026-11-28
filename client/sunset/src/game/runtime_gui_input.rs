@@ -107,10 +107,21 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
         with(|s| s.gui.closing = true);
         return;
     }
+    // The reworked Dashboard's arrow keys: through its list and its views.
+    if with(|s| super::sunset_dashboard::key(s, name)) {
+        with(|s| s.binding = None);
+        return;
+    }
     let control = game.modifiers.control_key();
+    let dash = super::sunset_dashboard::one_line();
     if name.ends_with("enter") {
-        // Enter in the search turns on (or off) the module it found.
-        if let Some(i) = with(|s| first_match(s)) {
+        // Enter in the search turns on (or off) the module it found; in the reworked Dashboard, the module shown.
+        if let Some(i) = with(|s| if dash { super::sunset_dashboard::enter_target(s) } else { first_match(s) }) {
+            toggle(game, i, true);
+        }
+    } else if dash && name == "key.keyboard.space" && with(|s| s.gui.search.is_empty()) {
+        // Space with nothing typed (a search does not start with one): the module shown, on or off.
+        if let Some(i) = with(|s| super::sunset_dashboard::enter_target(s)) {
             toggle(game, i, true);
         }
     } else if control && name == "key.keyboard.a" {
@@ -139,13 +150,22 @@ pub(super) fn gui_key(game: &mut Game<'_>, name: &str) {
 }
 
 // The module a search points at: the one it scores best (search.rs).
-fn first_match(s: &State) -> Option<usize> {
+// Only when the first find's own name matched what was typed: a module found for one of its settings (Enter on "range"
+// would turn ESP off) or its description is left as it is.
+pub(super) fn first_match(s: &State) -> Option<usize> {
     if s.gui.search.trim().is_empty() {
         return None;
     }
     let listed = s.in_gui();
     let found = super::sunset_search::results(&s.modules, &s.gui.search);
-    super::sunset_search::ranked(&found, (0..s.modules.len()).filter(|&i| listed(&s.modules[i]))).first().copied()
+    let first = super::sunset_search::ranked(&found, (0..s.modules.len()).filter(|&i| listed(&s.modules[i]))).first().copied()?;
+    let name = s.modules[first].name.to_lowercase();
+    let words: Vec<&str> = name.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let typed = s.gui.search.to_lowercase();
+    let typed: Vec<&str> = typed.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let joined: String = words.concat();
+    let named = typed.iter().all(|t| words.iter().any(|w| w.starts_with(t))) || joined.starts_with(&typed.concat());
+    named.then_some(first)
 }
 
 // A letter, digit or space typed in the click GUI's search.
@@ -225,7 +245,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
     };
     let mut toggled = None;
     let mut changed = false;
-    let mut reset = None;
+    let mut open_profiles = false;    let mut reset = None;
     with(|s| {
         // The editor is in front of everything: its buttons, nothing else; a picker's rows too.
         if let Some(Editor { module, setting, draft: Ok(draft), list: Some(picker), .. }) = &s.gui.editor {
@@ -327,6 +347,7 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             (Hit::Dash(super::sunset_dashboard::Part::Side(p)), false) if super::sunset_sidebar::toggles(s, p).is_some() => {
                 toggled = super::sunset_sidebar::toggles(s, p);
             }
+            (Hit::Dash(super::sunset_dashboard::Part::Profile), false) => open_profiles = true,
             (Hit::Dash(part), right) => super::sunset_dashboard::press(s, part, right),
             (Hit::Header(c), false) => {
                 let p = s.gui.panels[c];
@@ -335,6 +356,11 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
             (Hit::Header(c), true) => {
                 s.gui.panels[c].collapsed = !s.gui.panels[c].collapsed;
                 changed = true;
+            }
+            // The reworked Dashboard: the switch at a row's end turns its module on or off; the row shows its settings.
+            (Hit::Module(i), false) if super::sunset_dashboard::one_line() && !super::sunset_dashboard::on_switch(r, at) => {
+                super::sunset_dashboard::choose(i);
+                s.binding = None;
             }
             (Hit::Module(i), false) => toggled = Some(i),
             (Hit::Module(i), true) if super::sunset_dashboard::on() => {
@@ -420,12 +446,22 @@ pub(super) fn gui_press(game: &mut Game<'_>, button: winit::event::MouseButton) 
                     s.gui.drag = None;
                     s.binding = None;
                 } else {
-                    s.modules[i].settings[j].click(right);
+                    // A pick shown as its options side by side (the Dashboard): the one clicked.
+                    let part = match s.modules[i].settings[j].value {
+                        Value::Pick { .. } if !right => drawn_segment(i, j, at),
+                        _ => None,
+                    };                    match (part, &mut s.modules[i].settings[j].value) {
+                        (Some(k), Value::Pick { i: picked, .. }) => *picked = k,
+                        _ => s.modules[i].settings[j].click(right),
+                    }
                     changed = true;
                 }
             }
         }
     });
+    if open_profiles {
+        open_profile_menu(game);
+    }
     if let Some(i) = toggled {
         toggle(game, i, false);
     } else if changed {
@@ -541,10 +577,56 @@ pub(super) fn drag_widgets(game: &mut Game<'_>) {
     }
 }
 
+// When the wheel last set an element's size in the layout editor, until that is saved.
+static WHEELED: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+// The wheel over an element's frame in the chat's layout editor (the chat's scroll hook): an element with a size of its
+// own grows a twentieth a notch up and shrinks a notch down, at the place it has (as one resized by its corner).
+// True when it took the wheel, so the chat does not scroll under it; over anything else the chat scrolls as ever.
+// Saved once the wheel has rested (chat_layout), not at every notch.
+pub(crate) fn chat_layout_wheel(game: &Game<'_>, amount: f32) -> bool {
+    if amount == 0.0 || game.screen != Screen::Chat {
+        return false;
+    }
+    let Some((name, dx, dy)) = super::sunset_hud_bars::grab(game.cursor) else {
+        return false;
+    };
+    with(|s| {
+        if s.gui.open || s.gui.drag.is_some() {
+            return false;
+        }
+        let key = format!("{name} size");
+        let Some(size) = s.modules.iter().find(|m| m.settings.iter().any(|st| st.name == key)).map(|m| super::sunset_hud_bars::size_of(m, name)) else {
+            return false;
+        };
+        let next = super::sunset_hud_bars::wheeled_size(size, amount);
+        if next != size {
+            move_hud(s, game, name, dx, dy);
+            set_size(s, name, next);
+            *WHEELED.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+        }
+        true
+    })
+}
+
+// Whether a size the wheel set is due its save: the wheel at rest for 400 ms, or `now` (the chat shut).
+fn wheel_rested(now: bool) -> bool {
+    let mut wheeled = WHEELED.lock().unwrap_or_else(|e| e.into_inner());
+    let due = wheeled.is_some_and(|at| now || at.elapsed() >= std::time::Duration::from_millis(400));
+    if due {
+        *wheeled = None;
+    }
+    due
+}
+
 // HUD's layout editor with the chat open: every element is framed, a press on one drags it until the button comes up
-// (saved then), and a right click sends it back to its place. The chat closed, a drag still going ends there.
+// (saved then), and a right click sends it back to its place. The chat closed, a drag still going ends there. The wheel
+// over a frame sets its size (chat_layout_wheel).
 pub(super) fn chat_layout(game: &mut Game<'_>, out: &mut Vec<Shape>) {
     use super::sunset_hud_bars::ChatDrag;
+    if wheel_rested(game.screen != Screen::Chat) {
+        save(game);
+    }
     let dragging = with(|s| match s.gui.drag {
         Some(Drag::Hud(name, dx, dy)) => Some((name, dx, dy)),
         _ => None,

@@ -151,6 +151,10 @@ const COMMANDS: &[Command] = &[
     Command { name: "waypoint", aliases: &["waypoints", "wp"], usage: "add|remove|list [name]", about: "save a place", args: waypoint },
     Command { name: "loadout", aliases: &["loadouts"], usage: "save|delete|export|import|list|<name>", about: "keep and put on your hotbar, offhand and armour", args: loadout },
     Command { name: "goto", aliases: &[], usage: "<x> <y> <z>|stop", about: "walk there through loaded terrain, up to 128 blocks", args: goto },
+    Command { name: "follow", aliases: &[], usage: "<player> [blocks]|stop", about: "walk after a player in sight, staying a few blocks from them", args: follow },
+    Command { name: "mine", aliases: &[], usage: "<block> [count]|stop", about: "walk to the nearest uncovered blocks of a kind and break them", args: mine },
+    Command { name: "excavate", aliases: &[], usage: "<x1> <y1> <z1> <x2> <y2> <z2>|stop", about: "dig out every block in a box, from the top down", args: excavate },
+    Command { name: "highway", aliases: &[], usage: "<width> [height] [length] [rails] [nofloor]|stop", about: "dig a straight tunnel the way you face and floor it", args: highway },
     Command { name: "baritone", aliases: &["b"], usage: "status|goto|mine|stop|off|targets|help", about: "Full Baritone and bounded visible/Ore Sim mining", args: baritone },
     Command { name: "vclip", aliases: &[], usage: "<blocks>", about: "move up or down", args: blocks },
     Command { name: "hclip", aliases: &[], usage: "<blocks>", about: "move forward", args: blocks },
@@ -520,6 +524,98 @@ fn coordinate_step(src: &dyn Source, coords: &[&str]) -> Step {
     }
     let usage = ["<x>", "<y>", "<z>"][coords.len()..].join(" ");
     Step::Free { list: coordinates(src, coords.len()), usage, back: 0 }
+}
+
+fn follow(src: &dyn Source, before: &[&str], _: &str) -> Step {
+    match before {
+        [] => {
+            let mut list: Vec<Suggestion> = src.players().into_iter().map(|p| Suggestion::new(p, "online")).collect();
+            list.push(Suggestion::new("stop", "stop following"));
+            Step::Free { list, usage: "<player> [blocks]|stop".into(), back: 0 }
+        }
+        [word] if word.eq_ignore_ascii_case("stop") => Step::Done,
+        [_] => Step::Free { list: vec![Suggestion::new("3", "blocks to stay away (1 to 16)")], usage: "[blocks]".into(), back: 0 },
+        [_, blocks] if blocks.parse::<f64>().is_ok_and(|b| (1.0..=16.0).contains(&b)) => Step::Done,
+        [_, blocks] => Step::Bad(format!("{blocks} is not a distance from 1 to 16 blocks")),
+        _ => Step::Bad("Use .follow <player> [blocks] or .follow stop".into()),
+    }
+}
+
+fn mine(_: &dyn Source, before: &[&str], _: &str) -> Step {
+    const KINDS: &[(&str, &str)] = &[
+        ("coal", "coal ore"), ("copper", "copper ore"), ("iron", "iron ore"), ("lapis", "lapis ore"), ("redstone", "redstone ore"),
+        ("gold", "gold ore"), ("diamond", "diamond ore"), ("emerald", "emerald ore"), ("quartz", "nether quartz ore"),
+        ("debris", "ancient debris"), ("log", "any log"), ("stop", "stop mining"),
+    ];
+    match before {
+        [] => Step::Free { list: words(KINDS), usage: "<block> [count]|stop".into(), back: 0 },
+        [word] if word.eq_ignore_ascii_case("stop") => Step::Done,
+        [_] => Step::Free { list: Vec::new(), usage: "[count]".into(), back: 0 },
+        [_, count] if count.parse::<u32>().is_ok_and(|n| (1..=1024).contains(&n)) => Step::Done,
+        [_, count] => Step::Bad(format!("{count} is not a number of blocks from 1 to 1024")),
+        _ => Step::Bad("Use .mine <block> [count] or .mine stop".into()),
+    }
+}
+
+// .highway's words: up to three numbers in their order (width, height, length), rails and nofloor anywhere after
+// the width. The same reading as highway.rs's parse.
+fn highway(_: &dyn Source, before: &[&str], _: &str) -> Step {
+    let usage = "Use .highway <width> [height] [length] [rails] [nofloor] or .highway stop";
+    if before.is_empty() {
+        let list = words(&[("4", "blocks wide (1 to 5)"), ("stop", "stop building")]);
+        return Step::Free { list, usage: "<width> [height] [length] [rails] [nofloor]|stop".into(), back: 0 };
+    }
+    if before.len() == 1 && before[0].eq_ignore_ascii_case("stop") {
+        return Step::Done;
+    }
+    let (mut sizes, mut rails, mut nofloor) = (0, false, false);
+    for word in before {
+        match word.to_ascii_lowercase().as_str() {
+            "rails" if sizes > 0 => rails = true,
+            "nofloor" if sizes > 0 => nofloor = true,
+            number => {
+                let (Ok(n), Some((what, lo, hi))) = (number.parse::<u32>(), [("width", 1, 5), ("height", 2, 5), ("length", 1, 10_000)].get(sizes).copied()) else {
+                    return Step::Bad(usage.into());
+                };
+                if !(lo..=hi).contains(&n) {
+                    return Step::Bad(format!("{n} is not a {what} from {lo} to {hi}"));
+                }
+                sizes += 1;
+            }
+        }
+    }
+    let mut list = Vec::new();
+    match sizes {
+        1 => list.push(Suggestion::new("3", "blocks high (2 to 5)")),
+        2 => list.push(Suggestion::new("100", "blocks long (without it: until stopped)")),
+        _ => {}
+    }
+    if !rails {
+        list.push(Suggestion::new("rails", "a block along each edge"));
+    }
+    if !nofloor {
+        list.push(Suggestion::new("nofloor", "leave holes in the floor as they are"));
+    }
+    if list.is_empty() { Step::Done } else { Step::Free { list, usage: "[height] [length] [rails] [nofloor]".into(), back: 0 } }
+}
+
+// .excavate's two corners, each offered as where you stand (the second one too: a box from there to here).
+fn excavate(src: &dyn Source, before: &[&str], _: &str) -> Step {
+    if before.first().is_some_and(|w| w.eq_ignore_ascii_case("stop")) {
+        return if before.len() == 1 { Step::Done } else { Step::Bad("Use .excavate <x1> <y1> <z1> <x2> <y2> <z2> or .excavate stop".into()) };
+    }
+    if let Some(bad) = before.iter().find(|c| c.parse::<i32>().is_err()) {
+        return Step::Bad(format!("{bad} is not a whole block coordinate"));
+    }
+    if before.len() >= 6 {
+        return Step::Done;
+    }
+    let mut list = coordinates(src, before.len() % 3);
+    if before.is_empty() {
+        list.push(Suggestion::new("stop", "stop excavating"));
+    }
+    let usage = ["<x1>", "<y1>", "<z1>", "<x2>", "<y2>", "<z2>"][before.len()..].join(" ");
+    Step::Free { list, usage: if before.is_empty() { format!("{usage}|stop") } else { usage }, back: 0 }
 }
 
 fn goto(src: &dyn Source, before: &[&str], _: &str) -> Step {
@@ -946,6 +1042,13 @@ mod tests {
         assert_eq!(texts(&at_end(".goto ")), ["10 64 -3", "10 64", "10", "stop"]);
         assert_eq!(texts(&at_end(".goto 10 ")), ["64 -3", "64"]);
         assert_eq!(at_end(".goto 10 x ").error.as_deref(), Some("x is not a whole block coordinate"));
+        assert_eq!(texts(&at_end(".follow ")), ["Alex", "Steve", "stop"]);
+        assert_eq!(texts(&at_end(".follow Steve ")), ["3"]);
+        assert_eq!(at_end(".follow Steve 40 ").error.as_deref(), Some("40 is not a distance from 1 to 16 blocks"));
+        assert!(at_end(".follow Steve 2 ").error.is_none());
+        assert_eq!(texts(&at_end(".mine d")), ["diamond", "debris"]);
+        assert_eq!(at_end(".mine diamond 0 ").error.as_deref(), Some("0 is not a number of blocks from 1 to 1024"));
+        assert!(at_end(".mine oak_log 3 ").error.is_none());
         assert_eq!(at_end(".vclip ").usage.as_deref(), Some("<blocks>"));
     }
 
@@ -959,7 +1062,7 @@ mod tests {
     // Every name runtime_commands.rs `run` matches has its grammar here.
     #[test]
     fn every_command_run_reads() {
-        let run = "relog seed auradebug elytratarget antibotdebug scan vanish staffcheck goto baritone b help commands \
+        let run = "relog seed auradebug elytratarget antibotdebug scan vanish staffcheck goto follow mine baritone b help commands \
                    menu gui pages toggle t modules list settings get set movementpreset bind binds panic debug profile \
                    profiles config cfg preset presets reset friend friends f loadout loadouts waypoint waypoints wp \
                    vclip hclip plugins";

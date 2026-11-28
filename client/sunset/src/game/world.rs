@@ -160,7 +160,9 @@ pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
         spawner_alerts(game, m);
     }
     super::sunset_base_finder::tick(game, get("Base Finder"));
-    if playing {
+    // Villager Roller also with a trades screen up: it opens the trades itself and has to close them (a screen it did
+    // not open, it waits on).
+    if playing || game.station.is_some() {
         super::sunset_villager_roller::tick(game, get(super::sunset_villager_roller::NAME));
     }
     super::sunset_sign_historian::tick(game, get(super::sunset_sign_historian::NAME));

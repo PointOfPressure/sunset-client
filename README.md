@@ -12,7 +12,7 @@ Sunset adds over 160 modules to Horizon: combat, movement, building, ESP and wor
 a click menu or chat commands, can be bound to a key, and can be saved as a profile. It is written in Rust and
 compiled into the game.
 
-**Current version:** Sunset 2.0.0, for Horizon Nightly 2026-11-18 (`0b14f8a`).
+**Current version:** Sunset 2.1.0, for Horizon main of 23 Nov 2026 (`2e7d2c6`, with Sunset's hook patches: fork `9defaa0`).
 
 ![Sunset's click menu with the Combat, Movement, Player, Render, World and Client panels](docs/images/gui-overview.png)
 
@@ -113,7 +113,11 @@ changed in Options > Mods > Sunset. Changes are saved as you make them.
 - **Dropdown**: one panel per category, as in the picture above. Settings open inside the panel, or in their own
   window with *Settings: Window*.
 - **Dashboard**: one window with the categories on the left, the module list in the middle and the chosen module's
-  settings on the right.
+  settings on the right. A click on a module shows its settings; the switch at the end of its row turns it on or off.
+  *Enabled*, over the categories, lists every module that is on. The arrow keys move through the modules and the
+  categories (<kbd>Page Up</kbd>, <kbd>Page Down</kbd>, <kbd>Home</kbd> and <kbd>End</kbd> too), <kbd>Space</kbd> and
+  <kbd>Enter</kbd> switch the module shown, and a click on a section's title folds that section (*Fold all* shuts
+  them all). *Dashboard (Legacy)* keeps the older layout and the Dropdown's clicks.
 - **Sidebar**: one window with tabs down its left (Rage, Legit, ESP, Visuals...), each tab's modules split into groups,
   and each module a card showing its main settings while it is on, with a link to a page of all of them.
 
@@ -152,6 +156,10 @@ and setting names, the start of the name is enough.
 | `.preset [name]` | show the presets and what one changes; add `apply` to apply it |
 | `.seed` | the world seed Ore Sim uses: `.seed <seed>` sets it, `.seed auto` finds it (see Ore Sim) |
 | `.goto <x> <y> <z>` | walk somewhere up to 128 blocks away; `.goto stop` or a movement key stops it |
+| `.mine <block> [count]` | walk to the nearest uncovered blocks of a kind within 32 blocks (`diamond`, `iron`, `log`, or a block id) and break them with what you hold, picking up what falls; it never tunnels. `.mine stop` or a movement key stops it, an open screen holds it |
+| `.highway <width> [height] [length]` | dig a straight tunnel the way you face (north, east, south or west; 1 to 5 wide, 2 to 5 high, 3 if not said; as long as `length`, or until stopped): each block ahead is broken with what you hold, holes in the floor are filled with whole blocks from your hotbar (obsidian first), and you walk on. `rails` adds a block along each edge, `nofloor` leaves the floor as it is. Lava or water in the way ends it. `.highway stop` or a movement key stops it, an open screen holds it |
+| `.excavate <x1> <y1> <z1> <x2> <y2> <z2>` | dig out every block in a box up to 64 a side (two corners, whole block coordinates) with what you hold: of the blocks in reach the highest goes first, so it works from the top down and you come down into the pit; otherwise it walks up to the nearest open one. A block over a drop of more than 3, under sand or gravel outside the box, or beside lava or water is left, and what is left is counted at the end. `.excavate stop` or a movement key stops it, an open screen holds it |
+| `.follow <player> [blocks]` | walk after a player in sight and stay 3 blocks (or `blocks`, 1 to 16) from them; `.follow stop` or a movement key stops it, an open screen holds it |
 | `.vclip <n>`, `.hclip <n>` | move n blocks up (negative: down) or forward |
 | `.plugins` | list loaded plugins with their modules and commands |
 | `.relog [seconds]` | leave and rejoin this server (default 1 second) |
@@ -240,7 +248,7 @@ Modules marked *experimental* below are new strategies that haven't been proven 
   **Anti Void** (with a Blink mode), **Click TP**. (Blink is now Fake Lag's Hold mode, under Combat.)
 - **Elytra Fly** (Control: fly freely; Boost: speeds up your glide, optionally only while a firework boosts you;
   Bounce, Glide cycle and Pitch 40 for long trips; Elytra Boost's settings carry over), **Chest Swap** (swap chestplate and elytra; Take off launches you with a rocket).
-- **Wind Jump**, **Pearl Catch**, **Trident Boost**, **Entity Control** (drive and fly boats), **Jesus**, **Slippy**.
+- **Wind Jump**, **Pearl Catch**, **Trident Boost**, **Entity Control** (drive and fly boats and saddled mounts), **Jesus**, **Slippy**.
 
 </details>
 
@@ -552,7 +560,7 @@ Speed's Grim collide mode follows the behaviour of Andromeda's Collide Boost and
 Finder's Reasons that of the base hints in Zorin, Radium, Sky, Odin, BepHax (Rotation Detector, Cave Air ESP) and
 Combatant; Villager Roller that of Lemon's Villager Roller (GPL-3.0); Sign Historian that of Path-Seeker's Sign Historian
 (a Meteor addon, GPL-3.0); Use Tracker that of Nuclear's Use Tracker, Arc's Pearl and Potion Prediction and Sky's Pearl
-Trajectory. All written fresh for Sunset with no code taken.
+Trajectory; `.highway` and `.excavate` those of Meteor's Highway Builder and Excavator (GPL-3.0). All written fresh for Sunset with no code taken.
 
 Ore Sim's automatic seed discovery uses [horizon-seedcrackerx](https://github.com/luhnox/horizon-seedcrackerx) by
 [luhnox](https://github.com/luhnox), a Rust port of [SeedCrackerX](https://github.com/19MisterX98/SeedcrackerX),
