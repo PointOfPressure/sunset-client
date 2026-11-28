@@ -1,0 +1,45 @@
+From 7f7068b4cd0e3b7902c741e742522c38d333643f Mon Sep 17 00:00:00 2001
+From: pointofpressure <pointofpressure@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 18:48:41 +0000
+Subject: [PATCH 06/11] tools: build the SDK of a patched branch as the build
+ it patches
+
+HORIZON_SDK_BUILD_ID names the build id the prebuilt game, its build data and its index are
+made for, while staging still copies HEAD's own tracked source. A branch of hook patches on
+top of a Nightly's commit then builds an SDK the stock launcher uses for that Nightly (with
+its index kept locally and HORIZON_SDK_BASE pointing at the assets).
+
+(cherry picked from commit 4ed1e43faf277511e90a4fdd2cdca58b45ab6f45)
+---
+ tools/prebuilt_game.py | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/tools/prebuilt_game.py b/tools/prebuilt_game.py
+index 310ec3bed2..ff0ef8c20a 100644
+--- a/tools/prebuilt_game.py
++++ b/tools/prebuilt_game.py
+@@ -153,6 +153,12 @@ def tracked_blobs(root: Path, commit: str, paths: tuple[str, ...] = ()):
+ 
+ 
+ def head() -> str:
++    """The build id: HEAD, or HORIZON_SDK_BUILD_ID for a branch built as the commit it patches (its source is still
++    HEAD's, [`source_head`])."""
++    return os.environ.get("HORIZON_SDK_BUILD_ID") or source_head()
++
++
++def source_head() -> str:
+     return run(["git", "rev-parse", "HEAD"], cwd=ROOT).strip()
+ 
+ 
+@@ -204,7 +210,7 @@ def stage(target_dir: Path, stage_tool: Path | None = None, prepare=None) -> Pat
+     if staged.exists():
+         shutil.rmtree(staged)
+     commit = head()
+-    for name, data in tracked_blobs(ROOT, commit):
++    for name, data in tracked_blobs(ROOT, source_head()):
+         (staged / name).parent.mkdir(parents=True, exist_ok=True)
+         (staged / name).write_bytes(data)
+     arguments = [str(staged), str(staged / POINTS), str(staged / INTERNALS), commit]
+-- 
+2.55.0.windows.3
+

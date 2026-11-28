@@ -1,0 +1,27 @@
+From 9defaa04337e68d6f368842491834af7bc5727f9 Mon Sep 17 00:00:00 2001
+From: vstxx <106024432+vstxx@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 15:37:14 +0100
+Subject: [PATCH] gfx: stop_display_reader is public
+
+Renderer::release_surface calls it, and a mod that replaces release_surface compiles its copy in another
+crate, where only public items of the render crate are reachable (its layout is not widened).
+---
+ crates/horizon-client-render/src/gfx/output_apply.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/crates/horizon-client-render/src/gfx/output_apply.rs b/crates/horizon-client-render/src/gfx/output_apply.rs
+index aea14dee41..ef247b3f43 100644
+--- a/crates/horizon-client-render/src/gfx/output_apply.rs
++++ b/crates/horizon-client-render/src/gfx/output_apply.rs
+@@ -642,7 +642,7 @@ impl Renderer {
+ 
+     /// Ends the display reader's thread, which holds the surface: before the surface is
+     /// handed over or made again.
+-    pub(super) fn stop_display_reader(&mut self) {
++    pub fn stop_display_reader(&mut self) {
+         if let Some(watch) = &mut self.display {
+             watch.reader = None;
+         }
+-- 
+2.55.0.windows.3
+

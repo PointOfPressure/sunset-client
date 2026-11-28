@@ -1,0 +1,17 @@
+f3ebff4b30c850b6a35b34473060d26718532989 worldgen: decoration_replay, a chunk's placed features replayed against a caller's view
+b69182e7182bc8a9b885e441fb52a8f354462e36 net: brand() is replaceable
+7147f2238adaffe962fa285a0b1e6243bf659722 particles: ParticleEngine::push is replaceable
+ad313975f41f1596968861dde5119de0fdaccce9 connection: observe_sent, process-wide observers of sent packet bodies
+94520b36d0ee49011f46175a9c664402048be6ce motion: the local player's own move (MotionWorld::move_self) is replaceable
+7f7068b4cd0e3b7902c741e742522c38d333643f tools: build the SDK of a patched branch as the build it patches
+c3f8f5801c30908126eb0e24e27c57b26b711fa8 text: filter_display, a client filter of the text it shows
+d8adec9c37c3a1565e488b1913f603b51f8408d2 gfx: before_render, functions a client mod runs at the start of each frame
+3272c999107bbd578997d5e1ec910c25fd96faa9 sprites: filter_sprites, a client rewrite of a sprite's pixels as the atlas takes it
+c52c83a1a0dd06575633e2a68ff178811fd52daf mesher: show_hidden_at, places kept drawn although their state is hidden
+1d742e59af9062aeb62bfcba1635720e023c5465 net: capture the initial client brand for each session
+f93f4c31ef212a41964e3acadadbc156a18a9631 remote: absolute macro paths in remote_send_state_body
+9defaa04337e68d6f368842491834af7bc5727f9 gfx: stop_display_reader is public
+0b4380edca182f29754740da62776cfdebd61c4d Sunset 2.1.0: the .hmod package
+984ebf11adf7df302707a3d3dae861d68c02a946 Function-replacement crates of 2e7d2c6, as generated
+911b455c05f0f7c25976125ac1c3fa1472c6c57c Sunset's mixins woven in (horizon-mixins e59da90)
+6e0926cff770b15fa7ec16263134849b88199160 Sunset: how this branch is built and licensed

@@ -77,7 +77,19 @@ ok "both Sunset libraries inside" "for l in $LIBS; do [ -f $T/x/$VD/\$l ] || exi
 ok "native-mods.json lists sunset" "grep -q '\"id\":\"sunset\"' $T/x/$VD/native-mods.json"
 LICS="HORIZON-NOTICE.txt LICENSE-LGPL-3.0.txt LICENSE-GPL-3.0.txt HORIZON-MIT.txt PREBUILT-TERMS.md SUNSET-LICENSE.txt THIRD-PARTY-LICENSES.txt"
 ok "licences/ in the game folder" "for f in $LICS; do [ -s $T/x/$VD/licences/\$f ] || exit 1; done"
-ok "Horizon notice names the fork commit" "grep -Eq 'PointOfPressure/horizon/tree/[0-9a-f]{40}' $T/x/$VD/licences/HORIZON-NOTICE.txt"
+source_notice() {
+	python3 - "$O/manifest.json" "$1" <<'PY'
+import json, pathlib, re, sys
+
+source = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))["source"]
+commit = source["horizon_fork_commit"]
+repo, branch = source["horizon_fork"].split("/tree/", 1)
+notice = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+assert re.fullmatch(r"[0-9a-f]{40}", commit)
+assert f"{repo}/tree/{commit} (branch {branch})" in notice
+PY
+}
+ok "Horizon notice matches the manifest source repository, branch and commit" "source_notice $T/x/$VD/licences/HORIZON-NOTICE.txt"
 ok "licences, Horizon source and bundle beside the release" "cd $O && ls LICENSE-LGPL-3.0.txt LICENSE-GPL-3.0.txt PREBUILT-TERMS.md *-HORIZON-NOTICE.txt *-THIRD-PARTY-LICENSES.txt sunset-launcher-THIRD-PARTY-LICENSES.txt *-horizon-source.tar.zst *-horizon-series.bundle"
 ok "owner root, no setuid" "[ -z \"\$(tar --zstd -tvf $O/$N | grep -v ' 0/0 ' )\" ] && [ -z \"\$(find $T/x -perm /6000)\" ]"
 echo "$pass passed, $fail failed"; rm -rf "$T"; [ $fail = 0 ]

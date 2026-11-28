@@ -23,6 +23,8 @@
 #   FORK       a horizon-rust/horizon checkout (required): writes local branch sunset/<pin> (the LGPL corresponding
 #              source, never pushed), exports its readable patches into client/horizon-patches/<pin>/, and gives the
 #              release Horizon's source (tarball + git bundle) and the third-party licences of its dependency tree
+#   HORIZON_SOURCE_REPO, HORIZON_SOURCE_BRANCH  where that source is hosted, for the manifest and Horizon notice
+#              (default PointOfPressure/horizon and sunset/<pin>)
 #   RELINK=0   skips the relink kit (client/horizon-patches/README.md, "LGPL")
 #   BASE, NIGHTLY  a Horizon game folder of the pin (`cargo run -p xtask -- package`, what a Nightly's archive holds)
 #              installed as Nightly NIGHTLY (nightly-<date>-<pin>) when the launcher can no longer download that
@@ -147,6 +149,12 @@ if [ -n "${DEVELOPER:-}" ]; then
 	FORK=${FORK:-$DEVELOPER}
 fi
 SHORT=${SERIES_BASE:0:7}
+HORIZON_SOURCE_REPO=${HORIZON_SOURCE_REPO:-PointOfPressure/horizon}
+HORIZON_SOURCE_BRANCH=${HORIZON_SOURCE_BRANCH:-sunset/$SHORT}
+[[ $HORIZON_SOURCE_REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "HORIZON_SOURCE_REPO must be a GitHub owner/repo"
+[[ $HORIZON_SOURCE_BRANCH =~ ^[A-Za-z0-9_./-]+$ ]] && git check-ref-format "refs/heads/$HORIZON_SOURCE_BRANCH" ||
+	die "HORIZON_SOURCE_BRANCH must be a URL-safe Git branch name"
+SOURCE_TREE=https://github.com/$HORIZON_SOURCE_REPO/tree
 SRC_COMMIT=$(git -C "$REPO" rev-parse HEAD)
 DIRTY=false; [ -z "$(git -C "$REPO" status --porcelain -- client/sunset)" ] || DIRTY=true
 say "Sunset $VERSION on Horizon $SHORT (mixins ${MIXINS:0:7}, game $GAME), sunset-client ${SRC_COMMIT:0:7}$($DIRTY && echo ' + local changes')"
@@ -351,7 +359,8 @@ LIC=$WORK/licences; rm -rf "$LIC"; mkdir -p "$LIC"
 # ---- licences: in the game folder (licences/), in the relink kit and beside the release
 TAG_TEXT=$TAG; [ -z "${DEVELOPER:-}" ] || TAG_TEXT="with Sunset's hook patches up to fork commit ${REV:0:10}"
 sed -e "s/@VERSION@/$VERSION/g; s/@PLATFORM@/$PLATFORM/g; s/@REV@/$SERIES_BASE/g; s/@TAG@/$TAG_TEXT/g; s/@SRC@/$SRC_COMMIT/g" \
-	-e "s/@FORK@/$FORK_HEAD/g; s/@SHORT@/$SHORT/g; s/@NAME@/$NAME/g" "$REPO/client/release/HORIZON-NOTICE.txt" | dllnames > "$LIC/HORIZON-NOTICE.txt"
+	-e "s|@SOURCE_TREE@|$SOURCE_TREE|g; s|@SOURCE_BRANCH@|$HORIZON_SOURCE_BRANCH|g; s/@FORK@/$FORK_HEAD/g; s/@NAME@/$NAME/g" \
+	"$REPO/client/release/HORIZON-NOTICE.txt" | dllnames > "$LIC/HORIZON-NOTICE.txt"
 dllnames < "$REPO/client/release/PREBUILT-TERMS.md" > "$LIC/PREBUILT-TERMS.md"
 cp "$REPO/client/release/LICENSE-LGPL-3.0.txt" "$REPO/client/release/LICENSE-GPL-3.0.txt" "$LIC/"
 cp "$REPO/LICENSE" "$LIC/SUNSET-LICENSE.txt"
@@ -485,7 +494,7 @@ m = {
               "built": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
     "cli": {"version": "$LAUNCHER_VERSION", "file": "$CLI_FILE", "url": "$CLI_URL", "sha256": "$CLI_SHA"},
     "source": {"sunset_client": "$SRC_COMMIT", "local_changes": "$DIRTY" == "true",
-               "horizon_fork": "https://github.com/PointOfPressure/horizon/tree/sunset/$SHORT",
+               "horizon_fork": "$SOURCE_TREE/$HORIZON_SOURCE_BRANCH",
                "horizon_fork_commit": "$FORK_HEAD" or None},
     "artifacts": arts,
 }

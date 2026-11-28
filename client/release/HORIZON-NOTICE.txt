@@ -16,7 +16,7 @@ Horizon's functions (libhorizon_patch.so). These modifications are LGPL-3.0-or-l
 https://github.com/PointOfPressure/sunset-client/tree/@SRC@/client/horizon-patches
 
 Corresponding source of this exact build:
-  https://github.com/PointOfPressure/horizon/tree/@FORK@ (branch sunset/@SHORT@)
+  @SOURCE_TREE@/@FORK@ (branch @SOURCE_BRANCH@)
   also beside this release: @NAME@-horizon-source.tar.zst (that whole tree) and
   @NAME@-horizon-series.bundle (git bundle of the commits on top of @REV@)
   How to rebuild it: sunset/README.md in that tree.

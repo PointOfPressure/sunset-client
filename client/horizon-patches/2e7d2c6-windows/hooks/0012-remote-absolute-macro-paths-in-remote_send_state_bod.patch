@@ -1,0 +1,46 @@
+From f93f4c31ef212a41964e3acadadbc156a18a9631 Mon Sep 17 00:00:00 2001
+From: vstxx <106024432+vstxx@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 14:37:55 +0100
+Subject: [PATCH] remote: absolute macro paths in remote_send_state_body
+
+The mixins tool refuses a function that names a macro a glob import (use super::*) could shadow,
+so a hook on the position sender's call in it needs ::core::matches! and ::std::vec!.
+---
+ .../horizon-client/src/game/network/remote/player_state.rs | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/crates/horizon-client/src/game/network/remote/player_state.rs b/crates/horizon-client/src/game/network/remote/player_state.rs
+index 82ec46fdcc..b8100388a3 100644
+--- a/crates/horizon-client/src/game/network/remote/player_state.rs
++++ b/crates/horizon-client/src/game/network/remote/player_state.rs
+@@ -102,7 +102,7 @@ impl Game<'_> {
+         let (paddles, vehicle): (Vec<S>, Vec<S>) = self
+             .remote_vehicle_packets()
+             .into_iter()
+-            .partition(|p| matches!(p, S::PaddleBoat(_)));
++            .partition(|p| ::core::matches!(p, S::PaddleBoat(_)));
+         let Some(r) = self.remote.as_mut() else {
+             return;
+         };
+@@ -172,7 +172,8 @@ impl Game<'_> {
+             } else {
+                 0
+             };
+-            let crouching = p.local_crouching || matches!(p.pose, crate::pose::Pose::Crouching);
++            let crouching =
++                p.local_crouching || ::core::matches!(p.pose, crate::pose::Pose::Crouching);
+             let mut shared: u8 = 0;
+             if crouching {
+                 shared |= 0x02;
+@@ -197,7 +198,7 @@ impl Game<'_> {
+                 let pkt = horizon_protocol::packets::play::Clientbound::SetEntityData(
+                     horizon_protocol::packets::play::SetEntityData {
+                         id: r.entity_id,
+-                        values: vec![
++                        values: ::std::vec![
+                             (0, serializer::BYTE, Value::Byte(shared as i8)),
+                             (6, serializer::POSE, Value::Id(p.pose.id())),
+                             (8, serializer::BYTE, Value::Byte(living_flags as i8)),
+-- 
+2.55.0.windows.3
+
