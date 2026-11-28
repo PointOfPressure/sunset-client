@@ -1,0 +1,3 @@
+[workspace]
+members = ["horizon_patched", "horizon_patched_client_input", "horizon_patched_client_lib", "horizon_patched_client_render"]
+resolver = "2"
