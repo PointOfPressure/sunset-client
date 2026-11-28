@@ -1,0 +1,21 @@
+Baritone in the Sunset prebuilt client
+
+Sunset's Baritone module drives horizon-baritone, which ships as two parts of its own beside Sunset:
+
+- sunset_baritone (horizon-native-mods/sunset_baritone, built into libhorizon_patch.so and
+  libsunset_baritone_loader.so): horizon-baritone 1.1.52 by luhnox (https://github.com/luhnox/horizon-baritone,
+  commit 41e1b720dc2028d06618cb8f7cf55f2697bba83c), a Rust port of Baritone 1.21.4 by leijurv and contributors,
+  with Sunset's MIT companion code (registration, loader and the interface of the engine library).
+- libsunset_baritone_engine.so, beside the game: horizon-baritone's pure modules (A*, movement costs, goals, caches,
+  schematics) as a separately replaceable library.
+
+horizon-baritone describes its licence as LGPL-3.0 with an anime exception: its LICENSE, COPYING, NOTICE.md and
+LICENSE-Part-2.jpg are in licences/baritone/ exactly as upstream ships them. The companion's code is MIT
+(licences/baritone/COMPANION-MIT.txt); the engine's Rust dependencies and their licence texts are in
+licences/baritone/ENGINE-THIRD-PARTY-LICENSES.txt and licences/baritone/dependency-licenses/.
+
+Replacing the engine: put a compatible build of client/baritone-engine as libsunset_baritone_engine.so in
+<instance>/horizon-mods/.horizon-mod-data/sunset_baritone/engine-override/ (it is used before the one beside the
+game), or replace the file beside the game. No other file changes. The corresponding source of both parts, with the
+script that builds them, is the release's sunset-<version>-<commit>-<platform>-baritone-source.tar.zst, beside the game
+package.

@@ -4,7 +4,7 @@ The vendored horizon-baritone code and its oracle fixtures retain the four
 upstream licence/notice artefacts in this directory. See `UPSTREAM.md`.
 
 The independently authored C declarations and transport in
-`mixins/baritone/{interface,loader}` are MIT, under `mixins/baritone/LICENSE`.
+`mixins/baritone/src/` (outside `src/upstream/`) are MIT, under `mixins/baritone/LICENSE`.
 Only that transport is linked into the game. The engine's manifest does not
 depend on Horizon or a game library.
 

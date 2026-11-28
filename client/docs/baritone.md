@@ -12,13 +12,14 @@ the smaller Ore Sim control panel.
 
 ## Install
 
-Sunset's package (`sunset-<version>.hnmod`) contains the full runtime and the Ore Sim engine for Linux and Windows
-(x86_64). Install it the normal way and rebuild Native mods; nothing else is needed. Do not also enable the
-standalone `baritone` mod: it would add the same modules and hooks twice. The runtime keeps its data under the
-native-data namespace `sunset_baritone`.
+The Sunset launcher's prebuilt (Linux and Windows, x86_64) has it all: the companion mod `sunset_baritone`
+(horizon-baritone's runtime, built in beside `sunset`; [client/mixins/baritone](../mixins/baritone/PORTING.md)) and the
+engine library beside the game. Nothing else is needed. Do not also install the standalone `baritone` mod: it would
+add the same modules and hooks twice. The runtime keeps its data under the mod data namespace `sunset_baritone`.
 
-Keep `baritone-engine-<engine-version>-source.zip` with the package when distributing it: it holds the engine,
-the full runtime source, the loader and ABI, Cargo lockfiles, `tools/pack.py` and the notices.
+Keep the release's `…-baritone-source.tar.zst` with the game when distributing it: it holds the engine, the
+companion with horizon-baritone's source, the loader and ABI, Cargo lockfiles, `scripts/build-prebuilt.sh` and the
+notices.
 
 ## Sunset mining commands
 
@@ -86,21 +87,18 @@ F1/hidden GUI and the Sunset menu hide the drawings. Drawing preferences do not 
 
 ## Build and replace the engine
 
-`python3 tools/pack.py` (Python 3.11+) builds the engine from `baritone-engine/` (which compiles the game-free modules of
-`mixins/baritone/upstream/src`, the one copy of horizon-baritone's source) for both targets before packing,
-so no prebuilt library is kept in the repository. It needs cargo with the `x86_64-unknown-linux-gnu` and
-`x86_64-pc-windows-gnu` targets (`rustup target add x86_64-pc-windows-gnu`) and the mingw-w64 linker
-(`x86_64-w64-mingw32-gcc`, Debian/Ubuntu package `gcc-mingw-w64-x86-64`). The Windows engine is a plain C ABI DLL,
-so the MSVC-built game loads it like any other. `--without-baritone` packs a development subset without Baritone.
+`scripts/build-prebuilt.sh` builds the engine from `baritone-engine/` (which compiles the game-free modules of
+`mixins/baritone/src/upstream/src`, the one copy of horizon-baritone's source) with the launcher's Rust for the
+platform it runs on and puts it beside the game, so no prebuilt library is kept in the repository. The engine is a
+plain C ABI library, so a Windows engine cross-built with `x86_64-pc-windows-gnu` loads in the MSVC-built game too.
 
 To build the engine yourself: `cargo build --release --locked --target <target>` in `baritone-engine/`. To run a
 modified compatible engine, close the game and put the library at
 `<instance>/horizon-mods/.horizon-mod-data/sunset_baritone/engine-override/` as `libsunset_baritone_engine.so`
-(Linux) or `sunset_baritone_engine.dll` (Windows). It takes precedence over the bundled one and needs no game
-rebuild, signature or hash; an invalid override disables the engine with one message until it is fixed or
-removed. The architecture, ABI size/version and capabilities must match
-[the interface](../mixins/baritone/interface/protocol-v1.md). Without an override the bundled library is extracted
-once to `engine/<engine-version>/<hash>/` in the same folder; existing files there are never overwritten.
+(Linux) or `sunset_baritone_engine.dll` (Windows), or replace the file beside the game. The override takes precedence
+over the shipped one and needs no game rebuild, signature or hash; an invalid one disables the engine with one message
+until it is fixed or removed. The architecture, ABI size/version and capabilities must match
+[the interface](../mixins/baritone/src/interface/protocol-v1.md).
 
 ## Limits and validation
 
@@ -129,13 +127,13 @@ The runtime and the engine are [horizon-baritone](https://github.com/luhnox/hori
 leijurv and contributors, brought into Sunset by Rust ([zackmsa777-a11y](https://github.com/zackmsa777-a11y)).
 Both are LGPL-3.0, like Baritone: [LICENSE](../baritone-engine/LICENSE), [COPYING](../baritone-engine/COPYING),
 [NOTICE](../baritone-engine/NOTICE.md) and [LICENSE-Part-2.jpg](../baritone-engine/LICENSE-Part-2.jpg), unchanged, with
-the same files in [mixins/baritone/upstream](../mixins/baritone/upstream/README.md), whose README lists the files
-changed for Sunset; the engine's changes are in [CHANGES.md](../baritone-engine/CHANGES.md). The package carries
-these notices under `mixins/sunset/data/notices/baritone/` (dependency licences joined in one file to stay under
-Horizon's 512-entry limit; the source archive keeps them separate). The loader and ABI are independently written and
-[MIT](../mixins/baritone/LICENSE).
+the same files in [mixins/baritone/src/upstream](../mixins/baritone/src/upstream/README.md), whose README lists the files
+changed for Sunset; the engine's changes are in [CHANGES.md](../baritone-engine/CHANGES.md). The prebuilt carries
+these notices, the engine's dependency licences and [BARITONE-NOTICE.txt](../release/BARITONE-NOTICE.txt) in
+`licences/baritone/`. The loader and ABI are independently written and [MIT](../mixins/baritone/LICENSE).
 
 How the LGPL parts combine with Sunset (LGPL-3 §4): the engine is a separate shared library loaded at run time
-through the ABI and can be replaced as above. The in-game runtime is compiled from source together with Sunset on
-your machine when Native mods are built; the package contains its complete source, so you can change it and rebuild.
+through the ABI and can be replaced as above. The in-game runtime is built into the game's patch library with Sunset;
+its complete source and the script that builds it are in the release's baritone source archive (and Horizon's relink
+kit), so you can change it and rebuild.
 Sunset's own licence does not apply to the LGPL parts.

@@ -281,8 +281,11 @@ fi
 STAGE=$WORK/stage
 rm -rf "$STAGE"; mkdir -p "$STAGE/sunset"
 copy "$MOD" "$STAGE/sunset" /.horizon /target
+# Sunset's Baritone companion (client/mixins/baritone) is its own mod beside Sunset: horizon-baritone's runtime and the
+# loader of the replaceable LGPL engine library, which is built below and shipped beside the game (client/docs/baritone.md).
+copy "$REPO/client/mixins/baritone" "$STAGE/sunset_baritone" /.horizon /target /src/upstream/tests
 # A developer base's revision is its checkout's HEAD: the package pins that (scripts/README.md, step 5).
-[ -z "${DEVELOPER:-}" ] || sed -i "s/^horizon = \"[0-9a-f]*\"/horizon = \"$REV\"/" "$STAGE/sunset/horizon-mod.toml"
+[ -z "${DEVELOPER:-}" ] || sed -i "s/^horizon = \"[0-9a-f]*\"/horizon = \"$REV\"/" "$STAGE"/*/horizon-mod.toml
 say "native-build ($BUILD_LAUNCHER)"
 start=$(date +%s)
 hl native-build "$STAGE" "${BUILD_ARGS[@]}" --trust-native-code > "$WORK/native-build.log" 2>&1 || { tail -20 "$WORK/native-build.log" >&2; die "native-build failed ($WORK/native-build.log)"; }
@@ -295,6 +298,20 @@ say "built $VDIR in $BUILD_SECS s ($WARN rustc warnings)"
 BUILD=$(ls -dt "$LDATA"/native/prebuilt-build/rustc-"${REV:0:12}"-* | head -1)
 [ -d "$BUILD/patch-applied" ] || die "no woven patch workspace in $BUILD"
 RUST=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["rust"])' "$V/native-mods.json")
+python3 -c 'import json,sys;ids=[m["id"] for m in json.load(open(sys.argv[1]))["mods"]];sys.exit("sunset_baritone" not in ids)' "$V/native-mods.json" ||
+	die "native-build left out the Baritone companion (sunset_baritone): see $LDATA/native/build.log"
+
+# ---- the Baritone engine (client/baritone-engine, LGPL-3.0): a C-ABI library the companion opens at run time, built
+# by the launcher's Rust for this platform and shipped beside the game, where a player can replace it
+ENGINE=${DLL_PREFIX}sunset_baritone_engine$DLL
+say "Baritone engine ($ENGINE)"
+rb=$(ls -d "$LDATA"/rust/*/bin | head -1)
+CARGO_TARGET_DIR="$WORK/baritone-engine" PATH="$rb:$PATH" cargo build --release --locked \
+	--manifest-path "$(native_path "$REPO/client/baritone-engine/Cargo.toml")" > "$WORK/baritone-engine.log" 2>&1 ||
+	{ tail -20 "$WORK/baritone-engine.log" >&2; die "the Baritone engine failed to build ($WORK/baritone-engine.log)"; }
+! grep -q '^warning' "$WORK/baritone-engine.log" || die "the Baritone engine built with warnings ($WORK/baritone-engine.log)"
+ENGINE_FILE=$WORK/baritone-engine/release/$ENGINE
+[ -f "$ENGINE_FILE" ] || die "no $ENGINE in $WORK/baritone-engine/release"
 
 # ---- the LGPL corresponding source as a patch series on the pin (local branch; pushing is a manual step), released
 # as a tarball of the whole tree and a git bundle of the series; and the third-party licences of that tree
@@ -355,6 +372,14 @@ sed -e "s/@VERSION@/$VERSION/g; s/@PLATFORM@/$PLATFORM/g; s/@REV@/$SERIES_BASE/g
 dllnames < "$REPO/client/release/PREBUILT-TERMS.md" > "$LIC/PREBUILT-TERMS.md"
 cp "$REPO/client/release/LICENSE-LGPL-3.0.txt" "$REPO/client/release/LICENSE-GPL-3.0.txt" "$LIC/"
 cp "$REPO/LICENSE" "$LIC/SUNSET-LICENSE.txt"
+# Baritone (client/release/BARITONE-NOTICE.txt): horizon-baritone's own notices as upstream wrote them, the companion's
+# MIT licence and the engine's dependency licences, in licences/baritone/.
+dllnames < "$REPO/client/release/BARITONE-NOTICE.txt" > "$LIC/BARITONE-NOTICE.txt"
+mkdir -p "$LIC/baritone"
+cp "$REPO"/client/mixins/baritone/notices/* "$LIC/baritone/"
+cp "$REPO/client/mixins/baritone/LICENSE" "$LIC/baritone/COMPANION-MIT.txt"
+cp "$REPO/client/baritone-engine/THIRD-PARTY-LICENSES.txt" "$LIC/baritone/ENGINE-THIRD-PARTY-LICENSES.txt"
+cp -r "$REPO/client/baritone-engine/dependency-licenses" "$LIC/baritone/"
 # The launcher embeds its own list: regenerated here so a release never ships a stale one.
 cp "$REPO/launcher/THIRD-PARTY-LICENSES.txt" "$WORK/launcher-licences.old"
 FLAGS=$WORK/launcher-licence-flags.txt "$REPO/client/release/third-party.sh" launcher
@@ -373,6 +398,7 @@ cp "$REPO/launcher/THIRD-PARTY-LICENSES.txt" "$OUT/sunset-launcher-THIRD-PARTY-L
 PKG=$WORK/pkg/$VDIR
 rm -rf "$WORK/pkg"; mkdir -p "$PKG"
 copy "$V" "$PKG" /.local /tools '/horizon-native-mods/*/src/*' /developer.json /developer-source.tar
+cp "$ENGINE_FILE" "$PKG/$ENGINE"
 # A developer base isn't on players' computers: the package names its base as TAG, which the Sunset launcher sets up
 # from the package itself (core.rs base_from_package).
 [ -z "${DEVELOPER:-}" ] || python3 - "$PKG/native-mods.json" "$TAG" <<'PY'
@@ -394,6 +420,10 @@ tar -C "$WORK/pkg" --owner=0 --group=0 --numeric-owner --mtime=@"$(git -C "$REPO
 MTIME=@"$(git -C "$REPO" log -1 --format=%ct)"
 tar -C "$STAGE" --owner=0 --group=0 --numeric-owner --mtime="$MTIME" --sort=name --exclude=sunset/.horizon --exclude=sunset/target \
 	-cf - sunset | zstd -q -19 -T0 -f -o "$OUT/$NAME-source.tar.zst"
+# Baritone's corresponding source (client/baritone-engine/UPSTREAM.md): the engine, the companion with horizon-baritone's
+# vendored tree, its interface and loader, the notice and this script, as committed.
+git -C "$REPO" archive --format=tar --prefix="sunset-baritone-$VERSION/" HEAD -- client/baritone-engine client/mixins/baritone \
+	client/docs/baritone.md client/release/BARITONE-NOTICE.txt client/scripts/build-prebuilt.sh | zstd -q -19 -T0 -f -o "$OUT/$NAME-baritone-source.tar.zst"
 SDKNAME=
 if [ -n "${HOOKS:-}${DEVELOPER:-}" ]; then
 	SDKNAME=sunset-sdk-$SHORT-${HOOKS_HEAD:0:10}-$PLATFORM
@@ -497,7 +527,7 @@ with open(os.path.join(out, "manifest.json"), "w", newline="\n") as f:
     json.dump(m, f, indent=2)
     f.write("\n")
 EOF
-KIT_FILES="$NAME-source.tar.zst${SDKNAME:+ $SDKNAME.tar.zst} $NAME-horizon-source.tar.zst $NAME-horizon-series.bundle $LICENCE_FILES"
+KIT_FILES="$NAME-source.tar.zst $NAME-baritone-source.tar.zst${SDKNAME:+ $SDKNAME.tar.zst} $NAME-horizon-source.tar.zst $NAME-horizon-series.bundle $LICENCE_FILES"
 (cd "$OUT" && sums manifest.json "$NAME".tar.zst $(ls "$NAME"-relink.tar.zst 2>/dev/null) $KIT_FILES $LAUNCHER_REL > SHA256SUMS)
 if [ "${SIGN:-1}" != 0 ]; then
 	for f in "$NAME.tar.zst" $(cd "$OUT" && ls "$NAME"-relink.tar.zst 2>/dev/null) $KIT_FILES $LAUNCHER_REL manifest.json; do

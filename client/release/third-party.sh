@@ -55,6 +55,7 @@ prebuilt)
 	render "$out" "Sunset prebuilt client (Horizon $(git -C "$tree" rev-parse --short=10 HEAD) and Sunset)" "$TMP/h.json" --own "$tree" \
 		--text "Horizon's own third-party notices (THIRD_PARTY_NOTICES.md at $(git -C "$tree" rev-parse HEAD))" "$tree/THIRD_PARTY_NOTICES.md" \
 		"${fonts[@]}" \
+		--text "Baritone: horizon-baritone (LGPL-3.0) and Sunset's companion (MIT), notices in licences/baritone/" "$REPO/client/release/BARITONE-NOTICE.txt" \
 		--html "Rust standard library $(basename "$rust" | cut -d- -f1) (${DLL_PREFIX-lib}std-*${DLL:-.so})" "$(std_notices "$rust")"
 	;;
 *) die "usage: third-party.sh launcher | baritone | prebuilt TREE RUST OUT | check" ;;

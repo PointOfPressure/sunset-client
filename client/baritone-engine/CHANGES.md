@@ -31,6 +31,10 @@
   the game builds, and replaces upstream's standalone `Cargo.toml`, `Cargo.lock`
   and `src/lib.rs` (2026-11-17).
 - Add focused protocol, state-machine, host integration and transport tests.
+- Sunset 2 (28 Nov 2026): the companion is an `.hmod` mod; the one upstream copy moved to
+  `mixins/baritone/src/upstream` and the loader's transport to `mixins/baritone/src`, so the relative source paths
+  in `src/lib.rs` follow them. The engine ships as a library file beside the game (no longer embedded in the
+  companion); see `mixins/baritone/PORTING.md`.
 
 Baritone engine credit: luhnox/horizon-baritone
 41e1b720dc2028d06618cb8f7cf55f2697bba83c, derived from cabaletta/baritone 1.21.4
