@@ -1,0 +1,12 @@
+// Flight: the next move packet carries the position when the anti kick asks for it. A move packet whose ground Sunset
+// changed: the game compares with the ground the server was told.
+fn sunset_sync(this: &mut PositionSender) {
+    if !::sunset_core::lifecycle::RUNTIME.running() { return; }
+
+    if ::sunset_core::sync::take() {
+        this.reminder = 20;
+    }
+    if let Some(told) = ::sunset_core::sync::take_ground() {
+        this.on_ground = told;
+    }
+}

@@ -1,0 +1,160 @@
+// What went on the wire last (after Sunset changed it): the look and the sprint the server has.
+use crate::game::sunset_compat::SunsetGame as _;
+use super::{Dim, Game};
+use horizon_protocol::packets::play::Serverbound as S;
+use std::sync::{Arc, Mutex};
+type Session = Arc<Mutex<Option<Arc<horizon_protocol::connection::Counters>>>>;
+static LOOK: Mutex<Option<(Session, Dim, (f32, f32))>> = Mutex::new(None);
+static SPRINT: Mutex<Option<(Session, Dim, bool)>> = Mutex::new(None);
+static INPUT: Mutex<Option<(Session, Dim, u8)>> = Mutex::new(None);
+pub(super) fn sent_look(game: &Game<'_>) -> Option<(f32, f32)> {
+    LOOK.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .filter(|(session, dim, _)| {
+            *dim == game.dim
+                && game.remote.as_ref().is_some_and(|remote| Arc::ptr_eq(session, &remote.session.counters))
+        })
+        .map(|(_, _, rotation)| *rotation)
+}
+pub(super) fn sent_sprinting(game: &Game<'_>) -> bool {
+    SPRINT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .filter(|(session, dim, _)| {
+            *dim == game.dim
+                && game.remote.as_ref().is_some_and(|remote| Arc::ptr_eq(session, &remote.session.counters))
+        })
+        .is_some_and(|(_, _, sprinting)| *sprinting)
+}
+pub(super) fn sent_input(game: &Game<'_>) -> u8 {
+    INPUT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .filter(|(session, dim, _)| {
+            *dim == game.dim
+                && game.remote.as_ref().is_some_and(|remote| Arc::ptr_eq(session, &remote.session.counters))
+        })
+        .map_or(0, |(_, _, input)| *input)
+}
+// The tick a block place, dig, item use or window click went in, until the next move packet (u64::MAX: none since).
+// Kill Aura's 1.8 BadPackets check holds a hit back after one: anticheats' post checks flag a hit sent after such a
+// packet within one tick. Sunset's own sword-block use and its release do not count (AutoBlock lets go before a hit).
+static ACTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+pub(super) fn acted_since_move(game: &Game<'_>) -> bool {
+    let at = ACTED.load(std::sync::atomic::Ordering::Relaxed);
+    // A client that stands still sends no move packet for a while: only this tick's and the last one's count.
+    at != u64::MAX && at.saturating_add(1) >= game.ticks
+}
+// A move packet has gone since the last ClientTickEnd: Grim counts a client's ticks by that packet, and an action after
+// a move packet in the same one is its Post (and PacketOrderO).
+static MOVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub(super) fn moved_this_tick() -> bool {
+    MOVED.load(std::sync::atomic::Ordering::Relaxed)
+}
+fn note_action(game: &Game<'_>, packet: &S) {
+    use std::sync::atomic::Ordering::Relaxed;
+    match packet {
+        S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_) | S::MovePlayerStatus(_) => MOVED.store(true, Relaxed),
+        S::ClientTickEnd(_) => MOVED.store(false, Relaxed),
+        _ => {}
+    }
+    match packet {
+        S::MovePlayerPos(_) | S::MovePlayerPosRot(_) | S::MovePlayerRot(_) | S::MovePlayerStatus(_) => ACTED.store(u64::MAX, Relaxed),
+        S::UseItemOn(_) | S::ContainerClick(_) => ACTED.store(game.ticks, Relaxed),
+        S::PlayerAction(a) if matches!(a.action, 0..=2) => ACTED.store(game.ticks, Relaxed),
+        S::UseItem(_) if !super::sunset_hands::owned_block_packet() => ACTED.store(game.ticks, Relaxed),
+        _ => {}
+    }
+}
+// Lifecycle bookkeeping only: keep native sendChanges retry caches accurate
+// while ordinary module observers are stopped.
+pub(super) fn observe(game: &Game<'_>, packet: &S) {
+    note_action(game, packet);
+    if let (S::PlayerInput(input), Some(remote)) = (packet, &game.remote) {
+        *INPUT.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((remote.session.counters.clone(), game.dim, input.flags));
+    }
+    if let (S::PlayerCommand(command), Some(remote)) = (packet, &game.remote)
+        && command.id == remote.entity_id
+        && matches!(command.action, 1 | 2)
+    {
+        *SPRINT.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((remote.session.counters.clone(), game.dim, command.action == 1));
+    }
+    let rotation = match packet {
+        S::MovePlayerPosRot(p) => Some((p.yaw, p.pitch)),
+        S::MovePlayerRot(p) => Some((p.yaw, p.pitch)),
+        S::AcceptTeleportation(p) => Some((p.yaw, p.pitch)),
+        _ => None,
+    };
+    if let (Some(rotation), Some(remote)) = (rotation, &game.remote) {
+        *LOOK.lock().unwrap_or_else(|e| e.into_inner()) = Some((remote.session.counters.clone(), game.dim, rotation));
+    }
+}
+
+// The one place that tells Sunset a packet is going on the wire now, whether the send hook let it through or Fake Lag
+// let it go later, so every module that tracks what the server has hears of each packet once, at the time it goes.
+pub(super) fn delivered(game: &Game<'_>, packet: &S) {
+    if !::sunset_core::lifecycle::RUNTIME.running() {
+        observe(game, packet);
+        return;
+    }
+    forwarded(game, packet);
+    super::sunset_cart::sent(game, packet);
+    super::sunset_render::sent(game, packet);
+    super::sunset_drill_logger::sent(game, packet);
+    super::sunset_survival_tools::sent(game, packet);
+    super::sunset_drain::sent(game, packet);
+    super::sunset_effects::sent(game, packet);
+    super::sunset_sign_historian::sent(packet);
+    super::sunset_lag::sent(game, packet);
+    super::sunset_backtrack::sent(game, packet);
+    super::sunset_player::sent(packet);
+}
+
+pub(super) fn forwarded(game: &Game<'_>, packet: &S) {
+    observe(game, packet);
+    if !game.sunset_window() || !game.native_on(super::sunset::ID) {
+        if game.sunset_window() {
+            super::sunset_gui_move::forwarded(game, packet);
+        }
+        return;
+    }
+    super::sunset_gui_move::forwarded(game, packet);
+    super::sunset_inventory_slots::sent(packet);
+    if let S::Attack(p) = packet {
+        attack_slow(game, p.id);
+    }
+    super::sunset_prediction::forwarded(game, packet);
+    super::sunset_melee::forwarded(game, packet);
+    super::sunset_auto_mace::forwarded(game, packet);
+    super::sunset_combat_inventory::forwarded(game, packet);
+}
+
+pub(super) fn reset_look() {
+    *LOOK.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *SPRINT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *INPUT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+// Player.attack's own side, on the attacking client: a hit on a player with a sprint and over 0.9 of the charge
+// knocks back, and the attacker's speed across is cut to 0.6 and the sprint stops. The game's remote attack (and every
+// Sunset hit) sends the packet only, but Grim counts the cut as certain then (PacketPlayerAttack: minAttackSlow) and
+// keeps no uncut move, so the next movement takes it, before it runs (motion_flags' attack slow).
+// The charge is the game's own (getAttackStrengthScale): the attack speed of the item the last tick held
+// (`attack_item`), not of one switched in for this hit. Its modifiers come with the player's tick, on the server too,
+// so a sword charged long ago swapped for a mace still hits charged, and the cut is due.
+fn attack_slow(game: &Game<'_>, id: i32) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let charge = game.hand_strength.scale(0.5, game.main_hand_attack_speed());
+    let player = super::remote::sunset_combat_remote::is_player(game, id);
+    let cut = p.sprinting && charge > 0.9 && player;
+    if cut {
+        ::sunset_core::motion::add_attack_slow(game.ticks);
+    }
+}

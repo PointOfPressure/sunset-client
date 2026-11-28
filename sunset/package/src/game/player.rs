@@ -1,0 +1,2207 @@
+// More of Sunset's player and misc modules: Auto Fish, Auto Gap, Fast Use,
+// Spam, and Anchor.
+
+use super::sunset::{Category, Module, hold, look_at};
+use super::sunset_inventory_exec::{Gate, Step};
+use super::sunset_inventory_plan as plan;
+use super::sunset_util::*;
+use super::{Game, Screen};
+use std::sync::Mutex;
+use horizon_protocol::packets::{Empty, play::{self, Serverbound as S}};
+use winit::event::MouseButton;
+use winit::keyboard::KeyCode;
+
+pub(super) fn defaults() -> Vec<Module> {
+    use Category::*;
+    vec![
+        Module::new("Auto Fish", Player, "Fishes for you.")
+            .bool("Auto switch", true)
+            .bool("Anti break", true)
+            .bool("Auto cast", true)
+            .num("Cast delay (ticks)", 14.0, 0.0, 60.0, 1.0)
+            .num("Catch delay (ticks)", 6.0, 0.0, 60.0, 1.0),
+        Module::new("Auto Gap", Player, "Eats golden apples.")
+            .bool("Allow egap", true)
+            .bool("Always", false)
+            .bool("Potions regeneration", false)
+            .bool("Potions fire resistance", true)
+            .bool("Potions absorption", false)
+            .bool("Health enabled", true)
+            .num("Health threshold", 20.0, 1.0, 40.0, 1.0)
+            .bool("Auto pot", false)
+            .pick("Pot mode", &["Auto", "While holding"])
+            .num("Pot health", 10.0, 1.0, 20.0, 0.5)
+            .num("Pot pitch", 70.0, 50.0, 90.0, 1.0)
+            .bool("Soup", false)
+            .num("Soup health", 17.0, 1.0, 20.0, 1.0)
+            .num("Soup delay (ms)", 500.0, 50.0, 1000.0, 50.0)
+            .bool("Drop bowls", true),
+        Module::new("Chest Stealer", Player, "Empties containers you open of what is worth having.")
+            // The pause after each item, rolled between min and max (ms) each time; and before the first, from the
+            // container opening.
+            .num("Delay min (ms)", 100.0, 0.0, 150.0, 10.0)
+            .num("Delay max (ms)", 150.0, 0.0, 150.0, 10.0)
+            .num("First delay min (ms)", 0.0, 0.0, 500.0, 10.0)
+            .num("First delay max (ms)", 0.0, 0.0, 500.0, 10.0)
+            // Ignore trash: only what Inventory Manager keeps (weapons, tools, armour, food, potions, building blocks,
+            // its protected items...). Respect manager rules: nothing worse than what you have, nothing past Inventory
+            // Manager's limits, no menu items when it drops them (Rise's rules).
+            .bool("Ignore trash", true)
+            .bool("Respect manager rules", true)
+            .bool("NCP click limit", true)
+            .pick("Take", &["All", "Carts from shulkers"])
+            .bool("Close when done", false)
+            .text("Steal key", "None"),
+        Module::new("Inventory Manager", Player, "Keeps your inventory in order: your hotbar laid out, worse duplicates and junk dropped, the rest sorted.")
+            // Slots (inventory_slots.rs): a fixed hotbar layout and a lean inventory, the classic 1.8 PvP way, one
+            // action a random Delay apart. Planner (inventory_plan.rs): the whole inventory planned and sorted.
+            .pick("Mode", &["Slots", "Planner"])
+            // Profiles: a preset fills in Cleanup's limits and junk.
+            .pick("Preset", &["Custom", "PvP", "Building", "Mining", "Survival"])
+            // General: the pause after each action, rolled between Delay min and max (ms) each time, in both modes
+            // (inventory_gate.rs: carried over between ticks, so each 10 ms counts); NCP click limit keeps the clicks
+            // within NoCheatPlus's FastClick limits; with the inventory open unless Only in inventory is off.
+            .num("Delay min (ms)", 100.0, 0.0, 150.0, 10.0)
+            .num("Delay max (ms)", 150.0, 0.0, 150.0, 10.0)
+            .bool("NCP click limit", true)
+            .bool("Only in inventory", true)
+            // Equipment: worse duplicates of your weapons, tools and armour go (inventory_plan.rs); these never go.
+            .bool("Duplicates", true)
+            // What survives as a duplicate: the best and one backup, the best only, or the best of each speciality
+            // (Fortune, Silk Touch, Fire Aspect...). A piece with an enchantment the kept ones lack always stays.
+            .pick("Retention", &["Best + backup", "Best only", "Keep specialized"])
+            .text("Protected items", "totem_of_undying,ender_pearl,golden_apple,enchanted_golden_apple,elytra,mace,trident")
+            // Hotbar: what each slot from the left holds (sword, pickaxe, blocks, an item id...); empty leaves a slot.
+            .text("Hotbar layout", "")
+            // Each hotbar slot from the left, planned together (inventory_plan::plan_hotbar). None: the slot's word in
+            // Hotbar layout, if any (how layouts were written before), else left alone.
+            .pick("Slot 1", plan::SLOT_CHOICES)
+            .pick("Slot 2", plan::SLOT_CHOICES)
+            .pick("Slot 3", plan::SLOT_CHOICES)
+            .pick("Slot 4", plan::SLOT_CHOICES)
+            .pick("Slot 5", plan::SLOT_CHOICES)
+            .pick("Slot 6", plan::SLOT_CHOICES)
+            .pick("Slot 7", plan::SLOT_CHOICES)
+            .pick("Slot 8", plan::SLOT_CHOICES)
+            .pick("Slot 9", plan::SLOT_CHOICES)
+            // Sorting: the rest of the inventory in order (weapons, tools, armour, blocks, food, potions, the rest).
+            .bool("Sort inventory", false)
+            // Part stacks of the same item (and components) go together; what does not fit goes back.
+            .bool("Merge stacks", true)
+            // Auto Armor (runtime_inventory.rs auto_armor): wears your best armour. On by its own switch, whether or not
+            // Inventory Manager is on; both share one step at a time.
+            .bool("Auto Armor", false)
+            .text("Auto Armor key", "None")
+            .num("Armor delay (ticks)", 10.0, 2.0, 40.0, 2.0)
+            .pick("Armor mode", &["Always", "Inventory open", "Key"])
+            .text("Armor key", "None")
+            .bool("Avoid cursed", false)
+            .text("Switch key", "None")
+            .text("Switch sets", "netherite,diamond")
+            // Cleanup.
+            .pick("List mode", &["Whitelist", "Blacklist"])
+            .text("Items", "rotten_flesh,spider_eye,poisonous_potato,gravel,cobblestone,netherrack,cobbled_deepslate,andesite,diorite,granite,tuff")
+            .num("Blocks", 128.0, 0.0, 2304.0, 64.0)
+            .num("Food", 64.0, 0.0, 576.0, 16.0)
+            .num("Arrows", 64.0, 0.0, 576.0, 16.0)
+            .num("Pearls", 16.0, 0.0, 64.0, 1.0)
+            .text("Junk", PRESETS[0].5)
+            .text("Loot key", "None")
+            .num("Keep totems", 1.0, 1.0, 20.0, 1.0)
+            .num("Keep pearl stacks", 5.0, 1.0, 10.0, 1.0)
+            // Slots: menu items, the limits, and each kept item's hotbar slot (1 to 9, 0 for none; a range for
+            // blocks, potions and food).
+            .bool("Drop custom items", false)
+            .bool("Use custom items", false)
+            .bool("Prioritize splash potions", false)
+            .num("Block limit", 512.0, 0.0, 512.0, 4.0)
+            .num("Arrow limit", 128.0, 0.0, 512.0, 4.0)
+            .num("Bucket limit", 1.0, 0.0, 4.0, 1.0)
+            .num("Snowball and egg limit", 16.0, 0.0, 64.0, 1.0)
+            .num("Ender pearl limit", 16.0, 0.0, 64.0, 1.0)
+            .num("Sword slot", 1.0, 0.0, 9.0, 1.0)
+            .num("Second sword slot", 2.0, 0.0, 9.0, 1.0)
+            .num("Pickaxe slot", 2.0, 0.0, 9.0, 1.0)
+            .num("Axe slot", 3.0, 0.0, 9.0, 1.0)
+            .num("Shovel slot", 4.0, 0.0, 9.0, 1.0)
+            .num("Block slots from", 5.0, 0.0, 9.0, 1.0)
+            .num("Block slots to", 5.0, 0.0, 9.0, 1.0)
+            .num("Potion slots from", 6.0, 0.0, 9.0, 1.0)
+            .num("Potion slots to", 6.0, 0.0, 9.0, 1.0)
+            .num("Bow slot", 7.0, 0.0, 9.0, 1.0)
+            .num("Rod slot", 8.0, 0.0, 9.0, 1.0)
+            .num("Food slots from", 9.0, 0.0, 9.0, 1.0)
+            .num("Food slots to", 9.0, 0.0, 9.0, 1.0),
+        Module::new("Fast Use", Player, "Uses items faster.")
+            .pick("Mode", &["All", "Some"])
+            .pick("List mode", &["Whitelist", "Blacklist"])
+            .text("Items", "ender_pearl,experience_bottle,snowball,egg")
+            .bool("Blocks", false)
+            .num("Cooldown (ticks)", 0.0, 0.0, 4.0, 1.0)
+            // Past once a tick: with Cooldown 0, this many uses in each tick (player.rs use_more).
+            .num("Uses per tick", 1.0, 1.0, 4.0, 1.0)
+            .bool("Throwables", false)
+            .pick("Throw mode", &["Delay", "Every tick", "Burst"])
+            .num("Throw delay", 2.0, 2.0, 5.0, 1.0)
+            .num("Burst", 3.0, 1.0, 10.0, 1.0)
+            .bool("Experience bottles", true)
+            .bool("Ender pearls", true)
+            .bool("Wind charges", true)
+            .bool("Snowballs and eggs", false)
+            .bool("Splash potions", false)
+            .bool("Off hand", true),
+        Module::new("Spam", Player, "Spams chat messages.")
+            .text("Messages", "Sunset on top!")
+            .num("Delay (ticks)", 20.0, 1.0, 400.0, 1.0)
+            .bool("Randomise", false)
+            .bool("Bypass", false)
+            .num("Bypass length", 16.0, 4.0, 32.0, 1.0)
+            .bool("Once", false),
+        Module::new("Reach", Combat, "Longer reach.")
+            .num("Extra block reach", 1.0, 0.0, 6.0, 0.5)
+            .num("Entity reach", 4.5, 3.0, 6.0, 0.1),
+        Module::new("Hitboxes", Combat, "Makes mobs' boxes bigger to aim at.")
+            .text("Entities", "@player")
+            .num("Expand", 0.5, 0.0, 2.0, 0.05)
+            .bool("Ignore friends", true)
+            .bool("Only on weapon", false)
+            .text("Weapons", "sword,axe,pickaxe,shovel,hoe,mace,spear,trident"),
+        // Line of sight is not checked by Horizon's server (handleAttack: world border and isWithinAttackRange, 3
+        // blocks past the entity interaction range to the box), vanilla 26.3, Paper (the same, its buffer is
+        // client-interaction-leniency-distance) or Grim (Reach wants the look to meet the box within 3 blocks).
+        Module::new("Hit Through Walls", Combat, "Your clicks hit the living entity behind the block under the crosshair. \
+            Horizon, vanilla, Paper and Grim accept the hits (none checks line of sight); other anticheats may refuse them.")
+            // Passable only: only through blocks with nothing to collide with (grass, flowers, torches, cobwebs).
+            .pick("Mode", &["Any block", "Passable only"])
+            // Along the look to the box, and never past your entity reach (3 blocks, 4.5 with Reach's Entity reach):
+            // servers take 6, Grim about 3.
+            .num("Range", 3.0, 1.0, 6.0, 0.1)
+            .group("Targeting")
+            .pick("List mode", &["Whitelist", "Blacklist"])
+            .text("Entities", "@all")
+            .num("Health threshold", 0.0, 0.0, 100.0, 1.0)
+            .bool("Anti bot", true)
+            .pick("Anti bot sensitivity", &["Balanced", "Conservative", "Sensitive"])
+            .bool("Ignore teams", false)
+            .bool("Ignore invisible", false)
+            .bool("Ignore named", false)
+            .bool("Ignore passive", true)
+            .pick("Passive mob age filter", &["Adult", "Baby", "Both"])
+            .pick("Hostile mob age filter", &["Both", "Adult", "Baby"]),
+        Module::new("Ghost Hand", Player, "Uses containers through blocks.")
+            .bool("Blocks", true)
+            // A right click on a sign, banner or item frame hanging on a container opens the container instead.
+            .bool("Click through", true),
+        Module::new("Air Place", Player, "Places blocks in the air.")
+            .num("Range", 5.0, 2.0, 6.0, 0.5),
+        Module::new("Fast Break", Player, "Breaks blocks faster.")
+            .pick("Mode", &["Damage", "Normal", "Haste"])
+            .text("Blocks", "")
+            .pick("Blocks filter", &["Blacklist", "Whitelist"])
+            .num("Modifier", 1.4, 0.0, 10.0, 0.1)
+            .num("Haste amplifier", 2.0, 1.0, 10.0, 1.0)
+            .bool("Instamine", true),
+        Module::new("No Break Reset", Player, "Keeps break progress on item swap.")
+            .bool("Only to better tools", false),
+    ]
+}
+
+#[derive(Default)]
+struct Ps {
+    fish_state: u8,
+    cast_left: u32,
+    catch_left: u32,
+    gap_eating: bool,
+    gap_prev: usize,
+    spam_timer: u32,
+    spam_index: usize,
+    rng: u64,
+    afk_jump: bool,
+    afk_sneak: u32,
+    afk_strafe: i32,
+    afk_right: bool,
+    afk_key: Option<KeyCode>,
+    afk_yaw: Option<f32>,
+    afk_message: i32,
+    afk_index: usize,
+    afk_wander: Wander,
+    steal: Steal,
+    // No Break Reset: the step the block's break took last tick, with the item held then.
+    break_step: f32,
+    // No Fall's Place: what it put down to land in, the item, the ticks since, the ticks you have stood still, and
+    // whether the server's answer (the water there) has come.
+    fall_placed: Option<([i32; 3], &'static str, u32, u32, bool)>,
+    // Fast Place: the share of a block earned so far, in twentieths. Anticheat Grim (see sent): the yaw turn of the
+    // last move packet that turned, whether one has turned since the last place, the turn the last place went with, the
+    // last yaw sent and a place sent since the last move packet.
+    place_credit: u32,
+    // More than one use in a tick: Fast Place's extra places and Fast Use's extra uses made this tick.
+    extra_uses: u32,
+    place_turn: f32,
+    place_turned: bool,
+    place_last: Option<f32>,
+    place_yaw: Option<f32>,
+    place_pending: bool,
+}
+
+static PS: Mutex<Option<Ps>> = Mutex::new(None);
+
+pub(super) fn shutdown(game: &mut Game<'_>) {
+    if ps(|p| p.gap_eating) && game.held().is_some_and(|s| s.item.ends_with("golden_apple")) {
+        stop_eating(game);
+    }
+    tick(game, &[]);
+    fast_break(game, None);
+    no_break_reset(game, None);
+    exec(|e| e.reset());
+    ps(|p| *p = Ps::default());
+}
+
+fn ps<R>(f: impl FnOnce(&mut Ps) -> R) -> R {
+    let mut g = PS.lock().unwrap_or_else(|e| e.into_inner());
+    f(g.get_or_insert_with(Ps::default))
+}
+
+fn rand(n: usize) -> usize {
+    ps(|p| {
+        p.rng = p.rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407 + n as u64);
+        ((p.rng >> 33) as usize) % n.max(1)
+    })
+}
+
+// Reach's extra, read by the reach hook (f64 bits; None when off).
+static REACH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+
+pub(super) fn reach_extra() -> Option<f64> {
+    let bits = REACH.load(std::sync::atomic::Ordering::Relaxed);
+    (bits != u64::MAX).then(|| f64::from_bits(bits))
+}
+
+// How far the crosshair picks mobs (f64 bits; u64::MAX: the game's own), read by the mob_hit hook.
+static ENTITY_REACH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+// Hit Through Walls this tick, for the before_block hook: None when off, else Passable only, Range and the mobs its
+// filters let it hit.
+static WALL_HITS: Mutex<Option<WallHits>> = Mutex::new(None);
+
+struct WallHits {
+    passable_only: bool,
+    range: f64,
+    ids: Vec<u32>,
+}
+
+// Hitboxes: how far the boxes of the mobs it picked this tick grow each way, and their ids (read by the mob_hit hook).
+static HITBOXES: Mutex<(f64, Vec<u32>)> = Mutex::new((0.0, Vec::new()));
+// Mine Through Mobs, at work this tick: the mobs it leaves to be hit as usual.
+static NO_TRACE: Mutex<Option<String>> = Mutex::new(None);
+
+// The mob under the crosshair with Reach's Entity reach or Auto Spear's Spear reach, as the game's own pick finds it
+// (the nearest box along the look), the boxes Hitboxes and Auto Mace's Expand hitbox grow grown; none with Mine
+// Through Mobs while a block is in reach (but for the mobs it lists). None: the game's own.
+pub(super) fn mob_hit(game: &Game<'_>) -> Option<Option<(usize, f64, [f64; 3])>> {
+    let bits = ENTITY_REACH.load(std::sync::atomic::Ordering::Relaxed);
+    let (grow, grown) = HITBOXES.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let trace = NO_TRACE.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let mace = super::sunset_auto_mace::grown();
+    if bits == u64::MAX && grown.is_empty() && trace.is_none() && mace.is_none() {
+        return None;
+    }
+    let hit = pick_mob(game, bits, grow, &grown, mace);
+    match (hit, trace) {
+        (Some((i, ..)), Some(kept)) if game.pick().is_some() && !listed(&kept, &game.mobs[i].kind.id) => Some(None),
+        _ => Some(hit),
+    }
+}
+
+// `mace`: Expand hitbox's player and how far its box grows each way, on top of Hitboxes. The hit is the mob, the
+// distance and where on it the interaction lands from its feet (the game's `interact_location`), kept on its real box
+// when a grown one was hit.
+fn pick_mob(game: &Game<'_>, bits: u64, grow: f64, grown: &[u32], mace: Option<(u32, f64)>) -> Option<(usize, f64, [f64; 3])> {
+    let ordinary = if game.creative { 5.0 } else { 3.0 };
+    let reach = if bits == u64::MAX { ordinary } else { f64::from_bits(bits).max(ordinary) };
+    let (eye, dir) = game.aim()?;
+    let boxed = |m: &horizon_client::mobs::Mob| {
+        let mut by = if grown.contains(&m.id) { grow } else { 0.0 };
+        if let Some((id, extra)) = mace
+            && id == m.id
+        {
+            by += extra;
+        }
+        let b = m.bounds();
+        if by > 0.0 { b.inflate(horizon_core::geometry::Vec3::new(by, by, by)) } else { b }
+    };
+    let (i, t) = game.mobs
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.alive() && Some(m.id) != game.riding)
+        .filter_map(|(i, m)| Some((i, super::ray_box(eye, dir, reach, boxed(m))?)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))?;
+    let m = &game.mobs[i];
+    let (lo, hi) = (m.bounds().min_position(), m.bounds().max_position());
+    let point = horizon_core::geometry::Vec3::new(
+        (eye[0] + dir[0] * t).clamp(lo.x, hi.x),
+        (eye[1] + dir[1] * t).clamp(lo.y, hi.y),
+        (eye[2] + dir[2] * t).clamp(lo.z, hi.z),
+    );
+    Some((i, t, super::interact_location(point, m.position)))
+}
+
+// Hitboxes (Sunset's), for the crosshair's pick: the mobs whose boxes grow by Expand, those the Entities list names
+// (with @all, @player, @hostile, @passive), not friends with Ignore friends, and none unless what Weapons lists is
+// in hand with Only on weapon.
+fn hitboxes(game: &Game<'_>, m: Option<&Module>) -> (f64, Vec<u32>) {
+    let Some(m) = m.filter(|m| m.n("Expand") > 0.0) else {
+        return (0.0, Vec::new());
+    };
+    if m.b("Only on weapon") {
+        let held = game.held().map_or("", |s| &*s.item);
+        let tagged = |tag: &str| game.res.items().item_tags.get(tag).is_some_and(|items| items.contains(held));
+        let kind = match short(held) {
+            "mace" => "mace",
+            "trident" => "trident",
+            _ if horizon_client::spear::Kinetic::of(held).is_some() => "spear",
+            _ => ["sword", "axe", "pickaxe", "shovel", "hoe"].into_iter().find(|k| tagged(&format!("minecraft:{k}s"))).unwrap_or(""),
+        };
+        if kind.is_empty() || !listed(m.t("Weapons"), kind) {
+            return (0.0, Vec::new());
+        }
+    }
+    let own = game.remote.as_ref().map(|r| r.entity_id as u32);
+    let (friends, names) = (super::sunset::with(|s| s.friends.clone()), game.remote_player_names());
+    let ids = game
+        .mobs
+        .iter()
+        .filter(|mob| Some(mob.id) != own)
+        .filter(|mob| {
+            let player = mob.kind.id == "minecraft:player";
+            let hostile = super::sunset_aura::is_hostile(&mob.kind.id);
+            m.t("Entities").split(',').map(str::trim).any(|tok| match tok {
+                "@all" => true,
+                "@player" => player,
+                "@hostile" => hostile,
+                "@passive" => !player && !hostile,
+                _ => !tok.is_empty() && short(tok) == short(&mob.kind.id),
+            }) && !(player && m.b("Ignore friends") && super::sunset::is_friend(&friends, &names, mob.id))
+        })
+        .map(|mob| mob.id)
+        .collect();
+    (m.n("Expand"), ids)
+}
+
+// Hit Through Walls: the mob under the crosshair, within Range and let through by the filters, counts as before any
+// block, so the click attacks it and holding the button mines nothing. Passable only: only when no block between you
+// and it has a collision box (grass, flowers, torches, cobwebs and the like are passed).
+pub(super) fn hit_through_walls(game: &Game<'_>, distance: f64) -> bool {
+    let guard = WALL_HITS.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(w) = guard.as_ref() else {
+        return false;
+    };
+    if distance > w.range || !game.mob_hit().is_some_and(|(i, d, _)| d == distance && w.ids.contains(&game.mobs[i].id)) {
+        return false;
+    }
+    !w.passable_only
+        || game.aim().is_some_and(|(eye, dir)| {
+            let to = std::array::from_fn(|i| eye[i] + dir[i] * distance);
+            super::sunset_combat::clip_clear(game, eye, to, distance)
+        })
+}
+
+// What Ghost Hand opens or uses: containers, doors, trapdoors, gates, buttons, levers and work blocks.
+fn usable(game: &Game<'_>, p: [i32; 3]) -> bool {
+    let name = short(&facts(game, p).name);
+    name != "iron_door"
+        && name != "iron_trapdoor"
+        && ["chest", "barrel", "shulker_box", "hopper", "dispenser", "dropper", "furnace", "smoker", "brewing_stand", "crafting_table",
+            "crafter", "anvil", "enchanting_table", "beacon", "smithing_table", "loom", "stonecutter", "cartography_table",
+            "grindstone", "button", "lever", "door", "trapdoor", "fence_gate"]
+            .iter()
+            .any(|k| name == *k || name.ends_with(&format!("_{k}")))
+}
+
+// Click through: what a sign, a banner or an item frame can hang on and be clicked through to.
+fn container(name: &str) -> bool {
+    ["chest", "trapped_chest", "ender_chest", "barrel", "shulker_box", "hopper", "dispenser", "dropper", "furnace",
+        "blast_furnace", "smoker", "brewing_stand", "crafter"]
+        .iter()
+        .any(|k| name == *k || name.ends_with(&format!("_{k}")))
+}
+
+// Click Through (Ghost Hand's; behaviour after Combatant's, written fresh): the container behind the sign, banner or
+// item frame your crosshair is on, within reach, through at most three of them; the block, the face the look enters
+// it by and where on it. None while sneaking (a sneak-click is for the item in hand), attacking or on a mob.
+fn through_target(game: &Game<'_>) -> Option<([i32; 3], i32, [f32; 3])> {
+    if !in_world(game) || game.left || game.keys.raw(&KeyCode::ShiftLeft) || game.mob_hit().is_some_and(|(_, d, _)| game.before_block(d)) {
+        return None;
+    }
+    let eye = game.eye_position()?;
+    let look = super::view_vector(game.yaw, game.pitch);
+    let reach = game.reach();
+    // An item frame is the 12 by 12 pixel, one pixel deep plate against the block it hangs on; facing 0-5 is down,
+    // up, north, south, west, east (the way it looks out).
+    let frame_at = |p: [i32; 3]| game.item_frames.iter().any(|f| f.pos == p);
+    let frame_hit = game.item_frames.iter().filter_map(|f| {
+        let out: [f64; 3] = match f.facing { 0 => [0.0, -1.0, 0.0], 1 => [0.0, 1.0, 0.0], 2 => [0.0, 0.0, -1.0], 3 => [0.0, 0.0, 1.0], 4 => [-1.0, 0.0, 0.0], _ => [1.0, 0.0, 0.0] };
+        let (mut lo, mut hi) = ([0.0; 3], [0.0; 3]);
+        for a in 0..3 {
+            let base = f64::from(f.pos[a]);
+            (lo[a], hi[a]) = match out[a] as i32 {
+                1 => (base, base + 1.0 / 16.0),
+                -1 => (base + 15.0 / 16.0, base + 1.0),
+                _ => (base + 2.0 / 16.0, base + 14.0 / 16.0),
+            };
+        }
+        // The ray's entry into the plate's box (slab method).
+        let (mut near, mut far) = (0.0f64, reach);
+        for a in 0..3 {
+            if look[a].abs() < 1e-9 {
+                if eye[a] < lo[a] || eye[a] > hi[a] {
+                    return None;
+                }
+                continue;
+            }
+            let (t1, t2) = ((lo[a] - eye[a]) / look[a], (hi[a] - eye[a]) / look[a]);
+            near = near.max(t1.min(t2));
+            far = far.min(t1.max(t2));
+        }
+        (near <= far).then_some(near)
+    }).fold(None, |best: Option<f64>, t| Some(best.map_or(t, |b| b.min(t))));
+    let see_through = |p: [i32; 3]| {
+        let name = short(&facts(game, p).name);
+        name.ends_with("sign") || name.ends_with("banner")
+    };
+    // On a frame nearer than the block picked, or on a sign or banner: else this is an ordinary click.
+    let picked = game.pick();
+    let on_frame = frame_hit.is_some_and(|t| picked.as_ref().is_none_or(|h| {
+        let c = [0, 1, 2].map(|a| f64::from(h.pos[a]) + 0.5 - eye[a]);
+        t <= (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt()
+    }));
+    if !on_frame && !picked.as_ref().is_some_and(|h| see_through(h.pos)) {
+        return None;
+    }
+    let (mut last, mut layers) = (None, 0);
+    let mut i = 1;
+    while f64::from(i) * 0.02 <= reach {
+        let t = f64::from(i) * 0.02;
+        i += 1;
+        let at = [0, 1, 2].map(|a| eye[a] + look[a] * t);
+        let p = at.map(|v| v.floor() as i32);
+        if last == Some(p) {
+            continue;
+        }
+        let entered = last.map(|l: [i32; 3]| (0..3).find(|&a| l[a] != p[a]).unwrap_or(1));
+        last = Some(p);
+        let state = game.world.block(p[0], p[1], p[2]);
+        let frame = frame_at(p);
+        if see_through(p) || frame {
+            layers += 1;
+            if layers > 3 {
+                return None;
+            }
+            if !see_through(p) && !game.res.facts().is_air(state) {
+                // A frame's own cell holds a block too: only a container ends the search there.
+                if !container(short(&facts(game, p).name)) {
+                    return None;
+                }
+            } else {
+                continue;
+            }
+        } else if game.res.facts().is_air(state) {
+            continue;
+        }
+        if !container(short(&facts(game, p).name)) {
+            return None;
+        }
+        let axis = entered.unwrap_or(1);
+        let face = match (axis, look[axis] > 0.0) {
+            (0, true) => 4,
+            (0, false) => 5,
+            (1, true) => 0,
+            (1, false) => 1,
+            (_, true) => 2,
+            (_, false) => 3,
+        };
+        let cursor = [0, 1, 2].map(|a| (at[a] - f64::from(p[a])).clamp(0.0, 1.0) as f32);
+        return Some((p, face, cursor));
+    }
+    None
+}
+
+// Click Through, at the game's use: true takes the click (the container is used, the sign or frame is left alone).
+pub(super) fn click_through(game: &mut Game<'_>) -> bool {
+    if !super::sunset::with(|s| s.module("Ghost Hand").is_some_and(|m| m.on && m.b("Click through"))) {
+        return false;
+    }
+    let Some((pos, face, cursor)) = through_target(game) else {
+        return false;
+    };
+    let sequence = sequence(game);
+    game.send(S::UseItemOn(play::UseItemOn { hand: 0, pos, face, cursor, inside: false, world_border: false, sequence }));
+    game.swing_arm();
+    game.use_delay = 4;
+    true
+}
+
+// Ghost Hand (Sunset's): your right click is not on a usable block, so the first one along the look within reach is
+// used instead, through whatever is in between (servers check the distance only).
+fn ghost_hand(game: &mut Game<'_>) {
+    if !super::sunset::with(|s| s.module("Ghost Hand").is_some_and(|m| m.on && m.b("Blocks"))) {
+        return;
+    }
+    // Click through takes this click at the game's use.
+    if super::sunset::with(|s| s.module("Ghost Hand").is_some_and(|m| m.b("Click through"))) && through_target(game).is_some() {
+        return;
+    }
+    let Some(eye) = game.eye_position() else {
+        return;
+    };
+    if game.pick().is_some_and(|h| usable(game, h.pos)) || game.mob_hit().is_some() {
+        return;
+    }
+    let look = super::view_vector(game.yaw, game.pitch);
+    let reach = game.reach();
+    let mut last = None;
+    for i in 1..(reach * 10.0) as i32 {
+        let t = f64::from(i) / 10.0;
+        let p = [0, 1, 2].map(|a| (eye[a] + look[a] * t).floor() as i32);
+        if last == Some(p) {
+            continue;
+        }
+        last = Some(p);
+        if usable(game, p) {
+            let sequence = sequence(game);
+            game.send(S::UseItemOn(play::UseItemOn { hand: 0, pos: p, face: 1, cursor: [0.5, 1.0, 0.5], inside: true, world_border: false, sequence }));
+            game.swing_arm();
+            return;
+        }
+    }
+}
+
+// Right mouse button down while playing: Ghost Hand, Air Place.
+pub(super) fn right_click(game: &mut Game<'_>) {
+    ghost_hand(game);
+    let Some(m) = super::sunset::with(|s| s.module("Air Place").filter(|m| m.on).cloned()) else {
+        return;
+    };
+    if !in_world(game) || game.pick().is_some() || game.entity_targeted() {
+        return;
+    }
+    let held = game.held().is_some_and(|s| game.res.items().get(&s.item).is_some_and(|i| i.block.is_some()));
+    if !held {
+        return;
+    }
+    let (Some(eye), yaw, pitch) = (game.eye_position(), f64::from(game.yaw).to_radians(), f64::from(game.pitch).to_radians()) else {
+        return;
+    };
+    let d = m.n("Range");
+    let look = [-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos()];
+    let at = [
+        (eye[0] + look[0] * d).floor() as i32,
+        (eye[1] + look[1] * d).floor() as i32,
+        (eye[2] + look[2] * d).floor() as i32,
+    ];
+    let slot = game.selected;
+    place_block(game, at, slot, false, true);
+}
+
+pub(super) fn tick(game: &mut Game<'_>, mods: &[Module]) {
+    let get = |n: &str| mods.iter().find(|m| m.name == n && m.on);
+    REACH.store(
+        get("Reach").map_or(u64::MAX, |m| m.n("Extra block reach").to_bits()),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    let spear = super::sunset_melee::spear_reach_slot(game).map(|_| {
+        let reach = horizon_client::spear::REACH;
+        f64::from(if game.creative { reach.max_creative } else { reach.max })
+    });
+    let entity = match (get("Reach").map(|m| m.n("Entity reach")), spear) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    };
+    ENTITY_REACH.store(entity.map_or(u64::MAX, f64::to_bits), std::sync::atomic::Ordering::Relaxed);
+    *HITBOXES.lock().unwrap_or_else(|e| e.into_inner()) = hitboxes(game, get("Hitboxes"));
+    // Mine Through Mobs (Sunset's): with a pickaxe in either hand (or anything, with Only with a pickaxe off).
+    let pickaxe = [game.held(), game.offhand.as_ref()].into_iter().flatten().any(|s| s.item.ends_with("_pickaxe"));
+    *NO_TRACE.lock().unwrap_or_else(|e| e.into_inner()) =
+        get("Mine Through Mobs").filter(|m| pickaxe || !m.b("Only with a pickaxe")).map(|m| m.t("Entities").to_owned());
+    *WALL_HITS.lock().unwrap_or_else(|e| e.into_inner()) = get("Hit Through Walls").map(|m| WallHits {
+        passable_only: m.p("Mode") == "Passable only",
+        range: m.n("Range"),
+        ids: game.mobs.iter().filter(|mob| super::sunset_aura::target_filters(game, m, mob, &mob_target(mob))).map(|mob| mob.id).collect(),
+    });
+    // These work on the inventory screen, which in_world leaves out.
+    if game.remote.is_some() && game.player.is_some() {
+        if let Some(m) = get("Chest Stealer") {
+            auto_steal(game, m);
+        }
+        // Slots mode runs before the tick (runtime pre_tick, inventory_slots.rs).
+        if let Some(m) = get("Inventory Manager").filter(|m| m.p("Mode") != "Slots") {
+            inventory_manager(game, m);
+        } else {
+            // A finished plan cannot survive disable/enable without an inventory packet.
+            exec(|e| e.context(u64::MAX));
+        }
+    } else {
+        exec(|e| e.reset());
+    }
+    // A fall is saved with chat or a server's pause menu open too.
+    match get("No Fall").filter(|_| connected(game)) {
+        Some(m) => no_fall(game, m),
+        None => ps(|p| p.fall_placed = None),
+    }
+    // Auto Fish, Anti AFK and Spam work on their own: they keep going behind chat or a server's pause menu.
+    let alone = unattended(game);
+    if let Some(m) = get("Auto Fish").filter(|_| alone) {
+        auto_fish(game, m);
+    } else if get("Auto Fish").is_none() {
+        ps(|p| p.fish_state = 0);
+    }
+    if let Some(m) = get("Anti AFK") {
+        if alone {
+            anti_afk(game, m);
+        }
+    } else {
+        ps(|p| {
+            p.afk_yaw = None;
+            p.afk_message = 0;
+            p.afk_wander = Wander::default();
+        });
+    }
+    if let Some(m) = get("Spam") {
+        if alone {
+            spam(game, m);
+        }
+    } else {
+        ps(|p| p.spam_timer = 0);
+    }
+    if !in_world(game) {
+        ps(|p| p.place_credit = 0);
+        return;
+    }
+    if let Some(m) = get("Auto Gap") {
+        auto_gap(game, m);
+    } else if ps(|p| std::mem::take(&mut p.gap_eating)) {
+        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
+    }
+    if let Some(m) = get("Fast Place") {
+        fast_place(game, m);
+    } else {
+        ps(|p| p.place_credit = 0);
+    }
+    if let Some(m) = get("Fast Use") {
+        fast_use(game, m);
+    }
+}
+
+// Auto Gap is eating: Auto Eat waits.
+pub(super) fn gap_eating() -> bool {
+    ps(|p| p.gap_eating)
+}
+
+// ---- Auto Fish
+
+fn rod_ok(game: &Game<'_>, slot: usize, anti_break: bool) -> Option<u32> {
+    let s = game.inventory.get(slot)?.as_ref()?;
+    if short(&s.item) != "fishing_rod" {
+        return None;
+    }
+    let max = game.res.items().get(&s.item).map_or(0, |i| i.max_damage);
+    if anti_break && max > 0 && s.damage + 1 >= max {
+        return None;
+    }
+    let lvl = |e: &str| s.enchantment_level(e);
+    Some(lvl("minecraft:luck_of_the_sea") + lvl("minecraft:lure") + lvl("minecraft:mending") + lvl("minecraft:unbreaking"))
+}
+
+fn use_rod(game: &mut Game<'_>, m: &Module) -> bool {
+    let anti = m.b("Anti break");
+    let selected = game.selected;
+    let mut best: Option<(usize, u32)> = rod_ok(game, selected, anti).map(|s| (selected, s));
+    for i in 0..9 {
+        if i == selected {
+            continue;
+        }
+        if let Some(score) = rod_ok(game, i, anti) {
+            if best.is_none_or(|(_, b)| score > b) {
+                best = Some((i, score));
+            }
+        }
+    }
+    let Some((slot, _)) = best else {
+        return false;
+    };
+    if slot != selected {
+        if !m.b("Auto switch") {
+            return false;
+        }
+        hold(game, slot);
+    }
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
+    ps(|p| p.cast_left = m.n("Cast delay (ticks)") as u32);
+    true
+}
+
+fn auto_fish(game: &mut Game<'_>, m: &Module) {
+    match super::fishing::sunset_fishing::state(game) {
+        None => {
+            // Idle: cast again after the delay.
+            ps(|p| p.fish_state = 0);
+            if !m.b("Auto cast") {
+                return;
+            }
+            if ps(|p| {
+                if p.cast_left > 0 {
+                    p.cast_left -= 1;
+                    true
+                } else {
+                    false
+                }
+            }) {
+                return;
+            }
+            if use_rod(game, m) {
+                ps(|p| p.fish_state = 1);
+            }
+        }
+        Some((bobbing, biting, hooked)) => {
+            let state = ps(|p| p.fish_state);
+            match state {
+                0 => ps(|p| p.fish_state = 1),
+                1 => {
+                    if hooked {
+                        if use_rod(game, m) {
+                            ps(|p| p.fish_state = 0);
+                        }
+                    } else if bobbing && biting {
+                        ps(|p| {
+                            p.catch_left = m.n("Catch delay (ticks)") as u32;
+                            p.fish_state = 2;
+                        });
+                    }
+                }
+                _ => {
+                    let wait = ps(|p| {
+                        if p.catch_left > 0 {
+                            p.catch_left -= 1;
+                            true
+                        } else {
+                            false
+                        }
+                    });
+                    if hooked || !wait {
+                        if use_rod(game, m) {
+                            ps(|p| p.fish_state = 0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---- Auto Gap
+
+fn gap_slot(game: &Game<'_>, m: &Module, need_egap: bool) -> Option<usize> {
+    let plain = if need_egap { None } else { find_hotbar(game, |n| n == "golden_apple") };
+    plain.or_else(|| if m.b("Allow egap") || need_egap { find_hotbar(game, |n| n == "enchanted_golden_apple") } else { None })
+}
+
+fn auto_gap(game: &mut Game<'_>, m: &Module) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let effects = &game.potions.effects;
+    let missing = |name: &str| effects.amplifier(name).is_none();
+    let mut need_egap = false;
+    let mut should = m.b("Always");
+    if !should && m.b("Potions regeneration") && missing("regeneration") {
+        should = true;
+    }
+    if !should && m.b("Potions fire resistance") && missing("fire_resistance") {
+        should = true;
+        need_egap = true;
+    }
+    if !should && m.b("Potions absorption") && missing("absorption") {
+        should = true;
+        need_egap = true;
+    }
+    if !should && m.b("Health enabled") {
+        let health = (p.health.health() + p.health.absorption()).round();
+        should = f64::from(health) < m.n("Health threshold");
+    }
+    let eating = ps(|s| s.gap_eating);
+    if eating {
+        if should {
+            match gap_slot(game, m, need_egap) {
+                Some(slot) => {
+                    hold(game, slot);
+                    if game.using.is_none() {
+                        let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
+                    }
+                }
+                None => stop_eating(game),
+            }
+        } else {
+            stop_eating(game);
+        }
+    } else if should {
+        if let Some(slot) = gap_slot(game, m, need_egap) {
+            let prev = game.selected;
+            ps(|s| {
+                s.gap_prev = prev;
+                s.gap_eating = true;
+            });
+            hold(game, slot);
+            let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, true);
+        }
+    }
+}
+
+fn stop_eating(game: &mut Game<'_>) {
+    let _ = super::remote::sunset_combat_remote::mouse(game, MouseButton::Right, false);
+    let prev = ps(|s| {
+        s.gap_eating = false;
+        s.gap_prev
+    });
+    hold(game, prev);
+}
+
+// ---- Fast Place
+
+// Blocks a second at each speed. The game's own is one every 4 ticks (5 a second). Up to Speed 5 a tick places one at
+// most (20 a second); past it a tick places more: the game's own place and then more of the same click, each aimed
+// anew (so at the block just placed), all before the tick's one move packet (use_more).
+const PLACE_RATES: [u32; 9] = [6, 8, 10, 14, 20, 30, 40, 60, 80];
+// The fastest that places once a tick: all Anticheat Grim takes (its own turns are judged a place a tick).
+const ONE_A_TICK: usize = 5;
+// Extra uses in one tick, at most: with the game's own, 4 (80 a second).
+const EXTRA_USES: u32 = 3;
+
+fn holds_block(game: &Game<'_>) -> bool {
+    [game.held(), game.offhand.as_ref()]
+        .into_iter()
+        .flatten()
+        .any(|s| game.res.items().get(&s.item).is_some_and(|i| i.block.is_some()))
+}
+
+fn place_ready(credit: &mut u32, speed: usize) -> bool {
+    let rate = PLACE_RATES[speed.clamp(1, PLACE_RATES.len()) - 1];
+    *credit += rate;
+    if *credit >= 20 {
+        *credit -= 20;
+        true
+    } else {
+        false
+    }
+}
+
+// Runs after the game counts its delay down and before it reads it: each tick earns a share of a block, and the delay
+// opens when a whole one is earned. So speeds between two whole delays average out to their exact rate.
+fn fast_place(game: &mut Game<'_>, m: &Module) {
+    if !game.right || game.using.is_some() || !holds_block(game) {
+        ps(|p| {
+            p.place_credit = 0;
+            p.extra_uses = 0;
+        });
+        return;
+    }
+    let speed = place_speed(m);
+    let ready = ps(|p| {
+        p.extra_uses = 0;
+        let ready = place_ready(&mut p.place_credit, speed);
+        // What a tick could not place is not kept for later (nothing to place on for a while, then a burst).
+        p.place_credit = p.place_credit.min(PLACE_RATES[PLACE_RATES.len() - 1]);
+        ready
+    });
+    game.use_delay = if ready { 0 } else { game.use_delay.max(1) };
+}
+
+fn place_speed(m: &Module) -> usize {
+    let speed = m.n("Speed") as usize;
+    if m.p("Anticheat") == "Grim" { speed.min(ONE_A_TICK) } else { speed }
+}
+
+// More uses in this tick, asked by the use hook (mixins/combat_use.rs) as the game makes its own: true while one more
+// should go, each as one more click (the game's sequence counter, its aim taken anew).
+// Fast Place past Speed 5: while whole blocks are earned and there is a block under the crosshair to place on.
+// Fast Use with Cooldown 0 and Uses per tick over 1: the item it applies to, while nothing is being used up (food
+// and the like take one use).
+static USING_MORE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(super) fn using_more() -> bool {
+    USING_MORE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub(super) fn use_more(game: &Game<'_>) -> bool {
+    let more = game.right && game.using.is_none() && game.screen == Screen::Playing && super::sunset::with(|s| {
+        let place = s.module("Fast Place").filter(|m| m.on);
+        if holds_block(game) && place.is_some() {
+            return place.is_some_and(|m| place_speed(m) > ONE_A_TICK)
+                && game.pick().is_some()
+                && ps(|p| {
+                    let more = p.place_credit >= 20 && p.extra_uses < EXTRA_USES;
+                    if more {
+                        p.place_credit -= 20;
+                        p.extra_uses += 1;
+                    }
+                    more
+                });
+        }
+        s.module("Fast Use").filter(|m| m.on).is_some_and(|m| {
+            m.n("Cooldown (ticks)") == 0.0
+                && !super::sunset_combat_inventory::thrown_in_hand(game, m)
+                && fast_use_applies(game, m)
+                && ps(|p| {
+                    let more = p.extra_uses + 1 < m.n("Uses per tick") as u32 && p.extra_uses < EXTRA_USES;
+                    p.extra_uses += u32::from(more);
+                    more
+                })
+        })
+    });
+    USING_MORE.store(more, std::sync::atomic::Ordering::Relaxed);
+    more
+}
+
+// Grim's DuplicateRotPlace judges a block place at the move packet after it, by the yaw turn of the last move packet that
+// turned: when there has been a turn since the last place, it is over 2 degrees and it is the same as the turn the last
+// place went with, it flags (turning at a steady speed while placing every tick does exactly that). sent() keeps the
+// same books from the packets as they go.
+pub(super) fn sent(packet: &S) {
+    let yaw = match packet {
+        S::MovePlayerPosRot(p) => Some(p.yaw),
+        S::MovePlayerRot(p) => Some(p.yaw),
+        S::MovePlayerPos(_) | S::MovePlayerStatus(_) => None,
+        S::UseItemOn(_) => {
+            ps(|p| p.place_pending = true);
+            return;
+        }
+        S::AcceptTeleportation(t) => {
+            ps(|p| p.place_yaw = Some(t.yaw));
+            return;
+        }
+        _ => return,
+    };
+    ps(|p| {
+        if let Some(yaw) = yaw {
+            if let Some(was) = p.place_yaw.replace(yaw)
+                && yaw != was
+            {
+                p.place_turn = wrap_degrees(yaw - was).abs();
+                p.place_turned = true;
+            }
+        }
+        if std::mem::take(&mut p.place_pending) && std::mem::take(&mut p.place_turned) {
+            p.place_last = Some(p.place_turn);
+        }
+    });
+}
+
+// Anticheat Grim, at the tick's start (a place this tick goes before its move packet, which carries the look you have
+// now): if a place may go this tick and the turn it would be judged by repeats the last place's, the view turns one
+// mouse count more the way you turn. That keeps the look on the mouse's grid and moves it by a hair.
+pub(super) fn fast_place_pre(game: &mut Game<'_>) {
+    let Some(m) = super::sunset::with(|s| s.module("Fast Place").filter(|m| m.on).cloned()) else {
+        return;
+    };
+    if m.p("Anticheat") != "Grim" || !game.right || game.using.is_some() || game.use_delay > 1 || !holds_block(game) {
+        return;
+    }
+    let Some(sent) = super::sunset_combat_wire::sent_look(game) else {
+        return;
+    };
+    let (turned, turn, last) = ps(|p| (p.place_turned, p.place_turn, p.place_last));
+    let now = wrap_degrees(game.yaw - sent.0);
+    let judged = if (game.yaw, game.pitch) != sent { Some(now.abs()) } else { turned.then_some(turn) };
+    if judged.is_some_and(|t| t > 2.0 && last.is_some_and(|l| (l - t).abs() < 0.001)) {
+        let count = super::sunset_rotation::degrees_per_count(f64::from(game.settings.sensitivity));
+        // No turn this tick (the repeat is an older one's): any turn under 2 degrees clears it.
+        game.yaw += if now == 0.0 { count } else { count.copysign(now) };
+    }
+}
+
+fn wrap_degrees(d: f32) -> f32 {
+    (d + 180.0).rem_euclid(360.0) - 180.0
+}
+
+// ---- Fast Use
+
+fn fast_use(game: &mut Game<'_>, m: &Module) {
+    // Blocks are Fast Place's while it is on, or its speed would not hold; throwables are Throwables' when it is on.
+    if holds_block(game) && super::sunset::with(|s| s.is_on("Fast Place")) || super::sunset_combat_inventory::thrown_in_hand(game, m) {
+        return;
+    }
+    // Fast Place's count of extra uses is its own; without it this tick's starts here.
+    if !super::sunset::with(|s| s.is_on("Fast Place")) {
+        ps(|p| p.extra_uses = 0);
+    }
+    if fast_use_applies(game, m) && game.use_delay > m.n("Cooldown (ticks)") as u32 {
+        game.use_delay = m.n("Cooldown (ticks)") as u32;
+    }
+}
+
+// What is held is Fast Use's: anything (Mode All), or what its Items list and Blocks switch say.
+fn fast_use_applies(game: &Game<'_>, m: &Module) -> bool {
+    let item = game.held().map(|s| short(&s.item).to_owned());
+    m.p("Mode") == "All"
+        || item.as_ref().is_some_and(|i| {
+            passes(m, "Items", i)
+                || m.b("Blocks") && game.res.items().get(&format!("minecraft:{i}")).is_some_and(|inf| inf.block.is_some())
+        })
+}
+
+#[cfg(test)]
+mod fast_place_tests {
+    use super::place_ready;
+
+    #[test]
+    fn each_speed_places_its_configured_average_per_second() {
+        let expected = [6, 8, 10, 14, 20];
+        for (index, count) in expected.into_iter().enumerate() {
+            let mut credit = 0;
+            let placed = (0..20).filter(|_| place_ready(&mut credit, index + 1)).count();
+            assert_eq!(placed, count);
+            assert_eq!(credit, 0);
+        }
+    }
+
+    #[test]
+    fn speed_is_clamped_to_the_supported_range() {
+        let mut low = 0;
+        let low_count = (0..20).filter(|_| place_ready(&mut low, 0)).count();
+        let mut high = 0;
+        let high_count = (0..20).filter(|_| place_ready(&mut high, 99)).count();
+        assert_eq!(low_count, 6);
+        assert_eq!(high_count, 20);
+    }
+
+    // Past Speed 5 every tick places once by the game's own click and leaves the rest as credit for the extra ones:
+    // a second of ticks earns the speed's whole count.
+    #[test]
+    fn faster_speeds_leave_credit_for_more_places_a_tick() {
+        for (speed, rate) in [(6, 30), (7, 40), (8, 60), (9, 80)] {
+            let (mut credit, mut placed) = (0, 0);
+            for _ in 0..20 {
+                assert!(place_ready(&mut credit, speed));
+                placed += 1;
+                // The use hook: more while whole blocks are earned, three at most.
+                let mut extra = 0;
+                while credit >= 20 && extra < super::EXTRA_USES {
+                    credit -= 20;
+                    extra += 1;
+                    placed += 1;
+                }
+            }
+            assert_eq!(placed, rate, "speed {speed}");
+            assert_eq!(credit, 0);
+        }
+    }
+}
+
+// ---- Chest Stealer and Inventory Manager
+
+// How many slots a server's container menu has, for the ones that are just a grid of items.
+fn container_size(menu: &str) -> Option<usize> {
+    let name = menu.strip_prefix("minecraft:").unwrap_or(menu);
+    match name {
+        "shulker_box" | "generic_9x3" => Some(27),
+        "hopper" => Some(5),
+        "generic_3x3" => Some(9),
+        _ => name.strip_prefix("generic_9x")?.parse::<usize>().ok().map(|rows| rows * 9),
+    }
+}
+
+// Chest Stealer's state for the open container.
+#[derive(Default)]
+struct Steal {
+    id: Option<i32>,
+    opened: u64,
+    done: bool,
+    clicks: usize,
+    pacer: super::sunset_inventory_gate::Pacer,
+}
+
+// Chest Stealer, after Rise's Stealer (its behaviour, not its code): from the container's first slot on, each item
+// worth having taken a random Delay after the last, the first a First delay after it opened. On an old server behind
+// ViaVersion a Shift click is refused (inventory_gate.rs): there each item is picked up and put down in an empty slot,
+// two clicks it takes, and a Shift click only when no slot is empty (the next then waits for its answer).
+fn auto_steal(game: &mut Game<'_>, m: &Module) {
+    use super::sunset_inventory_gate as gate;
+    use horizon_client::menu::Input::{Pickup, QuickMove};
+    if game.screen != Screen::Inventory {
+        // Closed: the next container starts afresh.
+        ps(|p| p.steal = Steal::default());
+        return;
+    }
+    // Carts from shulkers (a cart PvP restock): only TNT minecarts, only out of shulker boxes.
+    let carts = m.p("Take") == "Carts from shulkers";
+    let shulker = match game.container {
+        Some(key) => super::sunset_util::facts(game, [key.0, key.1, key.2]).name.ends_with("shulker_box"),
+        None => game.remote_menu().1.strip_prefix("minecraft:") == Some("shulker_box"),
+    };
+    if carts && !shulker {
+        return;
+    }
+    // A chest of your own world, or the menu a server opened.
+    let (id, size) = match game.container {
+        Some(key) if matches!(game.container_kind(), Some(super::BlockEntity::Chest(_))) => {
+            (key.0 ^ key.1.rotate_left(10) ^ key.2.rotate_left(20) | 1, game.container_kind().and_then(|be| match be { super::BlockEntity::Chest(items) => Some(items.len()), _ => None }).unwrap_or(27))
+        }
+        Some(_) => return,
+        None => {
+            let (id, menu) = game.remote_menu();
+            match container_size(&menu) {
+                Some(n) => (id, n),
+                None => return,
+            }
+        }
+    };
+    let now = std::time::Instant::now();
+    if ps(|p| p.steal.id != Some(id)) {
+        // rand() takes the PS lock itself: rolled outside any ps() closure.
+        let first = gate::roll(m.n("First delay min (ms)"), m.n("First delay max (ms)"), rand(1001) as f64 / 1000.0);
+        let opened = game.ticks;
+        ps(|p| {
+            p.steal = Steal { id: Some(id), opened, ..Steal::default() };
+            p.steal.pacer.wait(now, first);
+        });
+    }
+    // With a Steal key, only while it is held. Nothing in the tick it opened: its items come after the menu.
+    let key = m.t("Steal key") != "None";
+    let opened = ps(|p| p.steal.opened);
+    if ps(|p| p.steal.done) || (key && !super::sunset_util::setting_key_down(game, m, "Steal key")) || game.ticks <= opened {
+        return;
+    }
+    let manager = super::sunset::with(|s| s.module("Inventory Manager").cloned());
+    let limit = m.b("NCP click limit");
+    let finish = |game: &mut Game<'_>| {
+        ps(|p| p.steal.done = true);
+        if m.b("Close when done") {
+            super::sunset_combat_inventory::close_inventory(game);
+        }
+    };
+    // As many as are due this tick (one, unless Delay is under a tick). A container is left after four clicks a slot,
+    // should a server keep giving items back.
+    for _ in 0..64 {
+        if !gate::ready(game) || !ps(|p| p.steal.pacer.ready(now)) {
+            return;
+        }
+        // An item on the cursor (a put-down a server refused) goes into an empty slot of yours first.
+        if game.carried.is_some() {
+            let Some(to) = (9..36).chain(0..9).find(|&s| game.inventory.get(s).is_some_and(|x| x.is_none()) && !super::sunset_loadouts::locked(s)) else {
+                return;
+            };
+            if (limit && !gate::room(1)) || game.physical_buttons.contains(&MouseButton::Left) || !game.menu_ops(&[(Some(to), 0, Pickup)]) {
+                return;
+            }
+            gate::clicked(1);
+            let delay = gate::roll(m.n("Delay min (ms)"), m.n("Delay max (ms)"), rand(1001) as f64 / 1000.0);
+            ps(|p| p.steal.pacer.sent(now, delay));
+            continue;
+        }
+        let wanted = steal_wanted(game, m, manager.as_ref(), size, carts);
+        let Some(&i) = wanted.first().filter(|_| ps(|p| p.steal.clicks) < size * 4) else {
+            finish(game);
+            return;
+        };
+        let empty = if gate::legacy(game) {
+            (9..36).chain(0..9).find(|&s| game.inventory.get(s).is_some_and(|x| x.is_none()) && !super::sunset_loadouts::locked(s))
+        } else {
+            None
+        };
+        let ops: Vec<_> = match empty {
+            Some(to) => vec![(Some(300 + i), 0, Pickup), (Some(to), 0, Pickup)],
+            None => vec![(Some(300 + i), 0, QuickMove)],
+        };
+        if limit && !gate::room(ops.len()) {
+            return;
+        }
+        let before = game.slot_mut(300 + i).clone();
+        if !game.menu_ops(&ops) {
+            finish(game);
+            return;
+        }
+        gate::clicked(ops.len());
+        let moved = *game.slot_mut(300 + i) != before;
+        if empty.is_none() && moved && game.remote.is_some() {
+            gate::refusable(game, true);
+        }
+        let delay = gate::roll(m.n("Delay min (ms)"), m.n("Delay max (ms)"), rand(1001) as f64 / 1000.0);
+        ps(|p| {
+            p.steal.clicks += ops.len();
+            p.steal.pacer.sent(now, delay);
+        });
+        if !moved {
+            // Nothing went: your inventory is full.
+            finish(game);
+            return;
+        }
+    }
+}
+
+// The container slots Chest Stealer takes from, in order. Ignore trash leaves what Inventory Manager would throw;
+// Respect manager rules also leaves a weapon, tool, bow or armour piece no better than the best you have (or than
+// another in the container), a second fishing rod, a stack that would take you past Inventory Manager's limits (Slots
+// mode's), and named items when Inventory Manager drops those.
+fn steal_wanted(game: &mut Game<'_>, m: &Module, manager: Option<&Module>, size: usize, carts: bool) -> Vec<usize> {
+    use super::sunset_inventory_slots::{Stack, describe};
+    let protected = manager.map_or("", |mm| mm.t("Protected items"));
+    let stacks: Vec<Option<horizon_client::items::ItemStack>> = (0..size).map(|i| game.slot_mut(300 + i).clone()).collect();
+    if carts {
+        return (0..size).filter(|&i| stacks[i].as_ref().is_some_and(|s| &*s.item == "minecraft:tnt_minecart")).collect();
+    }
+    let chest: Vec<Option<Stack>> = stacks.iter().map(|s| s.as_ref().map(|s| describe(game, protected, s))).collect();
+    let mine: Vec<Stack> = game.inventory.iter().take(36).chain(game.armor.iter()).flatten().map(|s| describe(game, protected, s)).collect();
+    steal_pick(&chest, &mine, m.b("Ignore trash"), m.b("Respect manager rules").then(|| steal_rules(manager)))
+}
+
+// Inventory Manager's limits (blocks, arrows, buckets, snowballs and eggs, pearls) and whether it drops named items.
+fn steal_rules(manager: Option<&Module>) -> ([u32; 5], bool) {
+    let n = |name: &str, default: f64| manager.map_or(default, |mm| mm.n(name)) as u32;
+    (
+        [n("Block limit", 512.0), n("Arrow limit", 128.0), n("Bucket limit", 1.0), n("Snowball and egg limit", 16.0), n("Ender pearl limit", 16.0)],
+        manager.is_some_and(|mm| mm.b("Drop custom items")),
+    )
+}
+
+// An item's kind and score, for the kinds only the best of is kept: armour by type (0 to 3), swords, each tool, bows.
+fn steal_graded(s: &super::sunset_inventory_slots::Stack) -> Option<(u8, f32)> {
+    if let Some((t, score)) = s.armor {
+        Some((t as u8, score as f32))
+    } else if let Some(score) = s.sword {
+        Some((4, score))
+    } else if let Some((tool, score)) = s.tool {
+        Some((5 + tool as u8, score))
+    } else {
+        s.bow.map(|power| (8, power))
+    }
+}
+
+// Which of Inventory Manager's limits an item counts toward.
+fn steal_limited(s: &super::sunset_inventory_slots::Stack) -> Option<usize> {
+    if s.block {
+        return Some(0);
+    }
+    match s.name.as_str() {
+        "arrow" => Some(1),
+        "bucket" | "water_bucket" | "lava_bucket" | "milk_bucket" => Some(2),
+        "snowball" | "egg" => Some(3),
+        "ender_pearl" => Some(4),
+        _ => None,
+    }
+}
+
+fn steal_pick(
+    chest: &[Option<super::sunset_inventory_slots::Stack>],
+    mine: &[super::sunset_inventory_slots::Stack],
+    trash: bool,
+    rules: Option<([u32; 5], bool)>,
+) -> Vec<usize> {
+    let mut out = Vec::new();
+    for (i, s) in chest.iter().enumerate() {
+        let Some(s) = s else { continue };
+        if (trash || rules.is_some()) && !s.useful {
+            continue;
+        }
+        let Some((limits, drop_named)) = rules else {
+            out.push(i);
+            continue;
+        };
+        if s.custom && drop_named {
+            continue;
+        }
+        if let Some((kind, score)) = steal_graded(s) {
+            let have = mine.iter().filter_map(steal_graded).filter(|g| g.0 == kind).map(|g| g.1).fold(f32::NEG_INFINITY, f32::max);
+            // The best of its kind in the container: none after it better, none before it as good.
+            let best_here = chest
+                .iter()
+                .enumerate()
+                .filter_map(|(j, c)| c.as_ref().and_then(steal_graded).map(|g| (j, g)))
+                .filter(|&(j, g)| j != i && g.0 == kind)
+                .all(|(j, g)| if j < i { g.1 < score } else { g.1 <= score });
+            if score <= have || !best_here {
+                continue;
+            }
+        } else if s.rod && mine.iter().any(|x| x.rod) {
+            continue;
+        } else if let Some(k) = steal_limited(s) {
+            let held: u32 = mine.iter().filter(|x| steal_limited(x) == Some(k)).map(|x| x.count).sum();
+            if held + s.count > limits[k] {
+                continue;
+            }
+        }
+        out.push(i);
+    }
+    out
+}
+
+#[cfg(test)]
+mod steal_tests {
+    use super::steal_pick;
+    use super::super::sunset_inventory_slots::Stack;
+
+    fn sword(score: f32) -> Option<Stack> {
+        Some(Stack { name: "iron_sword".into(), count: 1, useful: true, sword: Some(score), ..Stack::default() })
+    }
+
+    fn named(name: &str, count: u32, useful: bool) -> Option<Stack> {
+        Some(Stack { name: name.into(), count, useful, block: name.ends_with("planks"), ..Stack::default() })
+    }
+
+    const RULES: Option<([u32; 5], bool)> = Some(([512, 128, 1, 16, 16], false));
+
+    #[test]
+    fn trash_and_worse_gear_stay() {
+        let chest = [named("rotten_flesh", 3, false), sword(6.0), named("oak_planks", 64, true), sword(7.0)];
+        assert_eq!(steal_pick(&chest, &[], true, None), [1, 2, 3], "Ignore trash alone");
+        assert_eq!(steal_pick(&chest, &[], false, None), [0, 1, 2, 3], "everything");
+        // Only the better sword of the two, and none when yours is as good.
+        assert_eq!(steal_pick(&chest, &[], true, RULES), [2, 3]);
+        let mine = [sword(7.0).unwrap()];
+        assert_eq!(steal_pick(&chest, &mine, true, RULES), [2]);
+    }
+
+    #[test]
+    fn of_two_equal_pieces_the_first_is_taken() {
+        let chest = [sword(7.0), sword(7.0)];
+        assert_eq!(steal_pick(&chest, &[], true, RULES), [0]);
+    }
+
+    #[test]
+    fn limits_count_what_you_have() {
+        let chest = [named("ender_pearl", 8, true), named("oak_planks", 64, true)];
+        let mine = [named("ender_pearl", 10, true).unwrap(), named("oak_planks", 480, true).unwrap()];
+        assert_eq!(steal_pick(&chest, &mine, true, RULES), Vec::<usize>::new(), "18 pearls > 16, 544 blocks > 512");
+        let mine = [named("ender_pearl", 8, true).unwrap()];
+        assert_eq!(steal_pick(&chest, &mine, true, RULES), [0, 1]);
+    }
+
+    #[test]
+    fn named_items_stay_when_the_manager_drops_them() {
+        let mut item = named("golden_apple", 1, true);
+        item.as_mut().unwrap().custom = true;
+        let chest = [item];
+        assert_eq!(steal_pick(&chest, &[], true, RULES), [0]);
+        assert_eq!(steal_pick(&chest, &[], true, Some(([512, 128, 1, 16, 16], true))), Vec::<usize>::new());
+    }
+}
+
+// Inventory Manager's presets: name, then the blocks, food, arrows and pearls kept, and the junk.
+pub(super) const PRESETS: [(&str, f64, f64, f64, f64, &str); 4] = [
+    ("PvP", 128.0, 64.0, 64.0, 16.0, "dirt,gravel,sand,rotten_flesh,spider_eye,poisonous_potato,wheat_seeds,bone,string,feather,flint,stick,egg"),
+    ("Building", 1728.0, 32.0, 0.0, 16.0, "rotten_flesh,spider_eye,poisonous_potato,wheat_seeds,bone,string,feather,flint,egg"),
+    ("Mining", 64.0, 64.0, 0.0, 0.0, "dirt,gravel,cobblestone,cobbled_deepslate,netherrack,andesite,diorite,granite,tuff,rotten_flesh,spider_eye,poisonous_potato,wheat_seeds"),
+    ("Survival", 256.0, 128.0, 128.0, 16.0, "rotten_flesh,spider_eye,poisonous_potato"),
+];
+
+// A stack as Inventory Manager's planner sees it, from the game's item data.
+pub(super) fn plan_item(game: &Game<'_>, stack: &horizon_client::items::ItemStack) -> plan::Item {
+    let info = game.res.items().get(&stack.item);
+    let modifier = |attribute: &str| {
+        info.as_ref().map_or(0.0, |i| i.modifiers.iter().filter(|m| m.attribute == attribute).map(|m| m.amount as f32).sum::<f32>())
+    };
+    let mining = info.as_ref().map_or(1.0, |i| i.tool.iter().filter_map(|r| r.speed).fold(i.tool_default_speed.max(1.0), f32::max));
+    plan::Item {
+        name: short(&stack.item).to_owned(),
+        count: stack.count,
+        attack: info.as_ref().map_or(0.0, |i| i.attack_damage),
+        speed: 4.0 + info.as_ref().map_or(0.0, |i| i.attack_speed),
+        armor: modifier("minecraft:armor"),
+        toughness: modifier("minecraft:armor_toughness"),
+        mining,
+        damage: stack.damage,
+        max_damage: info.as_ref().map_or(0, |i| i.max_damage),
+        enchants: stack.enchantments().iter().map(|(e, l)| (e.to_string(), *l)).collect(),
+        named: stack.custom_name().is_some(),
+        block: info.as_ref().and_then(|i| i.block).is_some_and(|b| game.res.facts().get(b).full_collision),
+        food: info.as_ref().and_then(|i| i.food).map_or(0.0, |(nutrition, saturation)| nutrition as f32 + saturation),
+        max_stack: info.as_ref().map_or(64, |i| i.max_stack),
+        meta: component_fingerprint(stack),
+    }
+}
+
+// Network Wire bookkeeping includes the original stack count; bundle selection is runtime-only. Neither belongs
+// in component equality. Use Horizon's saved component representation, with canonical compound ordering.
+fn component_fingerprint(stack: &horizon_client::items::ItemStack) -> u64 {
+    use std::hash::{Hash, Hasher};
+    horizon_client::item_data::encode_components(stack).map_or(0, |tag| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        horizon_client::item_data::canon_tag(&tag).hash(&mut h);
+        h.finish() | 1
+    })
+}
+
+#[cfg(test)]
+mod inventory_data_tests {
+    use super::component_fingerprint;
+    use horizon_client::{item_data::Wire, items::ItemStack};
+    use std::sync::Arc;
+
+    #[test]
+    fn network_bookkeeping_does_not_split_compatible_stacks() {
+        let mut a = ItemStack::new("minecraft:stone", 10);
+        let original_a = a.clone();
+        a.data_mut().wire = Wire::new(original_a, Arc::from([1u8]));
+        let mut b = ItemStack::new("minecraft:stone", 20);
+        let original_b = b.clone();
+        b.data_mut().wire = Wire::new(original_b, Arc::from([2u8]));
+        assert!(a.same_item_same_components(&b));
+        assert_eq!(component_fingerprint(&a), component_fingerprint(&b));
+        b.enchant("minecraft:sharpness", 2);
+        assert_ne!(component_fingerprint(&a), component_fingerprint(&b));
+        let before = component_fingerprint(&b);
+        b.enchant("minecraft:sharpness", 3);
+        assert_ne!(before, component_fingerprint(&b), "changes inside existing extra data invalidate plans too");
+    }
+}
+
+// Explicit junk plus conservative whole-stack quotas. The planner already built the item snapshot and retention.
+fn junk_slots(m: &Module, items: &[Option<plan::Item>], keep: &[bool]) -> Vec<usize> {
+    let mut remaining = items.to_vec();
+    let mut out = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        if item.as_ref().is_some_and(|s| listed(m.t("Junk"), &s.name)) && !keep[i] {
+            out.push(i);
+            remaining[i] = None;
+        }
+    }
+    out.extend(plan::quota_excess(&remaining, keep, ["Blocks", "Food", "Arrows", "Pearls"].map(|key| m.n(key) as u32)));
+    out
+}
+
+// Inventory Manager: one step at a time, Delay apart: first the hotbar layout, then a junk stack or a worse
+// duplicate dropped, then a swap toward the sorted inventory. Each step is planned from the inventory as it is now
+// (inventory_plan.rs), so a refused click or a change from elsewhere is planned around. Nothing moves while GUI Move
+// holds clicks, another module has the hand (combat_control), or in a slot Loadouts locks; armour you wear is Auto
+// Armor's and the offhand Offhand's.
+fn inventory_manager(game: &mut Game<'_>, m: &Module) {
+    use horizon_client::menu::Input::{Pickup, Swap, Throw};
+    if super::sunset_gui_move::inventory_busy() { return; }
+    // Its Preset's limits and junk are filled in when picked (State::fill_picked_presets).
+    let preset = m.p("Preset");
+    let menu = game.remote_menu();
+    let in_screen = game.screen == Screen::Inventory && menu.0 == 0 && menu.1 == "inventory";
+    // Off the screen: only with no other menu open (the player inventory's clicks need no screen on the server).
+    let closed = !m.b("Only in inventory") && game.screen == Screen::Playing && menu.0 == 0 && menu.1 == "inventory";
+    if !(in_screen || closed) {
+        // Invalidate decisions without shortening the settle deadline of an outstanding click.
+        exec(|e| e.context(u64::MAX));
+        return;
+    }
+    let now = game.ticks;
+    // You first: a button down on the screen (a click of yours that came and went between ticks is told by
+    // `inventory_clicked`), or an item in use.
+    let clicking = game.physical_buttons.contains(&MouseButton::Left) || game.physical_buttons.contains(&MouseButton::Right);
+    if clicking || (closed && (game.left || game.right)) {
+        exec(|e| e.user(now));
+        return;
+    }
+    if game.using.is_some() {
+        exec(|e| e.hold(now + 1));
+        return;
+    }
+    let mut locked = super::sunset_loadouts::locked_slots();
+    let loot = in_screen && super::sunset_refill::looting(m);
+    let fingerprint = inventory_fingerprint(game);
+    let context = inventory_context(game, m, &locked, loot);
+    exec(|e| e.context(context));
+    // A click an old server refused is answered before the next (inventory_gate.rs).
+    if !super::sunset_inventory_gate::ready(game) {
+        return;
+    }
+    // An item on the cursor: the player's is left alone (nothing else moves until it is put down); the manager's own,
+    // left by a refused click of a Merge, goes back before anything else.
+    if game.carried.is_some() {
+        match exec(|e| e.owns_cursor()) {
+            Some(origin) => put_back(game, origin, &locked, fingerprint),
+            None => exec(|e| e.user(now)),
+        }
+        return;
+    }
+    exec(|e| e.cursor_empty(now));
+    if exec(|e| e.gate(now, fingerprint)) == Gate::Wait
+        || super::sunset_combat_control::owner().is_some()
+        || !pace(|p| p.ready(std::time::Instant::now()))
+    {
+        return;
+    }
+    // A correction can refuse one operation without blocking all other work. Protect its slots until contents or
+    // settings change, so a refused hotbar placement cannot turn into a destructive cleanup of that same item.
+    let unavailable = exec(|e| {
+        let mut slots: Vec<usize> = e.blocked(fingerprint).into_iter().flat_map(|s| s.slots().into_iter().flatten()).collect();
+        slots.extend(e.reserved(now));
+        slots
+    });
+    for i in unavailable {
+        if let Some(l) = locked.get_mut(i) {
+            *l = true;
+        }
+    }
+    let started = std::time::Instant::now();
+    let step = if loot {
+        super::sunset_refill::loot_step(game, m, &locked).map(Step::Throw)
+    } else {
+        plan_step(game, m, preset, &locked)
+    };
+    let took = started.elapsed();
+    let Some(step) = exec(|e| e.planned(fingerprint, step, took)) else {
+        return;
+    };
+    // A Merge holds the stack on the cursor between its clicks: it goes only once everything sent before it has been
+    // confirmed, so it never starts on a cursor the server has not emptied.
+    if step.cursor() && !exec(|e| e.exclusive(now)) {
+        return;
+    }
+    // Its clicks go straight out (past GUI Move's GrimAC queue, which would hold them until the inventory closes), so
+    // only while you stand still: a click while moving is what anticheats look for. Moving, it waits.
+    if !super::remote::sunset_combat_remote::quiet(game) {
+        return;
+    }
+    // Two slots change places through a hotbar slot by hotbar-key swaps, never by picking items up: a refused click
+    // then leaves every item in a slot rather than on the cursor, and a bundle never takes in the other stack.
+    let via = match step {
+        Step::Exchange(a, b) if a >= 9 && b >= 9 => {
+            let empty: [bool; 9] = std::array::from_fn(|h| game.inventory.get(h).is_none_or(|s| s.is_none()));
+            let held: [bool; 9] = std::array::from_fn(|h| locked[h]);
+            let Some(via) = plan::pivot(empty, held, game.selected) else { return };
+            Some(via)
+        }
+        _ => None,
+    };
+    let clicks: Vec<(Option<usize>, i32, horizon_client::menu::Input)> = match step {
+        Step::Swap { from, to } => vec![(Some(from), to as i32, Swap)],
+        Step::Throw(i) => vec![(Some(i), 1, Throw)],
+        Step::Exchange(a, b) => plan::exchange_swaps(a, b, via.unwrap_or(0), |i| game.inventory.get(i).is_none_or(|s| s.is_none()))
+            .into_iter()
+            .map(|(slot, key)| (Some(slot), key as i32, Swap))
+            .collect(),
+        // An old server refuses the put-down onto the other stack and drops the clicks after it until its answer
+        // (inventory_gate.rs): there what does not fit stays on the cursor, and goes back as the put-back.
+        Step::Merge { from, into } if super::sunset_inventory_gate::legacy(game) => vec![(Some(from), 0, Pickup), (Some(into), 0, Pickup)],
+        Step::Merge { from, into } => vec![(Some(from), 0, Pickup), (Some(into), 0, Pickup), (Some(from), 0, Pickup)],
+        Step::Place(_) => return,
+    };
+    if m.b("NCP click limit") && !super::sunset_inventory_gate::room(clicks.len()) {
+        return;
+    }
+    if !super::sunset_gui_move::direct(|| game.remote_menu_ops(&clicks)) { return; }
+    super::sunset_inventory_gate::clicked(clicks.len());
+    // rand() takes the PS lock itself: rolled here, outside any ps() or exec() closure.
+    let delay = super::sunset_inventory_gate::roll(m.n("Delay min (ms)"), m.n("Delay max (ms)"), rand(1001) as f64 / 1000.0);
+    pace(|p| p.sent(std::time::Instant::now(), delay));
+    let latency = super::remote::sunset_combat_remote::latency(game);
+    if step.cursor() {
+        // Nothing follows it until the server's answer is in: a round trip.
+        exec(|e| e.sent(step, fingerprint, now, super::sunset_inventory_exec::settle_ticks(latency, 0)));
+        super::sunset_inventory_gate::refusable(game, false);
+    } else {
+        // One step a tick at most; Delay (ms) is the pacer's.
+        exec(|e| e.sent_predicted(step, via, fingerprint, now, 0, latency));
+    }
+}
+
+// Inventory Manager's Planner cadence: Delay min to max (ms) between steps (inventory_gate.rs).
+static PACE: Mutex<super::sunset_inventory_gate::Pacer> = Mutex::new(super::sunset_inventory_gate::Pacer::new());
+
+fn pace<R>(f: impl FnOnce(&mut super::sunset_inventory_gate::Pacer) -> R) -> R {
+    f(&mut PACE.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+// The stack the manager left on the cursor goes into a slot that takes it (`place_target`): where it came from, a
+// stack of the same item, an empty slot. One click, settled for a round trip before anything else; a slot refused once
+// is not tried again on the same inventory. With no slot left it is the player's, and they are told.
+fn put_back(game: &mut Game<'_>, origin: Option<usize>, locked: &[bool; 36], fingerprint: u64) {
+    let now = game.ticks;
+    if !exec(|e| e.settle(now, fingerprint) && e.exclusive(now)) {
+        return;
+    }
+    // The Merge that left it there is not tried again on its inventory.
+    exec(|e| e.stranded());
+    if !super::remote::sunset_combat_remote::quiet(game) {
+        return;
+    }
+    let Some(carried) = game.carried.as_ref().map(|s| plan_item(game, s)) else { return };
+    let items: Vec<Option<plan::Item>> = (0..36).map(|i| game.inventory.get(i).and_then(|s| s.as_ref()).map(|s| plan_item(game, s))).collect();
+    let refused: Vec<usize> = exec(|e| e.blocked(fingerprint)).into_iter().filter_map(|s| match s { Step::Place(i) => Some(i), _ => None }).collect();
+    let Some(target) = plan::place_target(&items, &carried, origin, locked, game.selected, &refused) else {
+        exec(|e| e.disown_cursor());
+        report(game, "Inventory Manager: an item it moved is left on the cursor, and no slot takes it.");
+        return;
+    };
+    let onto = game.inventory.get(target).is_some_and(|s| s.is_some());
+    if !super::sunset_gui_move::direct(|| game.remote_menu_ops(&[(Some(target), 0, horizon_client::menu::Input::Pickup)])) {
+        return;
+    }
+    super::sunset_inventory_gate::clicked(1);
+    if onto {
+        super::sunset_inventory_gate::refusable(game, false);
+    }
+    let settle = super::sunset_inventory_exec::settle_ticks(super::remote::sunset_combat_remote::latency(game), 1);
+    exec(|e| e.sent(Step::Place(target), fingerprint, now, settle));
+}
+
+// A click on the inventory that is not the manager's (yours, through the game's screen, or another module's): what
+// the cursor holds is no longer the manager's to put back, and it waits a moment.
+pub(super) fn inventory_clicked(now: u64) {
+    exec(|e| e.user(now));
+}
+
+// Whether the manager's action cadence or another owner's explicit hold still blocks clicks at `now`.
+pub(super) fn inventory_stepping(now: u64) -> bool {
+    exec(|e| e.busy(now))
+}
+
+// Auto Armor clicked: its separate delay/settle policy holds Inventory Manager until `until`.
+pub(super) fn inventory_hold(until: u64) {
+    exec(|e| e.hold(until));
+}
+
+pub(super) fn inventory_reset() {
+    exec(|e| e.reset());
+}
+
+// Inventory Manager's executor state (inventory_exec.rs). Its closures only read and write it: no game call, no other
+// lock is taken inside.
+static EXEC: Mutex<Option<super::sunset_inventory_exec::Exec>> = Mutex::new(None);
+
+fn exec<R>(f: impl FnOnce(&mut super::sunset_inventory_exec::Exec) -> R) -> R {
+    f(EXEC.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default))
+}
+
+// Include component values: two different enchanted/custom stacks may both have `extra`. State-id-only updates
+// are not changed contents, and must not restart retries of a refused operation.
+fn inventory_fingerprint(game: &Game<'_>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for stack in game.inventory.iter().take(36).chain(game.armor.iter()) {
+        match stack {
+            Some(s) => {
+                (&*s.item, s.count, s.damage).hash(&mut h);
+                component_fingerprint(s).hash(&mut h);
+            }
+            None => 0u8.hash(&mut h),
+        }
+    }
+    h.finish()
+}
+
+fn inventory_context(game: &Game<'_>, m: &Module, locked: &[bool; 36], loot: bool) -> u64 {
+    use std::hash::{Hash, Hasher};
+    use super::sunset::Value;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for setting in &m.settings {
+        setting.name.hash(&mut h);
+        match &setting.value {
+            Value::Bool(b) => b.hash(&mut h),
+            Value::Num { v, .. } => v.to_bits().hash(&mut h),
+            Value::Pick { i, .. } => i.hash(&mut h),
+            Value::Text(t) => t.hash(&mut h),
+        }
+    }
+    locked.hash(&mut h);
+    loot.hash(&mut h);
+    (game.screen == Screen::Inventory).hash(&mut h);
+    super::sunset::with(|s| s.module("Kill Aura").map(|k| super::sunset_aura_timing::setting_of(k))).hash(&mut h);
+    // Auto combat mode can change via server attributes without changing any stack.
+    let legacy = super::sunset_aura_timing::version("Auto", game.main_hand_attack_speed()).0 == super::sunset_aura_timing::Version::Legacy;
+    legacy.hash(&mut h);
+    h.finish()
+}
+
+// The next step for the inventory as it is: the hotbar plan first; then, with what must stay worked out first (the
+// hotbar's picks, protected and Loadouts' slots, the best of each kind and its backups, specialised, named and
+// unknown items), junk, items past their limits and excess duplicates; then merging and sorting.
+fn plan_step(game: &Game<'_>, m: &Module, preset: &str, locked: &[bool; 36]) -> Option<Step> {
+    let items: Vec<Option<plan::Item>> = (0..36).map(|i| game.inventory.get(i).and_then(|s| s.as_ref()).map(|s| plan_item(game, s))).collect();
+    let kill_aura = super::sunset::with(|s| s.module("Kill Aura").map(|k| super::sunset_aura_timing::setting_of(k)).unwrap_or("Auto"));
+    let legacy = super::sunset_aura_timing::version(kill_aura, game.main_hand_attack_speed()).0 == super::sunset_aura_timing::Version::Legacy;
+    let slot_words: [&str; 9] = std::array::from_fn(|i| m.p(["Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8", "Slot 9"][i]));
+    let wants = plan::wants(slot_words, m.t("Hotbar layout"));
+    let hotbar = plan::plan_hotbar(&items, &wants, locked, legacy);
+    if let Some((h, from)) = (0..9).find_map(|h| hotbar[h].filter(|&from| from != h).map(|from| (h, from))) {
+        return Some(Step::Swap { from, to: h });
+    }
+    // Retention first: what nothing may drop.
+    let mut keep: Vec<bool> = (0..36)
+        .map(|i| locked[i] || items[i].as_ref().is_none_or(|s| plan::never_drop(s) || listed(m.t("Protected items"), &s.name)))
+        .collect();
+    for i in hotbar.iter().flatten() {
+        keep[*i] = true;
+    }
+    let mut drop: Vec<usize> = if preset == "Custom" {
+        (0..36).filter(|&i| items[i].as_ref().is_some_and(|s| passes(m, "Items", &s.name))).collect()
+    } else {
+        junk_slots(m, &items, &keep)
+    };
+    if m.b("Duplicates") {
+        let worn: [Option<plan::Item>; 4] = std::array::from_fn(|a| game.armor.get(a).and_then(|s| s.as_ref()).map(|s| plan_item(game, s)));
+        drop.extend(plan::excess(&items, &worn, &keep, legacy, plan::Retention::named(m.p("Retention"))));
+    }
+    if let Some(i) = drop.into_iter().filter(|&i| !keep[i]).min() {
+        return Some(Step::Throw(i));
+    }
+    if m.b("Merge stacks")
+        && let Some((from, into)) = plan::merge_step(&items, locked)
+    {
+        return Some(Step::Merge { from, into });
+    }
+    if m.b("Sort inventory") {
+        return plan::sort_step(&items, 9..36, locked).map(|(a, b)| Step::Exchange(a, b));
+    }
+    None
+}
+
+// The Debug Report's Inventory Manager line: how often it planned, skipped an unchanged inventory, stepped, and how
+// long its planning took.
+pub(super) fn inventory_report(out: &mut String) {
+    use std::fmt::Write;
+    let s = exec(|e| e.stats);
+    let mean = if s.plans == 0 { 0 } else { (s.plan_total / s.plans as u32).as_micros() };
+    let _ = writeln!(out, "- Inventory Manager: {} plans (mean {mean} us, most {} us), {} unchanged ticks skipped, {} steps, {} refused",
+        s.plans, s.plan_most.as_micros(), s.skipped, s.steps, s.refused);
+}
+
+// ---- Anti AFK (Sunset's AntiAFK)
+
+// Wander, Anti AFK: once none of your move keys has been held for a
+// random Start delay, every few seconds at random (Frequency) a small visible turn at a random speed (at most Max yaw
+// and Max pitch change) and a short walk, a tenth to a fifth of a second, toward a point within a block. Keep close
+// walks back and turns back once it has drifted from where it started. Times in ticks.
+#[derive(Default)]
+struct Wander {
+    idle_since: Option<u64>,
+    delay: u64,
+    next_walk: u64,
+    next_turn: u64,
+    walked_at: u64,
+    turned_at: u64,
+    // Where you were and how you looked when it began.
+    origin: Option<([f64; 2], f32, f32)>,
+    // The point it walks to, from when, for how long.
+    walk: Option<([f64; 2], u64, u64)>,
+    // The look it turns to and its speed, degrees a tick.
+    turn: Option<(f32, f32, f32)>,
+}
+
+fn unit() -> f64 {
+    rand(1_000_000) as f64 / 1e6
+}
+
+fn wrap180(a: f32) -> f32 {
+    (a + 180.0).rem_euclid(360.0) - 180.0
+}
+
+// The move keys from `at` toward `to` with this yaw (Sunset's keys_towards).
+fn keys_towards(at: [f64; 2], yaw: f32, to: [f64; 2]) -> Vec<KeyCode> {
+    let (dx, dz) = (to[0] - at[0], to[1] - at[1]);
+    if dx.hypot(dz) < 0.1 {
+        return Vec::new();
+    }
+    let rad = f64::from(yaw).to_radians();
+    let forward = -rad.sin() * dx + rad.cos() * dz;
+    let left = rad.cos() * dx + rad.sin() * dz;
+    let edge = 0.3 * dx.hypot(dz);
+    [(forward > edge, KeyCode::KeyW), (forward < -edge, KeyCode::KeyS), (left > edge, KeyCode::KeyA), (left < -edge, KeyCode::KeyD)]
+        .into_iter()
+        .filter_map(|(held, k)| held.then_some(k))
+        .collect()
+}
+
+// One tick of Wander: the keys to hold, and the view turned a step.
+fn wander(game: &mut Game<'_>, m: &Module) -> Vec<KeyCode> {
+    let Some(p) = game.player.as_ref() else {
+        return Vec::new();
+    };
+    let at = [p.position.x, p.position.z];
+    let now = game.ticks;
+    let yours = [KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD].iter().any(|k| game.physical_keys.contains(k));
+    let mut w = ps(|p| std::mem::take(&mut p.afk_wander));
+    if yours || w.idle_since.is_none() {
+        let (lo, hi) = (m.n("Shortest start delay (s)"), m.n("Longest start delay (s)"));
+        let delay = ((lo + unit() * (hi - lo).max(0.0)) * 20.0) as u64;
+        w = Wander { idle_since: Some(now), delay, next_walk: delay, next_turn: delay, walked_at: now, turned_at: now, ..Wander::default() };
+        ps(|p| p.afk_wander = w);
+        return Vec::new();
+    }
+    let mut keys = Vec::new();
+    if now.saturating_sub(w.idle_since.unwrap_or(now)) >= w.delay {
+        // Up to a second plus the Frequency's interval between one and the next.
+        let interval = 20 + (20.0 / m.n("Frequency").max(0.1)) as usize;
+        let (yaw, pitch) = (game.yaw, game.pitch);
+        if m.b("Turn") && unattended(game) && now.saturating_sub(w.turned_at) >= w.next_turn {
+            w.origin.get_or_insert((at, yaw, pitch));
+            w.next_turn = rand(interval) as u64;
+            w.turned_at = now;
+            let (most_yaw, most_pitch) = (m.n("Max yaw change"), m.n("Max pitch change"));
+            let drifted = match (m.b("Keep close"), w.origin) {
+                (true, Some((_, y, p))) => f64::from(wrap180(yaw - y).hypot(wrap180(pitch - p))) >= most_yaw.hypot(most_pitch),
+                _ => false,
+            };
+            let mut dy = unit() * most_yaw;
+            let mut dp = unit() * most_pitch;
+            if unit() > 0.6 {
+                dy = -dy;
+            }
+            if unit() > 0.5 {
+                dp = -dp;
+            }
+            let to = match w.origin {
+                Some((_, y, p)) if drifted => (y, p),
+                _ => (yaw + dy as f32, (pitch + dp as f32).clamp(-90.0, 90.0)),
+            };
+            w.turn = Some((to.0, to.1, (unit() * 10.0).max(1.0) as f32));
+        }
+        if let Some((ty, tp, speed)) = w.turn {
+            let (dy, dp) = (wrap180(ty - yaw), tp - pitch);
+            game.yaw += dy.clamp(-speed, speed);
+            game.pitch = (game.pitch + dp.clamp(-speed, speed)).clamp(-90.0, 90.0);
+            if dy.abs() <= speed && dp.abs() <= speed {
+                w.turn = None;
+            }
+        }
+        match w.walk {
+            None if now.saturating_sub(w.walked_at) >= w.next_walk => {
+                w.origin.get_or_insert((at, yaw, pitch));
+                w.next_walk = rand(interval) as u64;
+                let mut to = [at[0] + unit() * 2.0 - 1.0, at[1] + unit() * 2.0 - 1.0];
+                if let (true, Some((origin, _, _))) = (m.b("Keep close"), w.origin)
+                    && (origin[0] - at[0]).hypot(origin[1] - at[1]) >= 0.75
+                {
+                    to = origin;
+                }
+                w.walk = Some((to, now, 2 + rand(3) as u64));
+                w.walked_at = now;
+            }
+            Some((_, since, ticks)) if now.saturating_sub(since) >= ticks => w.walk = None,
+            _ => {}
+        }
+        if let Some((to, _, _)) = w.walk {
+            keys = keys_towards(at, game.yaw, to);
+        }
+    }
+    ps(|p| p.afk_wander = w);
+    keys
+}
+
+// The keys it holds this tick: Wander's walk; or, in Meteor mode, a jump now and then, sneaking, and strafing left
+// and right.
+pub(super) fn afk_keys(game: &mut Game<'_>, m: &Module) -> Vec<KeyCode> {
+    if m.p("Mode") == "Wander" {
+        return wander(game, m);
+    }
+    let mut keys = Vec::new();
+    if m.b("Jump") {
+        // rand takes the same lock as ps: roll first, or the game freezes.
+        let roll = rand(99) == 0;
+        let jump = ps(|p| {
+            p.afk_jump = !p.afk_jump && roll;
+            p.afk_jump
+        });
+        if jump {
+            keys.push(KeyCode::Space);
+        }
+    }
+    if m.b("Sneak") {
+        let sneak = ps(|p| {
+            let held = p.afk_sneak < m.n("Sneak time") as u32;
+            p.afk_sneak += 1;
+            held
+        });
+        if sneak {
+            keys.push(KeyCode::ShiftLeft);
+        } else if rand(99) == 0 {
+            ps(|p| p.afk_sneak = 0);
+        }
+    }
+    if m.b("Strafe") {
+        let key = ps(|p| {
+            p.afk_strafe -= 1;
+            if p.afk_strafe <= 0 {
+                p.afk_key = Some(if p.afk_right { KeyCode::KeyD } else { KeyCode::KeyA });
+                p.afk_right = !p.afk_right;
+                p.afk_strafe = 20;
+            }
+            p.afk_key
+        });
+        keys.extend(key);
+    }
+    keys
+}
+
+fn anti_afk(game: &mut Game<'_>, m: &Module) {
+    let meteor = m.p("Mode") == "Meteor";
+    if meteor && m.b("Swing") && rand(99) == 0 {
+        game.swing_arm();
+        game.send(S::Punch(Empty));
+    }
+    if meteor && m.b("Spin") {
+        let yaw = ps(|p| {
+            let y = p.afk_yaw.unwrap_or(game.yaw) + m.n("Speed") as f32;
+            p.afk_yaw = Some(y);
+            y
+        });
+        if m.p("Spin mode") == "Client" {
+            game.yaw = yaw;
+        } else {
+            super::sunset::turn("Anti AFK", yaw, m.n("Pitch") as f32);
+        }
+    }
+    if m.b("Send messages") {
+        let messages: Vec<&str> = m.t("Messages").split('|').map(str::trim).filter(|s| !s.is_empty()).collect();
+        if messages.is_empty() {
+            return;
+        }
+        let due = ps(|p| {
+            p.afk_message -= 1;
+            p.afk_message <= 0
+        });
+        if due {
+            let i = if m.b("Random") {
+                rand(messages.len())
+            } else {
+                ps(|p| {
+                    p.afk_index = (p.afk_index + 1) % messages.len();
+                    p.afk_index
+                })
+            };
+            game.send_chat(messages[i]);
+            ps(|p| p.afk_message = m.n("Delay (seconds)") as i32 * 20);
+        }
+    }
+}
+
+// ---- Spam
+
+fn spam(game: &mut Game<'_>, m: &Module) {
+    if game.remote.is_none() {
+        toggle_off(game, "Spam");
+        return;
+    }
+    if ps(|p| {
+        if p.spam_timer > 0 {
+            p.spam_timer -= 1;
+            true
+        } else {
+            false
+        }
+    }) {
+        return;
+    }
+    let messages: Vec<&str> = m.t("Messages").split('|').map(str::trim).filter(|s| !s.is_empty()).collect();
+    if messages.is_empty() {
+        return;
+    }
+    let i = if m.b("Randomise") {
+        rand(messages.len())
+    } else {
+        ps(|p| {
+            let i = p.spam_index % messages.len();
+            p.spam_index = i + 1;
+            i
+        })
+    };
+    let mut text = messages[i].to_owned();
+    if m.b("Bypass") {
+        const LETTERS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        text.push(' ');
+        for _ in 0..m.n("Bypass length") as usize {
+            text.push(LETTERS[rand(LETTERS.len())] as char);
+        }
+    }
+    text.truncate(256);
+    game.send_chat(&text);
+    ps(|p| p.spam_timer = m.n("Delay (ticks)") as u32);
+    // Once: one message (or /command) as it turns on, then off (a kit or warp on a key).
+    if m.b("Once") {
+        toggle_off(game, "Spam");
+    }
+}
+
+// ---- No Fall (Sunset's NoFall): Air place and Place, and Clutch's place under Packet and No ground. Those two change
+// the move packets (runtime_packets.rs's outgoing). This runs after the tick, once its move packet has gone, when the player uses
+// the item.
+
+// Place's choices: the item, and whether it is a bucket (used, and picked back up) or a block (placed).
+const FALL_ITEMS: [(&str, &str, bool); 5] = [
+    ("Bucket", "water_bucket", true),
+    ("Powder snow", "powder_snow_bucket", true),
+    ("Hay bale", "hay_block", false),
+    ("Cobweb", "cobweb", false),
+    ("Slime block", "slime_block", false),
+];
+
+fn no_fall(game: &mut Game<'_>, m: &Module) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    if game.creative || p.flying || (m.b("Pause on mace") && game.held().is_some_and(|s| short(&s.item) == "mace")) {
+        return;
+    }
+    match m.p("Mode") {
+        "Air place" => fall_air_place(game, m),
+        "Place" => fall_place(game, m),
+        _ if m.b("Clutch") => fall_place(game, m),
+        _ => {}
+    }
+}
+
+// Air place: a block under you once the fall would hurt (Before damage) or kill (Before death).
+fn fall_air_place(game: &mut Game<'_>, m: &Module) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let fallen = p.fall_distance;
+    let health = f64::from(p.health.health() + p.health.absorption());
+    let due = if m.p("Air place mode") == "Before damage" { fallen > 2.0 } else { fallen > health.max(2.0) };
+    if !due {
+        return;
+    }
+    let Some(slot) = (0..9).find(|&i| super::sunset::item_info(game, i).is_some_and(|info| info.block.is_some())) else {
+        return;
+    };
+    if m.b("Anchor") {
+        center_player(game);
+    }
+    if let Some(at) = block_pos(game) {
+        place_block(game, [at[0], at[1] - 1, at[2]], slot, m.b("Rotate"), true);
+    }
+}
+
+// Place: water (or what Placed item says) where the fall will land, a moment before it does; once you have stood
+// still for two ticks, the water or powder snow goes back in the bucket.
+fn fall_place(game: &mut Game<'_>, m: &Module) {
+    let Some(p) = game.player.as_ref() else {
+        return;
+    };
+    let (vy, fallen, still) = (p.velocity.y, p.fall_distance, p.fall_distance == 0.0 && p.ground.on_ground);
+    if let Some((at, item, timer, stood, seen)) = ps(|s| s.fall_placed) {
+        let stood = if still { (stood + 1).min(2) } else { 0 };
+        let there = facts(game, at);
+        let present = if item == "water_bucket" { there.fluid_level == 8 && there.name.ends_with("water") } else { there.name.ends_with("powder_snow") };
+        // Gone once it was there (it was picked up, or flowed away), or never there in a second.
+        let mut done = (seen && !present) || timer > 20;
+        if stood >= 2 && present {
+            if let (Some(slot), Some(eye)) = (find_hotbar(game, |n| n == "bucket"), game.eye_position()) {
+                let (yaw, pitch) = look_at(eye, center_of(at));
+                use_held(game, slot, yaw, pitch);
+            }
+            done = true;
+        }
+        ps(|s| s.fall_placed = (!done).then_some((at, item, timer + 1, stood, seen || present)));
+        return;
+    }
+    if vy >= 0.0 || (fallen <= 3.0 && vy > -0.6) || p.fluids.was_touching_water {
+        return;
+    }
+    let chosen = m.p("Placed item");
+    // Water boils away in the Nether: powder snow instead.
+    let chosen = if chosen == "Bucket" && game.dim.id() == "minecraft:the_nether" { "Powder snow" } else { chosen };
+    let Some(&(_, item, bucket)) = FALL_ITEMS.iter().find(|i| i.0 == chosen) else {
+        return;
+    };
+    let Some(slot) = find_hotbar(game, |n| n == item) else {
+        return;
+    };
+    if m.b("Anchor") {
+        center_player(game);
+    }
+    let (Some((ground, point)), Some(eye)) = (landing(game), game.eye_position()) else {
+        return;
+    };
+    // The use reaches as far as a click does (4.5 blocks); further up, it waits for a later tick.
+    if dist(eye, point) > 4.5 {
+        return;
+    }
+    let above = [ground[0], ground[1] + 1, ground[2]];
+    if bucket {
+        let (yaw, pitch) = look_at(eye, point);
+        use_held(game, slot, yaw, pitch);
+        ps(|s| s.fall_placed = Some((above, item, 0, 0, false)));
+    } else {
+        place_block(game, above, slot, m.b("Rotate"), true);
+    }
+}
+
+// Uses the item in a hotbar slot looking at (yaw, pitch), as a right click into the air does, then holds what you
+// held before.
+fn use_held(game: &mut Game<'_>, slot: usize, yaw: f32, pitch: f32) {
+    let before = game.selected;
+    hold(game, slot);
+    let seq = sequence(game);
+    game.send(S::UseItem(play::UseItem { hand: 0, sequence: seq, yaw, pitch }));
+    game.swing_arm();
+    hold(game, before);
+}
+
+// Where the fall lands within the next 8 ticks (Sunset's findLandingSurface, straight down): the block it lands on and
+// the point on its top below you; nothing if it lands in water or later.
+fn landing(game: &Game<'_>) -> Option<([i32; 3], [f64; 3])> {
+    let p = game.player.as_ref()?;
+    let (x, z) = (p.position.x, p.position.z);
+    let (bx, bz) = (x.floor() as i32, z.floor() as i32);
+    let feet = p.position.y.floor() as i32;
+    let below = (0..64).map(|d| feet - 1 - d).find(|&y| !is_air(game, [bx, y, bz]))?;
+    let ground = [bx, below, bz];
+    if facts(game, ground).fluid_level > 0 || !facts(game, ground).full_collision {
+        return None;
+    }
+    let top = f64::from(below + 1);
+    let (mut y, mut vy) = (p.position.y, p.velocity.y);
+    for _ in 0..8 {
+        y += vy;
+        vy = (vy - 0.08) * 0.98;
+        if y <= top {
+            return Some((ground, [x, top, z]));
+        }
+    }
+    None
+}
+
+// ---- Fast Break (was Speed Mine), before the tick, where the game goes on breaking the block
+
+pub(super) fn fast_break(game: &mut Game<'_>, m: Option<&Module>) {
+    use super::remote::sunset_remote as remote;
+    // Haste mode's own Haste, taken off when it is no longer wanted.
+    let haste = m.filter(|m| m.p("Mode") == "Haste").map(|m| m.n("Haste amplifier") as i32 - 1);
+    let ours = game.potions.effects.get("haste").is_some_and(|e| !e.visible);
+    match haste {
+        Some(amplifier) if game.potions.effects.get("haste").is_none_or(|e| e.amplifier < amplifier) => {
+            let mut effect = horizon_client::effects::EffectInstance::new("haste", -1, amplifier);
+            effect.visible = false;
+            game.potions.effects.add(effect);
+        }
+        None if ours => {
+            game.potions.effects.list.retain(|e| e.id != "haste" || e.visible);
+        }
+        _ => {}
+    }
+    let (Some(m), Some((pos, done))) = (m, remote::breaking(game)) else {
+        return;
+    };
+    let name = &game.res.facts().get(game.world.block(pos[0], pos[1], pos[2])).name;
+    if listed(m.t("Blocks"), name) != (m.p("Blocks filter") == "Whitelist") {
+        return;
+    }
+    let step = game.destroy_progress(pos);
+    match m.p("Mode") {
+        // The server takes the stop once its count reaches 0.7 (counting the tick the break began in): be done then.
+        "Damage" if (done > 0.0 && done + step >= 0.7) || (done == 0.0 && step > 0.5 && m.b("Instamine")) => {
+            remote::set_breaking(game, 1.0);
+        }
+        // Modifier times the game's own step (the game adds one step itself).
+        "Normal" if done > 0.0 => remote::set_breaking(game, done + step * (m.n("Modifier") as f32 - 1.0)),
+        _ => {}
+    }
+}
+
+// ---- No Break Reset, before the tick, where the game would see the new item and start the break again
+
+pub(super) fn no_break_reset(game: &mut Game<'_>, m: Option<&Module>) {
+    use super::remote::sunset_remote as remote;
+    let (Some(m), Some((pos, _))) = (m, remote::breaking(game)) else {
+        return;
+    };
+    let step = game.destroy_progress(pos);
+    if remote::breaking_item_changed(game) && (!m.b("Only to better tools") || step >= ps(|p| p.break_step)) {
+        remote::keep_breaking(game);
+    }
+    ps(|p| p.break_step = step);
+}
