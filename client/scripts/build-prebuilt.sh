@@ -306,7 +306,7 @@ python3 -c 'import json,sys;ids=[m["id"] for m in json.load(open(sys.argv[1]))["
 ENGINE=${DLL_PREFIX}sunset_baritone_engine$DLL
 say "Baritone engine ($ENGINE)"
 rb=$(ls -d "$LDATA"/rust/*/bin | head -1)
-CARGO_TARGET_DIR="$WORK/baritone-engine" PATH="$rb:$PATH" cargo build --release --locked \
+CARGO_TARGET_DIR="$(native_path "$WORK/baritone-engine")" PATH="$rb:$PATH" cargo build --release --locked \
 	--manifest-path "$(native_path "$REPO/client/baritone-engine/Cargo.toml")" > "$WORK/baritone-engine.log" 2>&1 ||
 	{ tail -20 "$WORK/baritone-engine.log" >&2; die "the Baritone engine failed to build ($WORK/baritone-engine.log)"; }
 ! grep -q '^warning' "$WORK/baritone-engine.log" || die "the Baritone engine built with warnings ($WORK/baritone-engine.log)"
